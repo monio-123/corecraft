@@ -2,10 +2,22 @@ spring:
   application:
     name: corecraft
   datasource:
-    url: jdbc:h2:mem:tempdb
-    driver-class-name: org.h2.Driver
-    username: sa
-    password: ""
+    type: com.zaxxer.hikari.HikariDataSource
+    url: jdbc:mysql://192.168.10.32:3306/corecraft?serverTimezone=GMT%2B8&useUnicode=true&allowMultiQueries=true&characterEncoding=utf8&allowMutiQueries=true&useServerPrepStmts=true&useSSL=false
+    username: root
+    password: 1qaz2wsx
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 20
+      pool-name: PET_Hikari
+      idle-timeout: 30000
+      max-lifetime: 1800000
+      connection-timeout: 30000
+      login-timeout: 500
+      validation-timeout: 1000
+      connection-test-query: SELECT 1
+      initialization-fail-timeout: 1000
   h2:
     console:
       enabled: false

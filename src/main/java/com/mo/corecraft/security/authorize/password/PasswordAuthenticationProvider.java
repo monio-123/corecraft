@@ -1,12 +1,14 @@
 package com.mo.corecraft.security.authorize.password;
 
+import com.mo.corecraft.common.DO.SysUser;
 import com.mo.corecraft.security.authorize.CustomAuthorizationGrantType;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.core.*;
 import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AccessTokenAuthenticationToken;
@@ -23,9 +25,11 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class PasswordAuthenticationProvider implements AuthenticationProvider {
 
-    private final AuthenticationManager authenticationManager;
+    private final UserDetailsService userDetailsService;
 
     private final OAuth2TokenGenerator<?> tokenGenerator;
+
+    private final PasswordEncoder passwordEncoder;
 
     @Override
     public Authentication authenticate(Authentication authentication) throws AuthenticationException {
@@ -35,13 +39,11 @@ public class PasswordAuthenticationProvider implements AuthenticationProvider {
         Map<String, Object> params = passwordAuthToken.getAdditionalParameters();
         String username = (String) params.get("username");
         String password = (String) params.get("password");
-        // 使用 UsernamePasswordAuthenticationToken 委托给 Spring Security 的 AuthenticationManager 进行验证
         UsernamePasswordAuthenticationToken usernamePasswordAuthenticationToken =
                 new UsernamePasswordAuthenticationToken(username, password);
-        Authentication userAuthentication = authenticationManager.authenticate(usernamePasswordAuthenticationToken);
-        if (!userAuthentication.isAuthenticated()) {
-            throw new OAuth2AuthenticationException("User authentication failed");
-        }
+        SysUser sysUser = (SysUser)userDetailsService.loadUserByUsername(username);
+        if (sysUser == null || !passwordEncoder.matches(password, sysUser.getPassword()))
+         throw new OAuth2AuthenticationException("用户名或密码错误");
         // 访问令牌(Access Token) 构造器
         assert registeredClient != null;
         DefaultOAuth2TokenContext.Builder tokenContextBuilder = DefaultOAuth2TokenContext.builder()

@@ -9,6 +9,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
@@ -20,18 +21,24 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.oauth2.server.authorization.client.InMemoryRegisteredClientRepository;
+import org.springframework.security.oauth2.server.authorization.client.JdbcRegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.config.annotation.web.configuration.OAuth2AuthorizationServerConfiguration;
 import org.springframework.security.oauth2.server.authorization.config.annotation.web.configurers.OAuth2AuthorizationServerConfigurer;
+import org.springframework.security.oauth2.server.authorization.settings.OAuth2TokenFormat;
+import org.springframework.security.oauth2.server.authorization.settings.TokenSettings;
 import org.springframework.security.oauth2.server.authorization.token.JwtGenerator;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenGenerator;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
+
+import java.time.Duration;
 
 @Configuration
 public class AuthorizationServerConfig {
@@ -60,7 +67,7 @@ public class AuthorizationServerConfig {
     @Bean
     @Order(Ordered.HIGHEST_PRECEDENCE) //确保 OAuth2 端点安全策略优先生效。
     public SecurityFilterChain authorizationServerSecurityFilterChain (HttpSecurity http, OAuth2TokenGenerator<?> tokenGenerator,
-                                                                       AuthenticationManager authenticationManager) throws Exception {
+                                                                       UserDetailsService userDetailsService, PasswordEncoder passwordEncoder) throws Exception {
         OAuth2AuthorizationServerConfiguration.applyDefaultSecurity (http);
         http
                 // 用于授权码模式，当客户端是浏览器发起 HTML 请求时（Accept: text/html），返回 302 重定向去 /login 页面。否则默认返回 401
@@ -78,7 +85,7 @@ public class AuthorizationServerConfig {
                                 .authenticationProviders(
                                         authenticationProviders ->
                                                 authenticationProviders.add(
-                                                        new PasswordAuthenticationProvider(authenticationManager, tokenGenerator))
+                                                        new PasswordAuthenticationProvider(userDetailsService, tokenGenerator, passwordEncoder))
                                 ));
         http.cors(Customizer.withDefaults());
         return http.build ();
@@ -100,18 +107,18 @@ public class AuthorizationServerConfig {
         return http.build();
     }
 
-    /**
-     * spring security 默认登录用户密码
-     */
-    @Bean
-    public UserDetailsService userDetailsService() {
-        UserDetails user = User.builder()
-                .username("user")
-                .password(passwordEncoder().encode("password"))
-                .roles("USER")
-                .build();
-        return new InMemoryUserDetailsManager(user);
-    }
+//    /**
+//     * spring security 默认登录用户密码
+//     */
+//    @Bean
+//    public UserDetailsService userDetailsService() {
+//        UserDetails user = User.builder()
+//                .username("user")
+//                .password(passwordEncoder().encode("password"))
+//                .roles("USER")
+//                .build();
+//        return new InMemoryUserDetailsManager(user);
+//    }
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -119,15 +126,49 @@ public class AuthorizationServerConfig {
     }
 
     @Bean
-    public RegisteredClientRepository registeredClientRepository() {
-        RegisteredClient registration = RegisteredClient.withId("client-id")
-                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-                .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
-                .clientId("corecraft")
-                .clientSecret(passwordEncoder().encode("corecraft"))
-                .scope("read")
-                .redirectUri("http://localhost:8081/login/oauth2/code/client-id")
-                .build();
-        return new InMemoryRegisteredClientRepository(registration);
+    public RegisteredClientRepository registeredClientRepository(JdbcTemplate jdbcTemplate) {
+        return new JdbcRegisteredClientRepository(jdbcTemplate);
     }
+
+//    @Bean
+//    public RegisteredClientRepository registeredClientRepository(JdbcTemplate jdbcTemplate, PasswordEncoder passwordEncoder) {
+//        // 清空旧数据（避免冲突）
+//        jdbcTemplate.update("DELETE FROM oauth2_registered_client WHERE id = 'client-id'");
+//
+//        // 重新创建 RegisteredClient，明确配置 Token 格式
+//        RegisteredClient registeredClient = RegisteredClient.withId("client-id")
+//                .clientId("corecraft")
+//                .clientSecret(passwordEncoder.encode("corecraft"))
+//                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+//                .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
+//                .scope("read")
+//                .redirectUri("http://localhost:8081/login/oauth2/code/client-id")
+//                .tokenSettings(TokenSettings.builder()
+//                        .accessTokenFormat(OAuth2TokenFormat.SELF_CONTAINED) // 关键！显式声明格式
+//                        .accessTokenTimeToLive(Duration.ofSeconds(3600))
+//                        .refreshTokenTimeToLive(Duration.ofSeconds(3600))
+//                        .reuseRefreshTokens(true)
+//                        .idTokenSignatureAlgorithm(SignatureAlgorithm.RS256)
+//                        .build())
+//                .build();
+//
+//        // 存入数据库
+//        JdbcRegisteredClientRepository clientRepository = new JdbcRegisteredClientRepository(jdbcTemplate);
+//        clientRepository.save(registeredClient);
+//
+//        return clientRepository;
+//    }
+
+//    @Bean
+//    public RegisteredClientRepository registeredClientRepository() {
+//        RegisteredClient registration = RegisteredClient.withId("client-id")
+//                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+//                .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
+//                .clientId("corecraft")
+//                .clientSecret(passwordEncoder().encode("corecraft"))
+//                .scope("read")
+//                .redirectUri("http://localhost:8081/login/oauth2/code/client-id")
+//                .build();
+//        return new InMemoryRegisteredClientRepository(registration);
+//    }
 }
