@@ -1,6 +1,6 @@
 package com.mo.corecraft.security.authorize.password;
 
-import com.mo.corecraft.common.DO.SysUser;
+import com.mo.corecraft.DO.SysUser;
 import com.mo.corecraft.security.authorize.CustomAuthorizationGrantType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationProvider;

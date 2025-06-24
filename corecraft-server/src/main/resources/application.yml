@@ -18,9 +18,6 @@ spring:
       validation-timeout: 1000
       connection-test-query: SELECT 1
       initialization-fail-timeout: 1000
-  h2:
-    console:
-      enabled: false
 server:
   port: 8081
 

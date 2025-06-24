@@ -8,77 +8,27 @@
         <version>3.2.8</version>
         <relativePath/>
     </parent>
-    <groupId>com.mo</groupId>
+    <packaging>pom</packaging>
+    <version>1.0.0</version>
+    <groupId>com.mo.corecraft</groupId>
     <artifactId>corecraft</artifactId>
     <name>corecraft</name>
     <description>corecraft</description>
-    <repositories>
-        <repository>
-            <id>aliyun-central</id>
-            <name>Aliyun Maven Central</name>
-            <url>https://maven.aliyun.com/repository/central</url>
-            <releases>
-                <enabled>true</enabled>
-            </releases>
-            <snapshots>
-                <enabled>false</enabled>
-            </snapshots>
-        </repository>
-    </repositories>
-    <pluginRepositories>
-        <pluginRepository>
-            <id>aliyun-central</id>
-            <name>Aliyun Plugin Repository</name>
-            <url>https://maven.aliyun.com/repository/central</url>
-            <releases>
-                <enabled>true</enabled>
-            </releases>
-            <snapshots>
-                <enabled>false</enabled>
-            </snapshots>
-        </pluginRepository>
-    </pluginRepositories>
-
+    <modules>
+        <module>corecraft-common</module>
+        <module>corecraft-server</module>
+    </modules>
     <properties>
-<!--        <spring-security.version>6.2.7</spring-security.version>-->
-<!--        <spring-framework.version>6.1.8</spring-framework.version>-->
         <java.version>17</java.version>
         <mybatis-plus.version>3.5.5</mybatis-plus.version>
     </properties>
     <dependencies>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
-        </dependency>
 
         <!-- mybatis-plus -->
         <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
             <version>${mybatis-plus.version}</version>
-        </dependency>
-
-        <!-- jdbc -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-jdbc</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>com.h2database</groupId>
-            <artifactId>h2</artifactId>
-            <scope>runtime</scope>
         </dependency>
 
         <!-- lombok -->
@@ -89,12 +39,6 @@
             <scope>provided</scope> <!-- 编译时需要，不需要打进jar -->
         </dependency>
 
-        <!-- 校验相关 -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-validation</artifactId>
-        </dependency>
-
         <!-- oauth2.1 authorization-server -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -102,20 +46,10 @@
         </dependency>
 
         <dependency>
-            <groupId>mysql</groupId>
-            <artifactId>mysql-connector-java</artifactId>
-            <version>8.0.33</version>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
-
     </dependencies>
 
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-            </plugin>
-        </plugins>
-    </build>
 
 </project>

@@ -1,4 +1,4 @@
-package com.mo.corecraft.common.DO;
+package com.mo.corecraft.DO;
 
 import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.TableField;
