@@ -1,6 +1,6 @@
-package com.mo.corecraft.security.authorize.password;
+package com.mo.corecraft.config.security.authorize.password;
 
-import com.mo.corecraft.security.authorize.CustomAuthorizationGrantType;
+import com.mo.corecraft.config.security.authorize.CustomAuthorizationGrantType;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;

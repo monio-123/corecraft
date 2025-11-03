@@ -1,4 +1,4 @@
-package com.mo.corecraft.security.resource;
+package com.mo.corecraft.config.security.resource;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

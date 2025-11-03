@@ -1,4 +1,4 @@
-package com.mo.corecraft.security.authorize.password;
+package com.mo.corecraft.config.security.authorize.password;
 
 import lombok.Getter;
 import org.springframework.security.core.Authentication;

@@ -1,4 +1,4 @@
-package com.mo.corecraft.model.mapper;
+package com.mo.corecraft.config.security.resource;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.mo.corecraft.DO.SysUser;

@@ -1,4 +1,4 @@
-package com.mo.corecraft.security.authorize;
+package com.mo.corecraft.config.security.authorize;
 
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 

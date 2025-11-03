@@ -1,7 +1,7 @@
-package com.mo.corecraft.security.authorize;
+package com.mo.corecraft.config.security.authorize;
 
-import com.mo.corecraft.security.authorize.password.PasswordAuthenticationConverter;
-import com.mo.corecraft.security.authorize.password.PasswordAuthenticationProvider;
+import com.mo.corecraft.config.security.authorize.password.PasswordAuthenticationConverter;
+import com.mo.corecraft.config.security.authorize.password.PasswordAuthenticationProvider;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
 import org.springframework.context.annotation.Bean;
@@ -48,7 +48,6 @@ public class AuthorizationServerConfig {
         return new JwtGenerator(new NimbusJwtEncoder(jwkSource));
     }
 
-
     /**
      * Security过滤器链,用于协议端点
      * 保护 OAuth2 授权服务器的协议端点（如 /oauth2/authorize、/oauth2/token 等）
@@ -57,6 +56,7 @@ public class AuthorizationServerConfig {
     @Order(Ordered.HIGHEST_PRECEDENCE) //确保 OAuth2 端点安全策略优先生效。
     public SecurityFilterChain authorizationServerSecurityFilterChain (HttpSecurity http, OAuth2TokenGenerator<?> tokenGenerator,
                                                                        UserDetailsService userDetailsService, PasswordEncoder passwordEncoder) throws Exception {
+        //这个方法内部会对 HttpSecurity 设置对应的请求匹配规则，比如只匹配 /oauth2/**、/token、/authorize 等 OAuth2 协议端点。
         OAuth2AuthorizationServerConfiguration.applyDefaultSecurity (http);
         http
                 // 用于授权码模式，当客户端是浏览器发起 HTML 请求时（Accept: text/html），返回 302 重定向去 /login 页面。否则默认返回 401
