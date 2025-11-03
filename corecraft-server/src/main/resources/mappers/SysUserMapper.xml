@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.mo.corecraft.config.security.resource.SysUserMapper">
+
+    <resultMap id="BaseResultMap" type="com.mo.corecraft.DTO.SysUserDTO">
+        <id column="id" jdbcType="BIGINT" property="id" />
+        <result column="password" jdbcType="VARCHAR" property="password" />
+        <result column="username" jdbcType="VARCHAR" property="username" />
+        <result column="dept_ids" jdbcType="VARCHAR" property="deptId" />
+        <result column="create_time" jdbcType="TIMESTAMP" property="createTime" />
+        <result column="update_time" jdbcType="TIMESTAMP" property="updateTime" />
+        <collection property="authorities" ofType="org.springframework.security.core.authority.SimpleGrantedAuthority">
+            <constructor>
+                <arg column="role_code" javaType="string"/>
+            </constructor>
+        </collection>
+        <collection property="permissions" ofType="string">
+            <result column="permission_code"/>
+        </collection>
+    </resultMap>
+
+    <select id="selectByUsername" resultMap="BaseResultMap">
+        select a.id, a.password, a.username, a.dept_id, a.create_time, a.update_time,
+               c.code as role_code,
+               e.code as permission_code
+            from sys_user a
+        left join sys_user_role b on a.id = b.user_id
+        left join sys_role c on b.role_id = c.id
+        left join sys_role_permission d on c.id = d.role_id
+        left join sys_permission e on d.permission_id = e.id
+                where a.username = #{username}
+        limit 1
+    </select>
+
+</mapper>

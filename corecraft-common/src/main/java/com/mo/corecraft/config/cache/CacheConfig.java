@@ -17,6 +17,7 @@ import org.springframework.data.redis.cache.RedisCacheManager;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
 import org.springframework.data.redis.serializer.RedisSerializationContext;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 import java.time.Duration;
 
@@ -32,6 +33,8 @@ public class CacheConfig {
         // 2.objectMapper 需要开启默认的类型序列化 否则缓存数据无法反序列化
         // 3.bean是单例 这里不能直接传入全局的objectMapper
         ObjectMapper objectMapper = JsonUtils.initializeBaseMapper();
+        // 默认无法反序列化 SimpleGrantedAuthority 因为SimpleGrantedAuthority没有无参构造函数或者@JsonCreator或@JsonProperty("authority")
+        objectMapper.addMixIn(SimpleGrantedAuthority.class, SimpleGrantedAuthorityMixin.class);
         objectMapper.activateDefaultTyping(
                 LaissezFaireSubTypeValidator.instance,
                 ObjectMapper.DefaultTyping.NON_FINAL,

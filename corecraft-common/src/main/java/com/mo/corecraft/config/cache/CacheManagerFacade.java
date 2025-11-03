@@ -59,6 +59,7 @@ public final class CacheManagerFacade {
         T value = get(cacheKey, params);
         if (value != null) return value;
         value = supplier.get();
+        if (value == null) return null;
         set(cacheKey, value, params);
         return value;
     }

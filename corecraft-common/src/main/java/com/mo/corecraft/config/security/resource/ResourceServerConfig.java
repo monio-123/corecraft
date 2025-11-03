@@ -4,10 +4,13 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.config.Customizer;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
+// 启用方法级权限控制
+@EnableMethodSecurity
 public class ResourceServerConfig {
     @Bean
     @Order(1) // 必须高于默认的 WebSecurityConfig（通常 Order=100）

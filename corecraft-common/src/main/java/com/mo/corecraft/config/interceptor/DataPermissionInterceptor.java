@@ -39,11 +39,10 @@ public class DataPermissionInterceptor implements InnerInterceptor {
         }
 
         // 获取用户数据范围
-        UserDataScope scope = UserContext.get();
         SysUserDTO user = SecurityUtil.getUser();
-        if (scope != null && !scope.isAdmin() && scope.getDeptIds() != null && !scope.getDeptIds().isEmpty()) {
-            String newSql = "SELECT * FROM (" + originalSql + ") tmp WHERE tmp.dept_id IN (" +
-                    scope.getDeptIds().stream().map(String::valueOf).collect(Collectors.joining(",")) + ")";
+        if (user != null && user.getDeptId() != null) {
+            String newSql = "SELECT * FROM (" + originalSql + ") tmp WHERE tmp.dept_id = (" +
+                     user.getDeptId() + ")";
             metaObject.setValue("delegate.boundSql.sql", newSql);
             log.debug("数据权限过滤后 SQL: {}", newSql);
         }

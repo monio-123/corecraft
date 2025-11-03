@@ -32,6 +32,7 @@ server:
   port: 8081
 
 mybatis-plus:
+  mapper-locations: classpath*:mappers/*.xml
   global-config:
     db-config:
       logic-delete-field: is_delete
