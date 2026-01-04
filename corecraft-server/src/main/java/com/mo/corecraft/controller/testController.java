@@ -1,6 +1,6 @@
 package com.mo.corecraft.controller;
 
-import com.mo.corecraft.DTO.SysUserDTO;
+import com.mo.corecraft.config.security.resource.SecurityUser;
 import com.mo.corecraft.utils.SecurityUtil;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -14,7 +14,7 @@ public class testController {
     @PreAuthorize("@auth.hasRoleOrPermission('ROLE_ADMIN', 'user:add')")
     @RequestMapping("/hello")
     public String hello() {
-        SysUserDTO user = SecurityUtil.getUser();
+        SecurityUser user = SecurityUtil.getUser();
         Authentication authentication = SecurityUtil.getAuthentication();
         System.out.println(user);
         System.out.println(authentication);

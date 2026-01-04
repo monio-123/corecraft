@@ -1,6 +1,6 @@
 package com.mo.corecraft.utils;
 
-import com.mo.corecraft.DTO.SysUserDTO;
+import com.mo.corecraft.config.security.resource.SecurityUser;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -10,14 +10,14 @@ public class SecurityUtil {
         return SecurityContextHolder.getContext().getAuthentication();
     }
 
-    public static SysUserDTO getUser() {
+    public static SecurityUser getUser() {
         Authentication authentication = getAuthentication();
         if (authentication == null) {
             return null;
         }
         Object principal = authentication.getPrincipal();
-        if (principal instanceof SysUserDTO) {
-            return (SysUserDTO) principal;
+        if (principal instanceof SecurityUser) {
+            return (SecurityUser) principal;
         }
         return null;
     }

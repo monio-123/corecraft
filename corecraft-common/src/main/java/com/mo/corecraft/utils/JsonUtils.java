@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.ser.impl.SimpleFilterProvider;
 import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import lombok.Getter;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -18,10 +19,10 @@ import java.util.List;
 import java.util.Map;
 
 public final class JsonUtils {
- 
-	
-	private static ObjectMapper defaultMapper = initializeBaseMapper();
-	 
+
+	@Getter
+    private final static ObjectMapper defaultMapper = initializeBaseMapper();
+
 	public static ObjectMapper initializeBaseMapper() {
 	        ObjectMapper mapper = new ObjectMapper()
 	            //反序列化时未知字段忽略

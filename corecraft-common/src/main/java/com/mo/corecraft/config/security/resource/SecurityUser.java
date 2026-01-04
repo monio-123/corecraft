@@ -1,32 +1,23 @@
-package com.mo.corecraft.DTO;
+package com.mo.corecraft.config.security.resource;
 
-import com.fasterxml.jackson.annotation.JsonFormat;
+import com.mo.corecraft.model.dto.SysUserDTO;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
-import java.time.LocalDateTime;
 import java.util.Collection;
 
 @Getter
 @Setter
-public class SysUserDTO implements UserDetails {
-
-    private Long id;
+@Builder
+public class SecurityUser implements UserDetails {
 
     private String password;
 
-    private String username;
-
-    private Long deptId;
-
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
-    private LocalDateTime createTime;
-
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
-    private LocalDateTime updateTime;
+    private SysUserDTO sysUserDTO;
 
     /**
      * 角色集合
@@ -41,6 +32,11 @@ public class SysUserDTO implements UserDetails {
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return authorities;
+    }
+
+    @Override
+    public String getUsername() {
+        return sysUserDTO.getUsername();
     }
 
     @Override

@@ -1,6 +1,5 @@
 package com.mo.corecraft.config.security.resource;
 
-import com.mo.corecraft.DTO.SysUserDTO;
 import com.mo.corecraft.utils.SecurityUtil;
 import org.springframework.stereotype.Component;
 import org.springframework.security.core.GrantedAuthority;
@@ -12,7 +11,7 @@ import java.util.stream.Collectors;
 public class AuthCheck {
 
     public boolean hasAnyRoleOrPermission(Collection<String> roles, Collection<String> permissions) {
-        SysUserDTO user = SecurityUtil.getUser();
+        SecurityUser user = SecurityUtil.getUser();
         if (user == null || user.getAuthorities() == null) {
             return false;
         }
@@ -28,7 +27,7 @@ public class AuthCheck {
 
 
     public boolean hasRoleOrPermission(String role, String permission) {
-        SysUserDTO user = SecurityUtil.getUser();
+        SecurityUser user = SecurityUtil.getUser();
         if (user == null || user.getAuthorities() == null) {
             return false;
         }

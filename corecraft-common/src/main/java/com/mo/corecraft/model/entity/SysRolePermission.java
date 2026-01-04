@@ -1,11 +1,11 @@
-package com.mo.corecraft.DO;
+package com.mo.corecraft.model.entity;
 
 import lombok.Getter;
 import lombok.Setter;
 
 @Getter
 @Setter
-public class SysRolePermission extends BaseDO {
+public class SysRolePermission extends BaseEntity {
 
     private Long roleId;
 

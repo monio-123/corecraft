@@ -1,11 +1,11 @@
-package com.mo.corecraft.DO;
+package com.mo.corecraft.model.entity;
 
 import lombok.Getter;
 import lombok.Setter;
 
 @Getter
 @Setter
-public class SysUserRole extends BaseDO {
+public class SysUserRole extends BaseEntity {
 
     private Long userId;
 

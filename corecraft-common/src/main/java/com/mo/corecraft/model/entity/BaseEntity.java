@@ -1,4 +1,4 @@
-package com.mo.corecraft.DO;
+package com.mo.corecraft.model.entity;
 
 import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.TableField;
@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
 
 @Getter
 @Setter
-public class BaseDO {
+public class BaseEntity {
 
     private Long id;
 

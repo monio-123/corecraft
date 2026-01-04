@@ -1,6 +1,6 @@
 package com.mo.corecraft.config.security.authorize.password;
 
-import com.mo.corecraft.DTO.SysUserDTO;
+import com.mo.corecraft.config.security.resource.SecurityUser;
 import com.mo.corecraft.config.security.authorize.CustomAuthorizationGrantType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationProvider;
@@ -41,7 +41,7 @@ public class PasswordAuthenticationProvider implements AuthenticationProvider {
         String password = (String) params.get("password");
         UsernamePasswordAuthenticationToken usernamePasswordAuthenticationToken =
                 new UsernamePasswordAuthenticationToken(username, password);
-        SysUserDTO user = (SysUserDTO)userDetailsService.loadUserByUsername(username);
+        SecurityUser user = (SecurityUser)userDetailsService.loadUserByUsername(username);
         if (user == null || !passwordEncoder.matches(password, user.getPassword()))
          throw new OAuth2AuthenticationException("用户名或密码错误");
         // 访问令牌(Access Token) 构造器

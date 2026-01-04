@@ -1,7 +1,8 @@
 package com.mo.corecraft.config.interceptor;
 
 import com.baomidou.mybatisplus.extension.plugins.inner.InnerInterceptor;
-import com.mo.corecraft.DTO.SysUserDTO;
+import com.mo.corecraft.config.security.resource.SecurityUser;
+import com.mo.corecraft.model.dto.SysUserDTO;
 import com.mo.corecraft.utils.SecurityUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.ibatis.executor.statement.StatementHandler;
@@ -13,7 +14,6 @@ import org.apache.ibatis.reflection.SystemMetaObject;
 
 import java.lang.reflect.Method;
 import java.sql.Connection;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Intercepts({
@@ -39,10 +39,12 @@ public class DataPermissionInterceptor implements InnerInterceptor {
         }
 
         // 获取用户数据范围
-        SysUserDTO user = SecurityUtil.getUser();
-        if (user != null && user.getDeptId() != null) {
+        SecurityUser user = SecurityUtil.getUser();
+        if (user == null) return;
+        SysUserDTO sysUserDTO = user.getSysUserDTO();
+        if (sysUserDTO != null && sysUserDTO.getDeptId() != null) {
             String newSql = "SELECT * FROM (" + originalSql + ") tmp WHERE tmp.dept_id = (" +
-                     user.getDeptId() + ")";
+                    sysUserDTO.getDeptId() + ")";
             metaObject.setValue("delegate.boundSql.sql", newSql);
             log.debug("数据权限过滤后 SQL: {}", newSql);
         }
