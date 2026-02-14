@@ -1,6 +1,5 @@
 package com.mo.corecraft.config.cache;
 
-import com.mo.corecraft.config.security.resource.SecurityUser;
 import com.mo.corecraft.config.security.resource.SecurityUserRecord;
 
 public class CacheKeys {

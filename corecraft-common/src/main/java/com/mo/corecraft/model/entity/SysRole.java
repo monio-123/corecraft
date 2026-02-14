@@ -1,6 +1,6 @@
 package com.mo.corecraft.model.entity;
 
-import com.mo.corecraft.enums.StatusEnum;
+import com.baomidou.mybatisplus.annotation.TableField;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -8,11 +8,14 @@ import lombok.Setter;
 @Setter
 public class SysRole extends BaseEntity {
 
+    private Long id;
+
     private String code;
 
     private String name;
 
-    private StatusEnum status;
+    @TableField("is_enabled")
+    private boolean enabled;
 
     private String description;
 }

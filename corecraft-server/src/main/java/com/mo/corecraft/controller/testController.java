@@ -11,6 +11,15 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/test")
 public class testController {
 
+    @RequestMapping("/hello1")
+    public String hello1() {
+        SecurityUser user = SecurityUtil.getUser();
+        Authentication authentication = SecurityUtil.getAuthentication();
+        System.out.println(user);
+        System.out.println(authentication);
+        return "Hello World";
+    }
+
     @PreAuthorize("@auth.hasRoleOrPermission('ROLE_ADMIN', 'user:add')")
     @RequestMapping("/hello")
     public String hello() {

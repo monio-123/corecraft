@@ -1,7 +1,7 @@
 package com.mo.corecraft.model.entity;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.mo.corecraft.enums.PermissionTypeEnum;
-import com.mo.corecraft.enums.StatusEnum;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -9,13 +9,16 @@ import lombok.Setter;
 @Setter
 public class SysPermission extends BaseEntity {
 
+    private Long id;
+
     private String code;
 
     private String name;
 
     private Integer sort;
 
-    private StatusEnum status;
+    @TableField("is_enabled")
+    private boolean enabled;
 
     private PermissionTypeEnum type;
 }
