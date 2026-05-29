@@ -6,6 +6,11 @@
         <id column="id" jdbcType="BIGINT" property="id" />
         <result column="password" jdbcType="VARCHAR" property="password" />
         <result column="username" jdbcType="VARCHAR" property="username" />
+        <result column="dept_id" jdbcType="BIGINT" property="deptId" />
+        <result column="nickname" jdbcType="VARCHAR" property="nickname" />
+        <result column="avatar" jdbcType="VARCHAR" property="avatar" />
+        <result column="email" jdbcType="VARCHAR" property="email" />
+        <result column="mobile" jdbcType="VARCHAR" property="mobile" />
         <collection property="authorities" ofType="org.springframework.security.core.authority.SimpleGrantedAuthority">
             <constructor>
                 <arg column="role_code" javaType="string"/>
@@ -17,16 +22,54 @@
     </resultMap>
 
     <select id="selectByUsername" resultMap="SecurityUserResultMap">
-        select a.id, a.password, a.username, a.dept_id, a.create_time, a.update_time,
+        select a.id, a.password, a.username, a.dept_id, a.nickname, a.avatar, a.email, a.mobile, a.create_time, a.update_time,
                c.code as role_code,
                e.code as permission_code
             from sys_user a
+        left join sys_user_role b on a.id = b.user_id and b.is_delete = 0
+        left join sys_role c on b.role_id = c.id and c.is_enabled = 1 and c.is_delete = 0
+        left join sys_role_permission d on c.id = d.role_id and d.is_delete = 0
+        left join sys_permission e on d.permission_id = e.id and e.is_enabled = 1 and e.is_delete = 0
+                where a.username = #{username}
+    </select>
+
+    <select id="selectOne" resultType="com.mo.corecraft.model.resp.SysUserResp">
+        select a.id, a.username, a.nickname, a.avatar, a.email, a.mobile, a.create_time, a.update_time,
+               c.code as roleCode
+        from sys_user a
+                 left join sys_user_role b on a.id = b.user_id
+                 left join sys_role c on b.role_id = c.id
+        where 1 = 1
+        <if test="query.username != null and query.username != ''">
+            and a.username like concat('%', #{query.username}, '%')
+        </if>
+        limit 1
+    </select>
+
+    <select id="selectList" resultType="com.mo.corecraft.model.resp.SysUserResp">
+        select a.id, a.username, a.nickname, a.avatar, a.email, a.mobile, a.create_time, a.update_time,
+        c.code as roleCode
+        from sys_user a
         left join sys_user_role b on a.id = b.user_id
         left join sys_role c on b.role_id = c.id
-        left join sys_role_permission d on c.id = d.role_id
-        left join sys_permission e on d.permission_id = e.id
-                where a.username = #{username}
-        limit 1
+        where 1 = 1
+        <if test="query.username != null and query.username != ''">
+            and a.username like concat('%', #{query.username}, '%')
+        </if>
+        order by a.create_time desc
+    </select>
+
+    <select id="selectPage" resultType="com.mo.corecraft.model.resp.SysUserResp">
+        select a.id, a.username, a.nickname, a.avatar, a.email, a.mobile, a.create_time, a.update_time,
+        c.code as roleCode
+        from sys_user a
+        left join sys_user_role b on a.id = b.user_id
+        left join sys_role c on b.role_id = c.id
+        where 1 = 1
+        <if test="query.username != null and query.username != ''">
+            and a.username like concat('%', #{query.username}, '%')
+        </if>
+        order by a.create_time desc
     </select>
 
 <!--    <select id="selectUserList" resultMap="BaseResultMap">-->

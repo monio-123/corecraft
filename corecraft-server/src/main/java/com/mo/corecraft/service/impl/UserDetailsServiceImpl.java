@@ -1,6 +1,7 @@
 package com.mo.corecraft.service.impl;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.mo.corecraft.config.interceptor.UserDataScope;
 import com.mo.corecraft.config.security.resource.SecurityUserRecord;
 import com.mo.corecraft.model.dto.SysUserDTO;
 import com.mo.corecraft.model.entity.SysUser;
@@ -28,7 +29,7 @@ public class UserDetailsServiceImpl extends ServiceImpl<SysUserMapper, SysUser> 
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
         SecurityUserRecord securityUserRecord = CacheManagerFacade.getIfAbsent(
                 CacheKeys.SECURITY_USER_RECORD,
-                () -> baseMapper.selectByUsername(username));
+                () -> baseMapper.selectByUsername(username), username);
         Optional.ofNullable(securityUserRecord)
                 .orElseThrow(() -> new OAuth2AuthenticationException(new
                         OAuth2Error(OAuth2ErrorCodes.SERVER_ERROR, String.format("user %s not found", username), "")));
@@ -36,6 +37,12 @@ public class UserDetailsServiceImpl extends ServiceImpl<SysUserMapper, SysUser> 
                     SysUserDTO sysUserDTO = BeanUtils.createFrom(securityUserRecord, SysUserDTO.class);
                     return SecurityUser.builder()
                             .sysUserDTO(sysUserDTO)
+                            .dataScope(new UserDataScope(
+                                    securityUserRecord.getId(),
+                                    securityUserRecord.getDeptId(),
+                                    null,
+                                    false
+                            ))
                             .password(securityUserRecord.getPassword())
                             .authorities(securityUserRecord.getAuthorities())
                             .permissions(securityUserRecord.getPermissions())

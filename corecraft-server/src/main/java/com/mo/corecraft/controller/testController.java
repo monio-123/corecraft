@@ -20,7 +20,7 @@ public class testController {
         return "Hello World";
     }
 
-    @PreAuthorize("@auth.hasRoleOrPermission('ROLE_ADMIN', 'user:add')")
+    @PreAuthorize("@auth.hasRoleOrPermission(T(com.mo.corecraft.utils.SecurityUtil).ROLE_ADMIN, 'user:add')")
     @RequestMapping("/hello")
     public String hello() {
         SecurityUser user = SecurityUtil.getUser();
