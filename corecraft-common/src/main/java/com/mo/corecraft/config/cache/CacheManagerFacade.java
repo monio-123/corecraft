@@ -24,7 +24,6 @@ public final class CacheManagerFacade {
 
     private CacheManagerFacade() {}
 
-    /** 核心 key 生成方法，支持对象参数，和 globalKeyGenerator 保持一致 */
     public static String generateCacheKey(CacheKey<?> cacheKey, Object... params) {
         return CacheHelper.buildCacheKey(cacheKey.getClassName(), cacheKey.getMethodName(), params);
     }
@@ -38,7 +37,7 @@ public final class CacheManagerFacade {
     public static <T> T get(CacheKey<T> cacheKey, Object... params) {
         Cache cache = getCacheManager().getCache(getCacheName(cacheKey));
         if (cache == null) return null;
-        return cache.get(generateCacheKey(cacheKey,  params), cacheKey.getType());
+        return cache.get(generateCacheKey(cacheKey, params), cacheKey.getType());
     }
 
     public static <T> void set(CacheKey<T> cacheKey, String key, T value) {
@@ -51,7 +50,7 @@ public final class CacheManagerFacade {
     public static <T> void set(CacheKey<T> cacheKey, T value, Object... params) {
         Cache cache = getCacheManager().getCache(getCacheName(cacheKey));
         if (cache != null) {
-            cache.put(generateCacheKey(cacheKey,  params), value);
+            cache.put(generateCacheKey(cacheKey, params), value);
         }
     }
 
@@ -71,9 +70,14 @@ public final class CacheManagerFacade {
         }
     }
 
-    /** 默认缓存名处理 */
+    public static void clear(CacheKey<?> cacheKey) {
+        Cache cache = getCacheManager().getCache(getCacheName(cacheKey));
+        if (cache != null) {
+            cache.clear();
+        }
+    }
+
     private static String getCacheName(CacheKey<?> cacheKey) {
-        // 简单方案：取 key 前缀，也可以在 CacheKey 中单独定义 cacheName
         return cacheKey.getCacheName();
     }
 }

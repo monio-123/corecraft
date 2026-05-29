@@ -3,6 +3,8 @@ package com.mo.corecraft.utils;
 import org.springframework.cglib.beans.BeanCopier;
 import org.springframework.cglib.core.Converter;
 
+import java.util.function.Function;
+
 public class BeanUtils {
 
 	public static void copy(Object src, Object target) {
@@ -31,5 +33,9 @@ public class BeanUtils {
 		}catch (Exception e){
 			throw new RuntimeException("copy error");
 		}
+	}
+
+	public static <T, R> Function<T, R> converter(Class<R> target){
+		return source -> createFrom(source, target);
 	}
 }

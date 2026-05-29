@@ -13,6 +13,11 @@ public class SecurityUserRecord {
     private Long id;
     private String username;
     private String password;
+    private Long deptId;
+    private String nickname;
+    private String avatar;
+    private String email;
+    private String mobile;
 
     private Collection<SimpleGrantedAuthority> authorities;
     private Collection<String> permissions;

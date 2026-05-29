@@ -14,7 +14,15 @@ public class SysUserResp {
 
     private String username;
 
-    private Long deptId;
+    private String nickname;
+
+    private String avatar;
+
+    private String email;
+
+    private String mobile;
+
+    private String roleCode;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
     private LocalDateTime createTime;

@@ -5,13 +5,15 @@ import lombok.Setter;
 
 @Getter
 @Setter
-public class SysRoleQuery {
+public class SysDictItemQuery {
 
     private Long id;
 
-    private String code;
+    private Long dictTypeId;
 
-    private String name;
+    private String label;
+
+    private String value;
 
     private Boolean enabled;
 }

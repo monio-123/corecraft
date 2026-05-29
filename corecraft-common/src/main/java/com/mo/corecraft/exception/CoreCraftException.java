@@ -12,6 +12,10 @@ public class CoreCraftException extends RuntimeException{
         super(message);
     }
 
+    public CoreCraftException(ResultCodeEnum resultCode) {
+        super(resultCode.getMessage());
+    }
+
     public CoreCraftException(ResultCodeEnum resultCode, String message) {
         super(message);
         this.resultCode = resultCode;

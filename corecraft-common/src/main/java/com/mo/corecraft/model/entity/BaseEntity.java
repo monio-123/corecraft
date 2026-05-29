@@ -1,6 +1,5 @@
 package com.mo.corecraft.model.entity;
 
-import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.fasterxml.jackson.annotation.JsonIgnore;
@@ -13,10 +12,8 @@ import java.time.LocalDateTime;
 @Setter
 public class BaseEntity {
 
-    @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;
 
-    @TableField(fill = FieldFill.UPDATE)
     private LocalDateTime updateTime;
 
     @TableLogic

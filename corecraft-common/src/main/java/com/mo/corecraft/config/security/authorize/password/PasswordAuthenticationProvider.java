@@ -39,11 +39,11 @@ public class PasswordAuthenticationProvider implements AuthenticationProvider {
         Map<String, Object> params = passwordAuthToken.getAdditionalParameters();
         String username = (String) params.get("username");
         String password = (String) params.get("password");
-        UsernamePasswordAuthenticationToken usernamePasswordAuthenticationToken =
-                new UsernamePasswordAuthenticationToken(username, password);
         SecurityUser user = (SecurityUser)userDetailsService.loadUserByUsername(username);
         if (user == null || !passwordEncoder.matches(password, user.getPassword()))
          throw new OAuth2AuthenticationException("用户名或密码错误");
+        UsernamePasswordAuthenticationToken usernamePasswordAuthenticationToken =
+                new UsernamePasswordAuthenticationToken(user, password, user.getAuthorities());
         // 访问令牌(Access Token) 构造器
         assert registeredClient != null;
         DefaultOAuth2TokenContext.Builder tokenContextBuilder = DefaultOAuth2TokenContext.builder()

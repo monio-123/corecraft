@@ -1,29 +1,21 @@
 package com.mo.corecraft.model.entity;
 
 import com.baomidou.mybatisplus.annotation.TableField;
-import com.mo.corecraft.enums.PermissionTypeEnum;
 import lombok.Getter;
 import lombok.Setter;
 
 @Getter
 @Setter
-public class SysPermission extends BaseEntity {
+public class SysDictType extends BaseEntity {
 
     private Long id;
-
-    @TableField("parent_id")
-    private Long parentId;
 
     private String code;
 
     private String name;
 
-    private Integer sort;
+    private String remark;
 
     @TableField("is_enabled")
     private boolean enabled;
-
-    private PermissionTypeEnum type;
-
-    private String meta;
 }

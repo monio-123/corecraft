@@ -2,43 +2,27 @@ package com.mo.corecraft.config.security.resource;
 
 import com.mo.corecraft.utils.SecurityUtil;
 import org.springframework.stereotype.Component;
-import org.springframework.security.core.GrantedAuthority;
 
 import java.util.Collection;
-import java.util.stream.Collectors;
+import java.util.Set;
 
-@Component("auth") // 在 SpEL 表达式中使用 @auth 调用
+@Component("auth")
 public class AuthCheck {
 
     public boolean hasAnyRoleOrPermission(Collection<String> roles, Collection<String> permissions) {
-        SecurityUser user = SecurityUtil.getUser();
-        if (user == null || user.getAuthorities() == null) {
-            return false;
-        }
-        var authorities = user.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .collect(Collectors.toSet());
-        boolean hasRole = roles.stream().anyMatch(authorities::contains);
+        Set<String> userRoles = SecurityUtil.getRoles();
+        boolean hasRole = roles.stream().anyMatch(userRoles::contains);
         if (hasRole) {
             return true;
         }
-        return permissions.stream().anyMatch(user.getPermissions()::contains);
+        return permissions.stream().anyMatch(SecurityUtil.getPermissions()::contains);
     }
 
-
     public boolean hasRoleOrPermission(String role, String permission) {
-        SecurityUser user = SecurityUtil.getUser();
-        if (user == null || user.getAuthorities() == null) {
-            return false;
-        }
-        // 先判断角色
-        boolean hasRole = user.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .anyMatch(role::equals);
-        if (hasRole) {
+        Set<String> userRoles = SecurityUtil.getRoles();
+        if (userRoles.contains(role)) {
             return true;
         }
-        // 再判断权限
-        return user.getPermissions() != null && user.getPermissions().contains(permission);
+        return SecurityUtil.getPermissions().contains(permission);
     }
 }

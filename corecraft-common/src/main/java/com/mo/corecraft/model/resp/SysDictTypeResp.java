@@ -1,4 +1,4 @@
-package com.mo.corecraft.model.dto;
+package com.mo.corecraft.model.resp;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Getter;
@@ -8,19 +8,17 @@ import java.time.LocalDateTime;
 
 @Getter
 @Setter
-public class SysUserDTO {
+public class SysDictTypeResp {
 
     private Long id;
 
-    private String username;
+    private String code;
 
-    private String nickname;
+    private String name;
 
-    private String avatar;
+    private String remark;
 
-    private String email;
-
-    private String mobile;
+    private boolean enabled;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
     private LocalDateTime createTime;

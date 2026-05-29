@@ -9,9 +9,9 @@ import lombok.Setter;
 @Builder
 public class SysUserQuery {
 
+    private Long id;
+
     private String username;
 
     private String roleCode;
-
-    private String permissionCode;
 }

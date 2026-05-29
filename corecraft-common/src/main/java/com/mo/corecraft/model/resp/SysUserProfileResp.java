@@ -1,14 +1,15 @@
-package com.mo.corecraft.model.req;
+package com.mo.corecraft.model.resp;
 
-import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.util.List;
+import java.util.Set;
+
 @Getter
 @Setter
-public class SysUserUpdateReq {
+public class SysUserProfileResp {
 
-    @NotNull(message = "id不能为空")
     private Long id;
 
     private String username;
@@ -20,4 +21,8 @@ public class SysUserUpdateReq {
     private String email;
 
     private String mobile;
+
+    private List<String> roles;
+
+    private Set<String> permissions;
 }

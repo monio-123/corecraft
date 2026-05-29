@@ -18,12 +18,30 @@ public class ResultResp<T> {
         this.data = data;
     }
 
+    public ResultResp(int code, String message, T data) {
+        this.code = code;
+        this.message = message;
+        this.data = data;
+    }
+
+    public static <T> ResultResp<T> success() {
+        return new ResultResp<>(ResultCodeEnum.SUCCESS, null);
+    }
+
     public static <T> ResultResp<T> success(T data) {
         return new ResultResp<>(ResultCodeEnum.SUCCESS, data);
     }
 
-    public static <T> ResultResp<T> fail(int code, String message) {
+    public static <T> ResultResp<T> fail() {
         return new ResultResp<>(ResultCodeEnum.FAIL, null);
+    }
+
+    public static <T> ResultResp<T> fail(String message) {
+        return new ResultResp<>(ResultCodeEnum.FAIL.getCode(), message, null);
+    }
+
+    public static <T> ResultResp<T> fail(int code, String message) {
+        return new ResultResp<>(code, message, null);
     }
 
     public static <T> ResultResp<T> data(T data) {

@@ -6,12 +6,15 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Getter
 @Setter
 public class SysPermissionResp {
 
     private Long id;
+
+    private Long parentId;
 
     private String code;
 
@@ -22,6 +25,10 @@ public class SysPermissionResp {
     private boolean enabled;
 
     private PermissionTypeEnum type;
+
+    private String meta;
+
+    private List<SysPermissionResp> children;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
     private LocalDateTime createTime;

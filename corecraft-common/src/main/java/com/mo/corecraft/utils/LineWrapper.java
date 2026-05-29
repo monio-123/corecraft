@@ -11,7 +11,6 @@ public class LineWrapper<T, R> {
     private final T param;
     private final R wrapper;
 
-
     private LineWrapper(T param, R wrapper) {
         this.param = param;
         this.wrapper = wrapper;
@@ -21,7 +20,7 @@ public class LineWrapper<T, R> {
         return new LineWrapper<>(param, new LambdaQueryWrapper<>());
     }
 
-    public static <T> LineWrapper<T, LambdaQueryWrapper<T>> ofLambdaQueryWrapper(T param, LambdaQueryWrapper<T> wrapper){
+    public static <T, V> LineWrapper<T, LambdaQueryWrapper<V>> ofLambdaQueryWrapper(T param, LambdaQueryWrapper<V> wrapper){
         return new LineWrapper<>(param, wrapper);
     }
 
