@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { getMenuPaths, hasToken } from '../utils/auth'
 
 const routes = [
   {
@@ -31,6 +32,11 @@ const routes = [
         path: 'permissions',
         name: 'Permissions',
         component: () => import('../views/Permissions.vue')
+      },
+      {
+        path: 'dicts',
+        name: 'Dictionaries',
+        component: () => import('../views/Dictionaries.vue')
       }
     ]
   }
@@ -41,13 +47,21 @@ const router = createRouter({
   routes
 })
 
+const protectedMenuPaths = ['/users', '/roles', '/permissions', '/dicts']
+
 // 路由守卫
 router.beforeEach((to, from, next) => {
-  const token = localStorage.getItem('token')
+  const token = hasToken()
+  const menuPaths = getMenuPaths()
   
   if (to.meta.requiresAuth && !token) {
-    // 需要认证但没有token，重定向到登录页
     next({ name: 'Login' })
+  } else if (
+    to.meta.requiresAuth &&
+    protectedMenuPaths.includes(to.path) &&
+    !menuPaths.includes(to.path)
+  ) {
+    next({ name: 'Home' })
   } else if (to.name === 'Login' && token) {
     // 已登录用户访问登录页，重定向到首页
     next({ name: 'Home' })

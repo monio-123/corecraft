@@ -41,6 +41,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Lock } from '@element-plus/icons-vue'
 import { login } from '../api/auth'
+import { saveAuth } from '../utils/auth'
 
 const router = useRouter()
 const loginFormRef = ref(null)
@@ -68,10 +69,7 @@ const handleLogin = async () => {
       loading.value = true
       try {
         const res = await login(loginForm.username, loginForm.password)
-        // 存储token
-        localStorage.setItem('token', res.access_token)
-        localStorage.setItem('token_type', res.token_type)
-        localStorage.setItem('expires_in', res.expires_in)
+        saveAuth(res)
         
         ElMessage.success('登录成功')
         router.push('/')

@@ -1,2 +1,0 @@
-# corecraft
-base scaffolding

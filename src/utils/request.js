@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import router from '../router'
+import { clearAuth, getToken, getTokenType } from './auth'
 
 const service = axios.create({
   baseURL: '/api',
@@ -15,8 +16,8 @@ service.interceptors.request.use(
       return config
     }
     
-    const token = localStorage.getItem('token')
-    const tokenType = localStorage.getItem('token_type')
+    const token = getToken()
+    const tokenType = getTokenType()
     if (token && tokenType) {
       config.headers['Authorization'] = `${tokenType} ${token}`
     }
@@ -30,16 +31,22 @@ service.interceptors.request.use(
 // 响应拦截器
 service.interceptors.response.use(
   response => {
-    return response.data
+    const data = response.data
+    if (data && typeof data === 'object' && Object.prototype.hasOwnProperty.call(data, 'code')) {
+      if (data.code !== 200) {
+        const msg = data.message || '请求失败'
+        ElMessage.error(msg)
+        return Promise.reject(new Error(msg))
+      }
+    }
+    return data
   },
   error => {
     if (error.response) {
       switch (error.response.status) {
         case 401:
-          // 清除token并跳转到登录页
-          localStorage.removeItem('token')
-          localStorage.removeItem('token_type')
-          localStorage.removeItem('expires_in')
+          // 清除登录态并跳转到登录页
+          clearAuth()
           router.push('/login')
           ElMessage.error('登录已过期，请重新登录')
           break
