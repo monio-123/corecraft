@@ -43,4 +43,8 @@ public class SecurityUtil {
     public static boolean isAdmin() {
         return ADMIN_ROLES.stream().anyMatch(getRoles()::contains);
     }
+
+    public static boolean isAdminRoleCode(String code) {
+        return ADMIN_ROLES.contains(code);
+    }
 }

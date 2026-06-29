@@ -14,6 +14,7 @@ import com.mo.corecraft.repository.SysRolePermissionRepository;
 import com.mo.corecraft.repository.SysRoleRepository;
 import com.mo.corecraft.service.SysRoleService;
 import com.mo.corecraft.utils.BeanUtils;
+import com.mo.corecraft.utils.SecurityUtil;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
@@ -27,6 +28,7 @@ import java.util.Optional;
 public class SysRoleServiceImpl implements SysRoleService {
 
     private final SysRoleRepository sysRoleRepository;
+
     private final SysRolePermissionRepository sysRolePermissionRepository;
 
     @Override
@@ -76,6 +78,10 @@ public class SysRoleServiceImpl implements SysRoleService {
             }
         });
         if (req.getPermissionIds() != null) {
+            SysRole entity = sysRoleRepository.entityById(req.getId());
+            if (SecurityUtil.isAdminRoleCode(entity.getCode())) {
+                return;
+            }
             sysRolePermissionRepository.saveRolePermissions(req.getId(), req.getPermissionIds());
             CacheManagerFacade.clear(CacheKeys.SECURITY_USER_RECORD);
         }
@@ -84,6 +90,10 @@ public class SysRoleServiceImpl implements SysRoleService {
     @Override
     @Transactional
     public void deleteSysRole(Long id) {
+        SysRole entity = sysRoleRepository.entityById(id);
+        if (SecurityUtil.isAdminRoleCode(entity.getCode())) {
+            throw new RuntimeException("超级管理员角色不允许删除");
+        }
         sysRolePermissionRepository.deleteByRoleId(id);
         sysRoleRepository.delete(id);
         CacheManagerFacade.clear(CacheKeys.SECURITY_USER_RECORD);
