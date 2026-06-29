@@ -3,7 +3,7 @@
     <!-- 顶部导航栏 -->
     <div class="header">
       <div class="logo">
-        <h2>Cerebrove</h2>
+        <h2>Corecraft Web</h2>
       </div>
       <div class="nav-menu">
         <el-menu
