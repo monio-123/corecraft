@@ -115,7 +115,7 @@
       </el-form>
       <template #footer>
         <el-button @click="typeDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="saveType">保存</el-button>
+        <el-button type="primary" :loading="typeSaving" @click="saveType">保存</el-button>
       </template>
     </el-dialog>
 
@@ -146,7 +146,7 @@
       </el-form>
       <template #footer>
         <el-button @click="itemDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="saveItem">保存</el-button>
+        <el-button type="primary" :loading="itemSaving" @click="saveItem">保存</el-button>
       </template>
     </el-dialog>
   </div>
@@ -173,6 +173,8 @@ const currentTypeId = ref(null)
 const keyword = ref('')
 const itemsLoading = ref(false)
 
+const typeSaving = ref(false)
+const itemSaving = ref(false)
 const typeDialogVisible = ref(false)
 const itemDialogVisible = ref(false)
 
@@ -262,27 +264,32 @@ const saveType = async () => {
     ElMessage.error('请填写字典名称和编码')
     return
   }
-  const previousCode = typeForm.code
-  const payload = {
-    code: typeForm.code,
-    name: typeForm.name,
-    enabled: typeForm.enabled,
-    remark: typeForm.remark
-  }
-  if (typeForm.id) {
-    await updateDictType({ id: typeForm.id, ...payload })
-    ElMessage.success('字典类型已更新')
-  } else {
-    await createDictType(payload)
-    ElMessage.success('字典类型已创建')
-  }
-  typeDialogVisible.value = false
-  await fetchDictTypes()
-  if (!typeForm.id) {
-    const created = dictTypes.value.find(item => item.code === previousCode)
-    if (created) {
-      currentTypeId.value = created.id
+  typeSaving.value = true
+  try {
+    const previousCode = typeForm.code
+    const payload = {
+      code: typeForm.code,
+      name: typeForm.name,
+      enabled: typeForm.enabled,
+      remark: typeForm.remark
     }
+    if (typeForm.id) {
+      await updateDictType({ id: typeForm.id, ...payload })
+      ElMessage.success('字典类型已更新')
+    } else {
+      await createDictType(payload)
+      ElMessage.success('字典类型已创建')
+    }
+    typeDialogVisible.value = false
+    await fetchDictTypes()
+    if (!typeForm.id) {
+      const created = dictTypes.value.find(item => item.code === previousCode)
+      if (created) {
+        currentTypeId.value = created.id
+      }
+    }
+  } finally {
+    typeSaving.value = false
   }
 }
 
@@ -317,24 +324,29 @@ const saveItem = async () => {
     return
   }
 
-  const payload = {
-    dictTypeId: currentType.value.id,
-    label: itemForm.label,
-    value: itemForm.value,
-    sort: itemForm.sort,
-    enabled: itemForm.enabled,
-    cssClass: itemForm.cssClass,
-    remark: itemForm.remark
+  itemSaving.value = true
+  try {
+    const payload = {
+      dictTypeId: currentType.value.id,
+      label: itemForm.label,
+      value: itemForm.value,
+      sort: itemForm.sort,
+      enabled: itemForm.enabled,
+      cssClass: itemForm.cssClass,
+      remark: itemForm.remark
+    }
+    if (itemForm.id) {
+      await updateDictItem({ id: itemForm.id, ...payload })
+      ElMessage.success('字典项已更新')
+    } else {
+      await createDictItem(payload)
+      ElMessage.success('字典项已创建')
+    }
+    itemDialogVisible.value = false
+    await fetchDictItems(currentType.value.id)
+  } finally {
+    itemSaving.value = false
   }
-  if (itemForm.id) {
-    await updateDictItem({ id: itemForm.id, ...payload })
-    ElMessage.success('字典项已更新')
-  } else {
-    await createDictItem(payload)
-    ElMessage.success('字典项已创建')
-  }
-  itemDialogVisible.value = false
-  await fetchDictItems(currentType.value.id)
 }
 
 const removeItem = async (id) => {

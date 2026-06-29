@@ -31,13 +31,25 @@
                 <el-icon><Edit /></el-icon>
                 编辑
               </el-button>
-              <el-button size="small" @click="openPermDialog(row.id)">
-                资源分配
-              </el-button>
-              <el-button type="danger" size="small" @click="removeRole(row.id)">
-                <el-icon><Delete /></el-icon>
-                删除
-              </el-button>
+              <el-tooltip
+                content="超级管理员默认拥有所有权限，无需手动分配"
+                :disabled="!isAdminRoleCode(row.code)"
+                placement="top"
+              >
+                <el-button size="small" @click="openPermDialog(row.id)" :disabled="isAdminRoleCode(row.code)">
+                  资源分配
+                </el-button>
+              </el-tooltip>
+              <el-tooltip
+                content="超级管理员角色不允许删除"
+                :disabled="!isAdminRoleCode(row.code)"
+                placement="top"
+              >
+                <el-button type="danger" size="small" @click="removeRole(row.id)" :disabled="isAdminRoleCode(row.code)">
+                  <el-icon><Delete /></el-icon>
+                  删除
+                </el-button>
+              </el-tooltip>
             </template>
           </el-table-column>
         </el-table>
@@ -105,6 +117,7 @@
 import { nextTick, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete } from '@element-plus/icons-vue'
+import { isAdminRoleCode } from '../utils/auth'
 import request from '../utils/request'
 import { createRole, deleteRole, getRoleDetail, getRoleList, updateRole } from '../api/role'
 

@@ -55,6 +55,10 @@ export function isAdmin() {
   return getRoles().some((r) => ADMIN_ROLES.includes(r))
 }
 
+export function isAdminRoleCode(code) {
+  return ADMIN_ROLES.includes(code)
+}
+
 export function saveMenuTree(menuTree = []) {
   localStorage.setItem(MENU_TREE_KEY, JSON.stringify(menuTree))
   const paths = []
@@ -95,11 +99,5 @@ export function getMenuPaths() {
 }
 
 export function clearAuth() {
-  localStorage.removeItem(TOKEN_KEY)
-  localStorage.removeItem(TOKEN_TYPE_KEY)
-  localStorage.removeItem(EXPIRES_IN_KEY)
-  localStorage.removeItem(PERMISSIONS_KEY)
-  localStorage.removeItem(ROLES_KEY)
-  localStorage.removeItem(MENU_TREE_KEY)
-  localStorage.removeItem(MENU_PATHS_KEY)
+  localStorage.clear()
 }

@@ -31,6 +31,29 @@
               <span>{{ item.title }}</span>
             </el-menu-item>
           </el-sub-menu>
+
+          <el-sub-menu index="knowledge">
+            <template #title>
+              <el-icon><Reading /></el-icon>
+              <span>自学平台</span>
+            </template>
+            <el-menu-item index="/knowledge/learn">
+              <el-icon><MagicStick /></el-icon>
+              <span>学习主题</span>
+            </el-menu-item>
+            <el-menu-item index="/knowledge/trees">
+              <el-icon><CollectionTag /></el-icon>
+              <span>知识树</span>
+            </el-menu-item>
+            <el-menu-item index="/knowledge/exams">
+              <el-icon><Document /></el-icon>
+              <span>试卷中心</span>
+            </el-menu-item>
+            <el-menu-item index="/knowledge/history">
+              <el-icon><Timer /></el-icon>
+              <span>考试历史</span>
+            </el-menu-item>
+          </el-sub-menu>
         </el-menu>
       </div>
       <div class="user-info">
@@ -162,7 +185,7 @@
 import { ref, computed, watch, reactive, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { House, Setting, UserFilled, User, Lock, ArrowDown, CollectionTag, Close } from '@element-plus/icons-vue'
+import { House, Setting, UserFilled, User, Lock, ArrowDown, CollectionTag, Close, Reading, Document, Timer, List, MagicStick } from '@element-plus/icons-vue'
 import { clearAuth, getMenuPaths, saveAuthorizationProfile, saveMenuTree } from '../utils/auth'
 import { getMyMenuTree, getMyProfile, updateMyPassword, updateMyProfile, uploadMyAvatar } from '../api/user'
 import request from '../utils/request'
@@ -236,6 +259,9 @@ const activeMenu = computed(() => {
   ) {
     return 'system'
   }
+  if (path.startsWith('/knowledge')) {
+    return 'knowledge'
+  }
   return path
 })
 
@@ -259,7 +285,13 @@ const getTabTitle = (name) => {
     'Roles': '角色管理',
     'Users': '用户管理',
     'Permissions': '资源管理',
-    'Dictionaries': '字典管理'
+    'Dictionaries': '字典管理',
+    'KnowledgeTrees': '知识树',
+    'KnowledgeTreeView': '知识树详情',
+    'LearnTopic': '学习主题',
+    'Exams': '试卷中心',
+    'ExamTake': '考试作答',
+    'ExamHistory': '考试历史'
   }
   return titleMap[name] || name
 }

@@ -8,9 +8,15 @@ const service = axios.create({
   timeout: 5000
 })
 
+function generateTraceId() {
+  return crypto.randomUUID().replace(/-/g, '').substring(0, 16)
+}
+
 // 请求拦截器
 service.interceptors.request.use(
   config => {
+    config.headers['X-Trace-Id'] = generateTraceId()
+
     // 登录请求不需要添加token
     if (config.url === '/oauth2/token') {
       return config
