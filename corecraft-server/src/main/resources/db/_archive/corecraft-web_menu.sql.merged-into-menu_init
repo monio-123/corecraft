@@ -1,0 +1,23 @@
+-- corecraft-web 自主学习平台菜单
+-- 在执行此脚本前请确保 sys_permission 表存在且管理员角色已配置 (默认 role_id = 1)
+
+-- corecraft-web GROUP
+INSERT INTO sys_permission (parent_id, code, name, sort, is_enabled, type, meta, create_time, update_time, is_delete)
+VALUES (NULL, 'corecraft-web', 'corecraft-web', 3, 1, 'GROUP', '{"icon":"MagicStick"}', NOW(), NOW(), 0);
+
+SET @corecraft_web_group_id = LAST_INSERT_ID();
+
+-- corecraft-web 下的 MENU 节点（"树"是 topic 派生视图，不再是独立入口）
+INSERT INTO sys_permission (parent_id, code, name, sort, is_enabled, type, meta, create_time, update_time, is_delete)
+VALUES
+(@corecraft_web_group_id, 'corecraft-web:learn', '记录知识点', 1, 1, 'MENU', '{"path":"/corecraft-web/learn","icon":"MagicStick"}', NOW(), NOW(), 0),
+(@corecraft_web_group_id, 'corecraft-web:topic-detail', '知识点详情', 2, 1, 'MENU', '{"path":"/corecraft-web/topic/:id","icon":"Document","hidden":true}', NOW(), NOW(), 0);
+
+-- 为管理员角色分配 corecraft-web 菜单权限（请根据实际管理员角色 ID 修改）
+SET @admin_role_id = 1;
+
+INSERT INTO sys_role_permission (role_id, permission_id, create_time, update_time, is_delete)
+SELECT @admin_role_id, id, NOW(), NOW(), 0
+FROM sys_permission
+WHERE code IN ('corecraft-web', 'corecraft-web:learn', 'corecraft-web:topic-detail')
+AND is_delete = 0;
