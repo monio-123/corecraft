@@ -1,59 +1,46 @@
+# =============================================================================
+# 公共启动配置（所有环境共用）
+# 环境差异由 spring.profiles.active + Nacos 配置中心承载；
+# application-{profile}.yml 只作本地兜底，Nacos 上同名配置会覆盖它。
+# =============================================================================
 spring:
-  data:
-    redis:
-      host: 172.168.87.42
-      port: 6380
-      password: 1qaz2wsx
-      database: 2
-  cache:
-    type: none
-    redis:
-      time-to-live: 600000
   application:
-    name: corecraft
-  servlet:
-    multipart:
-      max-file-size: 2MB
-      max-request-size: 2MB
-  datasource:
-    type: com.zaxxer.hikari.HikariDataSource
-    url: jdbc:mysql://172.168.87.32:3306/corecraft?serverTimezone=GMT%2B8&useUnicode=true&allowMultiQueries=true&characterEncoding=utf8&useServerPrepStmts=true&useSSL=false
-    username: root
-    password: 1qaz2wsx
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    hikari:
-      minimum-idle: 5
-      maximum-pool-size: 20
-      pool-name: PET_Hikari
-      idle-timeout: 30000
-      max-lifetime: 1800000
-      connection-timeout: 30000
-      login-timeout: 500
-      validation-timeout: 1000
-      connection-test-query: SELECT 1
-      initialization-fail-timeout: 1000
+    # 权威定义：Nacos 上的服务名 + 配置 dataId 前缀（corecraft-server-{profile}.yml）都跟着它
+    name: corecraft-server
 
-server:
-  port: 8089
-  servlet:
-    context-path:  /api
+  profiles:
+    # 不能缺这一项。缺了 application-{profile}.yml 根本不会加载，
+    # 本地兜底的数据源 / Redis / 端口全部丢失，应用启动即失败。
+    active: ${SPRING_PROFILES_ACTIVE:dev}
 
-mybatis-plus:
-  mapper-locations: classpath*:mappers/*.xml
-  global-config:
-    db-config:
-      logic-delete-field: is_delete
-      logic-delete-value: 1
-      logic-not-delete-value: 0
-      id-type: auto
+  cloud:
+    nacos:
+      username: ${NACOS_USERNAME:nacos}
+      password: ${NACOS_PASSWORD:nacos}
 
+      discovery:
+        server-addr: ${NACOS_HOST:127.0.0.1}:${NACOS_PORT:8848}
+        # Nacos 默认命名空间的 ID 是空字符串，"public" 只是控制台上的显示名；
+        # 填 public 会带着一个不存在的 namespace ID 去查配置，永远查不到。
+        namespace: ${NACOS_NAMESPACE:}
+        watch:
+          enabled: true
+        # 官方默认 30000ms。调到 1s 会让客户端对 Nacos Server 持续长轮询，加重服务端压力
+        watch-delay: 5000
 
-logging:
-  pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%X{traceId}] [%thread] %-5level %logger{36} - %msg%n"
-  level:
-    root: info
+      config:
+        # 与 discovery 共用同一地址源，避免两处各写一遍后漂移
+        server-addr: ${spring.cloud.nacos.discovery.server-addr}
+        namespace: ${spring.cloud.nacos.discovery.namespace}
+        # NACOS_GROUP 只表达"配置分组"这一个语义。
+        # 环境切换一律走 SPRING_PROFILES_ACTIVE，不要复用同一个变量兼任两种语义。
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
 
-app:
-  storage:
-    avatar-dir: ${user.dir}/storage/avatars
+  config:
+    # optional: 的取舍——
+    #   好处：Nacos 不可用时仍能用本地 application-{profile}.yml 启动（脚手架必需）
+    #   代价：Nacos 上"配置存在但 YAML 格式错误"时同样被静默跳过，
+    #         表现为"配了不生效"，极难排查。排查时先确认该 dataId 存在且能正常解析。
+    import:
+      - optional:nacos:application-${SPRING_PROFILES_ACTIVE:dev}.yml
+      - optional:nacos:${spring.application.name}-${SPRING_PROFILES_ACTIVE:dev}.yml
