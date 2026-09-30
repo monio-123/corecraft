@@ -60,13 +60,12 @@ export function getTree(id) {
   return treeMap.value.get(id) || null
 }
 
-export function createTree({ name, description, icon, category }) {
+export function createTree({ name, description, icon }) {
   const tree = {
     id: genId(),
     name,
     description: description || '',
     icon: icon || '📚',
-    category: category || '',
     sort: treeMap.value.size,
     createdAt: now(),
     updatedAt: now()
@@ -385,7 +384,7 @@ export function syncTopicToTrees(topic) {
 // 辅助：按名称获取或创建树
 function getOrCreateTree(name) {
   let tree = getTrees().find((tr) => tr.name === name)
-  if (!tree) tree = createTree({ name, description: '', icon: '📂', category: '' })
+  if (!tree) tree = createTree({ name, description: '', icon: '📂' })
   return tree.id
 }
 
@@ -503,8 +502,9 @@ export function getAllTags() {
   const tagCount = {}
   for (const t of topicMap.value.values()) {
     for (const tag of (t.tags || [])) {
-      const key = tag.category + '::' + tag.name
-      if (!tagCount[key]) tagCount[key] = { ...tag, count: 0 }
+      if (!tag?.name) continue
+      const key = tag.name
+      if (!tagCount[key]) tagCount[key] = { name: tag.name, count: 0 }
       tagCount[key].count++
     }
   }
@@ -512,19 +512,14 @@ export function getAllTags() {
 }
 
 /**
- * 解析标签输入，不自动补全类别。
- * "计算机网络::HTTP" → {category:"计算机网络", name:"HTTP"}
- * "HTTP" → {category:"HTTP", name:"HTTP"}（裸标签）
+ * 解析标签输入，仅保留 name（category 概念已废弃）。
+ * 旧数据"计算机网络::HTTP"会被当成整段"name"保留（向后兼容，不报错）。
  */
 export function resolveTags(rawTags) {
-  return rawTags.map((s) => {
-    const parts = s.split('::')
-    if (parts.length >= 2 && parts[0] && parts[1]) {
-      return { category: parts[0], name: parts[1] }
-    }
-    const name = parts[0] || s
-    return { category: name, name }
-  })
+  return (rawTags || [])
+    .map((s) => String(s || '').trim())
+    .filter(Boolean)
+    .map((name) => ({ name }))
 }
 
 // 为 topic 建立与已有 topic 的关联（标签重叠 + 内容相似度）
@@ -533,11 +528,11 @@ export function refreshTopicRelations(topicId) {
   if (!topic) return
 
   const allTopics = [...topicMap.value.values()].filter((t) => t.id !== topicId)
-  const topicTagKeys = (topic.tags || []).map((t) => t.category + '::' + t.name)
+  const topicTagKeys = (topic.tags || []).map((t) => t.name).filter(Boolean)
 
   const related = []
   for (const other of allTopics) {
-    const otherTagKeys = (other.tags || []).map((t) => t.category + '::' + t.name)
+    const otherTagKeys = (other.tags || []).map((t) => t.name).filter(Boolean)
     const sharedTags = topicTagKeys.filter((k) => otherTagKeys.includes(k))
     // 有共享标签即建立关联
     if (sharedTags.length > 0) {
@@ -604,7 +599,7 @@ const TOPIC_TEMPLATE = `## {{title}}
  * 只生成内容和标签，不生成题目。
  * @param {string} title - 用户输入的主题
  * @param {(step: string) => void} onProgress - 进度回调
- * @returns {Promise<{content: string, tags: {name:string, category:string}[]}>}
+ * @returns {Promise<{content: string, tags: {name:string}[]}>}
  */
 export async function aiGenerateTopic(title, onProgress) {
   onProgress?.('正在分析主题...')

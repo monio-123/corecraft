@@ -78,7 +78,25 @@
               <el-form-item label="启用">
                 <el-switch v-model="editForm.enabled" />
               </el-form-item>
-              <el-form-item label="Meta">
+
+              <!-- MENU 类型专用字段 -->
+              <template v-if="isMenuType">
+                <el-form-item label="路由路径">
+                  <el-input v-model="editForm.menuPath" placeholder="/knowledge/trees" />
+                </el-form-item>
+                <el-form-item label="图标">
+                  <el-select v-model="editForm.menuIcon" clearable placeholder="选择图标" style="width: 220px">
+                    <el-option v-for="icon in iconOptions" :key="icon" :label="icon" :value="icon">
+                      <div style="display: flex; align-items: center; gap: 8px;">
+                        <el-icon><component :is="Icons[icon]" /></el-icon>
+                        <span>{{ icon }}</span>
+                      </div>
+                    </el-option>
+                  </el-select>
+                </el-form-item>
+              </template>
+
+              <el-form-item v-else label="Meta">
                 <el-input v-model="editForm.meta" type="textarea" :rows="6" placeholder='JSON 字符串，如 {"path":"/system/permission"}' />
               </el-form-item>
 
@@ -116,7 +134,25 @@
         <el-form-item label="启用">
           <el-switch v-model="createForm.enabled" />
         </el-form-item>
-        <el-form-item label="Meta">
+
+        <!-- MENU 类型专用字段 -->
+        <template v-if="isCreateMenuType">
+          <el-form-item label="路由路径">
+            <el-input v-model="createForm.menuPath" placeholder="/knowledge/trees" />
+          </el-form-item>
+          <el-form-item label="图标">
+            <el-select v-model="createForm.menuIcon" clearable placeholder="选择图标" style="width: 220px">
+              <el-option v-for="icon in iconOptions" :key="icon" :label="icon" :value="icon">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <el-icon><component :is="Icons[icon]" /></el-icon>
+                  <span>{{ icon }}</span>
+                </div>
+              </el-option>
+            </el-select>
+          </el-form-item>
+        </template>
+
+        <el-form-item v-else label="Meta">
           <el-input v-model="createForm.meta" type="textarea" :rows="6" placeholder='JSON 字符串，如 {"path":"/system/permission"}' />
         </el-form-item>
       </el-form>
@@ -129,16 +165,35 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Delete, Refresh } from '@element-plus/icons-vue'
+import * as Icons from '@element-plus/icons-vue'
 import request from '../utils/request'
+
+// 可选图标列表
+const iconOptions = [
+  'House', 'Setting', 'User', 'UserFilled', 'Lock', 'CollectionTag',
+  'Reading', 'Document', 'Timer', 'MagicStick', 'List', 'Grid',
+  'Menu', 'Search', 'Bell', 'Star', 'Flag', 'Folder',
+  'Files', 'Link', 'Edit', 'Delete', 'Plus', 'Minus',
+  'Check', 'Close', 'ArrowRight', 'ArrowDown', 'Back', 'Right'
+]
 
 const treeData = ref([])
 const currentNode = ref(null)
 
 const saving = ref(false)
 const creating = ref(false)
+
+// 解析 meta JSON
+function parseMeta(meta) {
+  try {
+    return meta ? JSON.parse(meta) : {}
+  } catch {
+    return {}
+  }
+}
 
 const editForm = reactive({
   id: null,
@@ -148,7 +203,10 @@ const editForm = reactive({
   code: '',
   sort: 0,
   enabled: true,
-  meta: ''
+  meta: '',
+  // MENU 类型专用字段
+  menuPath: '',
+  menuIcon: ''
 })
 
 const createDialogVisible = ref(false)
@@ -159,8 +217,15 @@ const createForm = reactive({
   code: '',
   sort: 0,
   enabled: true,
-  meta: ''
+  meta: '',
+  // MENU 类型专用字段
+  menuPath: '',
+  menuIcon: ''
 })
+
+// 是否为 MENU 类型
+const isMenuType = computed(() => editForm.type === 'MENU')
+const isCreateMenuType = computed(() => createForm.type === 'MENU')
 
 const tagType = (type) => {
   switch (type) {
@@ -187,6 +252,10 @@ const onNodeClick = (data) => {
   editForm.sort = data.sort ?? 0
   editForm.enabled = data.enabled ?? true
   editForm.meta = data.meta ?? ''
+  // 解析 MENU 类型专用字段
+  const meta = parseMeta(data.meta)
+  editForm.menuPath = meta.path || ''
+  editForm.menuIcon = meta.icon || ''
 }
 
 const openCreateDialog = (parent) => {
@@ -197,7 +266,20 @@ const openCreateDialog = (parent) => {
   createForm.sort = 0
   createForm.enabled = true
   createForm.meta = ''
+  createForm.menuPath = ''
+  createForm.menuIcon = ''
   createDialogVisible.value = true
+}
+
+// 构建 meta JSON
+function buildMeta(type, meta, menuPath, menuIcon) {
+  if (type !== 'MENU') return meta
+  const metaObj = parseMeta(meta)
+  if (menuPath) metaObj.path = menuPath
+  else delete metaObj.path
+  if (menuIcon) metaObj.icon = menuIcon
+  else delete metaObj.icon
+  return JSON.stringify(metaObj)
 }
 
 const createNode = async () => {
@@ -214,7 +296,7 @@ const createNode = async () => {
       code: createForm.code,
       sort: createForm.sort,
       enabled: createForm.enabled,
-      meta: createForm.meta
+      meta: buildMeta(createForm.type, createForm.meta, createForm.menuPath, createForm.menuIcon)
     })
     createDialogVisible.value = false
     ElMessage.success('创建成功')
@@ -238,7 +320,7 @@ const saveEdit = async () => {
       code: editForm.code,
       sort: editForm.sort,
       enabled: editForm.enabled,
-      meta: editForm.meta
+      meta: buildMeta(editForm.type, editForm.meta, editForm.menuPath, editForm.menuIcon)
     })
     ElMessage.success('保存成功')
     await fetchTree()

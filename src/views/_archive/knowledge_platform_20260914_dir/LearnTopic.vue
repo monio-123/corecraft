@@ -26,7 +26,6 @@
           multiple
           filterable
           allow-create
-          default-first-option
           placeholder="选择或输入标签（如 #计算机网络）"
           :disabled="aiGenerating"
           style="flex:1"
@@ -206,7 +205,6 @@
                 multiple
                 filterable
                 allow-create
-                default-first-option
                 placeholder="选择或输入标签"
                 size="small"
                 class="tag-editor"
@@ -345,10 +343,14 @@ function startEditTags(t) {
 
 function saveTags(t) {
   const tags = resolveTags(editingTagValues.value)
+  const oldKeys = (t.tags || []).map((tg) => tg.category + '::' + tg.name).sort()
+  const newKeys = tags.map((tg) => tg.category + '::' + tg.name).sort()
+  const unchanged = oldKeys.length === newKeys.length && oldKeys.every((k, i) => k === newKeys[i])
+  editingTagsId.value = null
+  if (unchanged) return
   updateTopic(t.id, { tags })
   syncTopicToTrees(getTopic(t.id))
   refreshSaved()
-  editingTagsId.value = null
   ElMessage.success('标签已更新，知识树已同步')
 }
 

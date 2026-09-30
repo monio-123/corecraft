@@ -17,43 +17,40 @@
         >
           <!-- 首页 -->
           <el-menu-item index="/">
-            <el-icon><House /></el-icon>
+            <el-icon><Icons.House /></el-icon>
             <span>首页</span>
           </el-menu-item>
 
-          <el-sub-menu v-if="visibleSystemMenus.length" index="system">
-            <template #title>
-              <el-icon><Setting /></el-icon>
-              <span>系统管理</span>
-            </template>
-            <el-menu-item v-for="item in visibleSystemMenus" :key="item.path" :index="item.path">
-              <el-icon><component :is="item.icon" /></el-icon>
-              <span>{{ item.title }}</span>
-            </el-menu-item>
-          </el-sub-menu>
+          <!-- 动态菜单 -->
+          <template v-for="group in visibleMenuTree" :key="group.id">
+            <!-- GROUP 类型：子菜单 -->
+            <el-sub-menu v-if="group.type === 'GROUP' && group.children?.length" :index="group.code">
+              <template #title>
+                <el-icon v-if="getIconComponent(parseMeta(group.meta).icon)">
+                  <component :is="getIconComponent(parseMeta(group.meta).icon)" />
+                </el-icon>
+                <span>{{ group.name }}</span>
+              </template>
+              <el-menu-item
+                v-for="child in group.children"
+                :key="child.id"
+                :index="parseMeta(child.meta).path"
+              >
+                <el-icon v-if="getIconComponent(parseMeta(child.meta).icon)">
+                  <component :is="getIconComponent(parseMeta(child.meta).icon)" />
+                </el-icon>
+                <span>{{ child.name }}</span>
+              </el-menu-item>
+            </el-sub-menu>
 
-          <el-sub-menu index="knowledge">
-            <template #title>
-              <el-icon><Reading /></el-icon>
-              <span>自学平台</span>
-            </template>
-            <el-menu-item index="/knowledge/learn">
-              <el-icon><MagicStick /></el-icon>
-              <span>学习主题</span>
+            <!-- MENU 类型：直接菜单项 -->
+            <el-menu-item v-else-if="parseMeta(group.meta).path" :index="parseMeta(group.meta).path">
+              <el-icon v-if="getIconComponent(parseMeta(group.meta).icon)">
+                <component :is="getIconComponent(parseMeta(group.meta).icon)" />
+              </el-icon>
+              <span>{{ group.name }}</span>
             </el-menu-item>
-            <el-menu-item index="/knowledge/trees">
-              <el-icon><CollectionTag /></el-icon>
-              <span>知识树</span>
-            </el-menu-item>
-            <el-menu-item index="/knowledge/exams">
-              <el-icon><Document /></el-icon>
-              <span>试卷中心</span>
-            </el-menu-item>
-            <el-menu-item index="/knowledge/history">
-              <el-icon><Timer /></el-icon>
-              <span>考试历史</span>
-            </el-menu-item>
-          </el-sub-menu>
+          </template>
         </el-menu>
       </div>
       <div class="user-info">
@@ -79,8 +76,8 @@
     <!-- 分隔线 -->
     <div class="separator"></div>
     
-    <!-- 页面标签页 -->
-    <div class="tabs-container" v-if="tabs.length > 0">
+    <!-- 页面标签页（可隐藏：tabsVisible=false 时整块折叠，给工作区更多空间） -->
+    <div class="tabs-container" v-if="tabs.length > 0 && tabsVisible">
       <div ref="tabsContainerRef" class="page-tabs-shell">
         <div class="page-tabs">
           <div
@@ -123,9 +120,31 @@
     
     <!-- 主内容区域 -->
     <div class="main-content">
-      <router-view v-slot="{ Component, route: currentViewRoute }">
+      <!-- tabs 切换按钮：钉在主内容区右上角，tabs 隐藏时仍可见（用户随时可展开） -->
+      <el-tooltip
+        :content="tabsVisible ? '隐藏标签栏（专注当前任务）' : '显示标签栏'"
+        placement="bottom-end"
+      >
+        <el-button
+          class="tabs-toggle-btn"
+          size="small"
+          text
+          @click="tabsVisible = !tabsVisible"
+        >
+          <el-icon>
+            <ArrowDown v-if="tabsVisible" />
+            <ArrowUp v-else />
+          </el-icon>
+        </el-button>
+      </el-tooltip>
+      <router-view v-slot="{ Component }">
+        <!--
+          不写 :key：keep-alive 按 component.name（SFC 文件名推断）做缓存 key。
+          之前 :key 跟 route.name 强绑定 → 路由一切换 key 就变 → 缓存实例被销毁重建 → 状态全丢。
+          当前路由表每个 component name 唯一，没有"同 component 不同 params"复用场景（业务页都 1:1）。
+        -->
         <keep-alive :include="cachedTabNames">
-          <component :is="Component" :key="currentViewRoute.name || currentViewRoute.path" />
+          <component :is="Component" />
         </keep-alive>
       </router-view>
     </div>
@@ -185,8 +204,9 @@
 import { ref, computed, watch, reactive, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { House, Setting, UserFilled, User, Lock, ArrowDown, CollectionTag, Close, Reading, Document, Timer, List, MagicStick } from '@element-plus/icons-vue'
-import { clearAuth, getMenuPaths, saveAuthorizationProfile, saveMenuTree } from '../utils/auth'
+import * as Icons from '@element-plus/icons-vue'
+import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
+import { clearAuth, getMenuTree, getMenuPaths, saveAuthorizationProfile, saveMenuTree } from '../utils/auth'
 import { getMyMenuTree, getMyProfile, updateMyPassword, updateMyProfile, uploadMyAvatar } from '../api/user'
 import request from '../utils/request'
 
@@ -205,12 +225,7 @@ const passwordDialogVisible = ref(false)
 const profileSaving = ref(false)
 const passwordSaving = ref(false)
 const allowedMenuPaths = ref(getMenuPaths())
-const systemMenus = [
-  { path: '/users', title: '用户管理', icon: User },
-  { path: '/roles', title: '角色管理', icon: UserFilled },
-  { path: '/permissions', title: '资源管理', icon: Lock },
-  { path: '/dicts', title: '字典管理', icon: CollectionTag }
-]
+const menuTree = ref(getMenuTree())
 
 const profileForm = reactive({
   username: '',
@@ -233,6 +248,8 @@ const tabs = ref([
 
 // 当前激活的标签页
 const activeTab = ref('Home')
+// tabs 区可见性：用户可手动隐藏给工作区更多空间。默认 true（保持原有体验）
+const tabsVisible = ref(true)
 const tabsContainerRef = ref(null)
 const draggingTabName = ref('')
 const dragPreviewIndex = ref(-1)
@@ -247,29 +264,72 @@ let pressedTabName = ''
 let dragPointerOffsetX = 0
 let lastPointerX = 0
 
+// 解析 meta JSON
+function parseMeta(meta) {
+  try {
+    return meta ? JSON.parse(meta) : {}
+  } catch {
+    return {}
+  }
+}
+
+// 获取图标组件
+function getIconComponent(iconName) {
+  return iconName && Icons[iconName] ? Icons[iconName] : null
+}
+
 // 根据当前路由设置激活的菜单
 const activeMenu = computed(() => {
   const path = route.path
   if (path === '/') return path
-  if (
-    path.startsWith('/roles') ||
-    path.startsWith('/users') ||
-    path.startsWith('/permissions') ||
-    path.startsWith('/dicts')
-  ) {
-    return 'system'
-  }
-  if (path.startsWith('/knowledge')) {
-    return 'knowledge'
+  // 从 menuTree 中找到匹配的菜单项
+  for (const group of menuTree.value) {
+    const meta = parseMeta(group.meta)
+    if (meta.path && path.startsWith(meta.path)) return group.code
+    for (const child of (group.children || [])) {
+      const childMeta = parseMeta(child.meta)
+      if (childMeta.path && path.startsWith(childMeta.path)) return group.code
+    }
   }
   return path
 })
 
-const visibleSystemMenus = computed(() =>
-  systemMenus.filter(item =>
-    allowedMenuPaths.value.includes(item.path)
-  )
-)
+// 渲染后的菜单树
+// - 跳过 meta.path 含 ':' 的菜单项（如 /corecraft-web/topic/:id）：占位路径，用户主动点会跳
+//   字面量 URL 触发 #34 的 NaN bug。menuTree 里仍含此项供 menuRouteNameMap 读 tab 标题。
+// - GROUP 类型不仅要整体判断可见，还要过滤掉内部不可见的子项（避免 el-sub-menu 渲染出占位子项）
+const visibleMenuTree = computed(() => {
+  const isPlaceholderPath = (path) => typeof path === 'string' && path.includes(':')
+  const isVisibleMenu = (node) => {
+    const meta = parseMeta(node.meta)
+    return meta.path && !isPlaceholderPath(meta.path) && allowedMenuPaths.value.includes(meta.path)
+  }
+  return menuTree.value
+    .map((item) => {
+      if (item.type === 'GROUP') {
+        const visibleChildren = (item.children || []).filter(isVisibleMenu)
+        return { ...item, children: visibleChildren }
+      }
+      return isVisibleMenu(item) ? item : null
+    })
+    .filter(Boolean)
+})
+
+// menuTree → routeName → name 映射：让 tab 标题从 sys_permission.name 读（用户诉求"通过数据库配置"）。
+// meta.routeName 跟 router/index.js 的 route.name 一一对应（如 'CorecraftWebTopicDetail'）。
+// 加新菜单：只需 sys_permission 加菜单项 + meta.routeName，Layout 不动（继续满足 #45 解耦诉求）。
+const menuRouteNameMap = computed(() => {
+  const map = new Map()
+  const collect = (node) => {
+    const meta = parseMeta(node.meta)
+    if (node.name && meta.routeName) {
+      map.set(meta.routeName, node.name)
+    }
+    ;(node.children || []).forEach(collect)
+  }
+  menuTree.value.forEach(collect)
+  return map
+})
 
 const cachedTabNames = computed(() => tabs.value.map(tab => tab.name))
 
@@ -278,38 +338,24 @@ const userAvatarFallback = computed(() => {
   return source.slice(0, 1).toUpperCase()
 })
 
-// 根据路由名称获取标签页标题
-const getTabTitle = (name) => {
-  const titleMap = {
-    'Home': '首页',
-    'Roles': '角色管理',
-    'Users': '用户管理',
-    'Permissions': '资源管理',
-    'Dictionaries': '字典管理',
-    'KnowledgeTrees': '知识树',
-    'KnowledgeTreeView': '知识树详情',
-    'LearnTopic': '学习主题',
-    'Exams': '试卷中心',
-    'ExamTake': '考试作答',
-    'ExamHistory': '考试历史'
-  }
-  return titleMap[name] || name
-}
-
-// 监听路由变化，添加页面标签
+// 监听路由变化，添加页面标签。
+// tab 标题优先级：menuRouteNameMap（sys_permission.name，数据库配置）→ route.meta.title（路由 fallback）→ route.name。
+// 加新菜单 = sys_permission 加菜单项（含 meta.routeName）+ router/index.js 加路由（含 meta.title fallback）。
+// Layout.vue 不维护任何映射表，完全由数据库 + 路由表驱动。
 watch(
   () => route.name,
-  (newName) => {
-    if (newName && newName !== 'Login') {
-      const exists = tabs.value.some(tab => tab.name === newName)
+  () => {
+    const name = route.name
+    if (name && name !== 'Login') {
+      const exists = tabs.value.some(tab => tab.name === name)
       if (!exists) {
         tabs.value.push({
-          name: newName,
-          title: getTabTitle(newName),
+          name,
+          title: menuRouteNameMap.value.get(name) || route.meta?.title || name,
           path: route.path
         })
       }
-      activeTab.value = newName
+      activeTab.value = name
     }
   },
   { immediate: true }
@@ -356,6 +402,7 @@ const loadCurrentContext = async () => {
   ])
   Object.assign(currentUser, profileRes?.data || {})
   saveMenuTree(menuRes?.data || [])
+  menuTree.value = getMenuTree()
   saveAuthorizationProfile(permissionsRes?.data || {})
   allowedMenuPaths.value = getMenuPaths()
 }
@@ -777,6 +824,20 @@ onBeforeUnmount(() => {
   overflow-y: auto;
   width: 100%;
   margin-top: 10px;
+  position: relative;  /* 让 .tabs-toggle-btn absolute 相对 main-content 定位 */
+}
+/* tabs 切换按钮：absolute 钉在 main-content 右上角。pointer-events:none 让按钮不抢路由切换区，
+   el-tooltip/button 自身 pointer-events:auto（默认行为）保证可点击。 */
+.tabs-toggle-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 100;
+  opacity: 0.4;
+  transition: opacity 0.15s;
+}
+.tabs-toggle-btn:hover {
+  opacity: 1;
 }
 
 /* Dropdown menu styling */
