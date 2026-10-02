@@ -8,11 +8,9 @@ spring:
       server-addr: ${NACOS_HOST:127.0.0.1}:${NACOS_PORT:8848}
       username: ${NACOS_USERNAME:nacos}
       password: ${NACOS_PASSWORD:nacos}
-      discovery:
-        namespace: ${NACOS_NAMESPACE:public}
       config:
-        namespace: ${spring.cloud.nacos.discovery.namespace}
-        group: ${NACOS_GROUP:prod}
+        namespace: ${NACOS_NAMESPACE:7d4187ca-61db-435e-b898-56e0b1aaf8ae}
+        group: ${NACOS_GROUP:${spring.profiles.active}}
   config:
     import:
       - optional:nacos:application-${spring.profiles.active}.yml
