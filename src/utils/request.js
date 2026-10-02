@@ -8,8 +8,13 @@ const service = axios.create({
   timeout: 5000
 })
 
+// crypto.randomUUID 仅在安全上下文（HTTPS / localhost）可用，HTTP + IP 访问时不存在
 function generateTraceId() {
-  return crypto.randomUUID().replace(/-/g, '').substring(0, 16)
+  const c = globalThis.crypto
+  const id = typeof c?.randomUUID === 'function'
+    ? c.randomUUID()
+    : `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`
+  return id.replace(/-/g, '').substring(0, 16)
 }
 
 // 请求拦截器

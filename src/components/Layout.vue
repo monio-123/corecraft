@@ -613,7 +613,7 @@ onMounted(async () => {
   try {
     await loadCurrentContext()
   } catch (e) {
-    ElMessage.error('加载用户信息失败')
+    ElMessage.error(`加载用户信息失败：${e?.message || e}`)
   }
 })
 
