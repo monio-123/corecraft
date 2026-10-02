@@ -22,7 +22,9 @@
         <java.version>17</java.version>
         <mybatis-plus.version>3.5.5</mybatis-plus.version>
         <spring-cloud.version>2023.0.1</spring-cloud.version>
-        <spring-cloud-alibaba.version>2023.0.1.3</spring-cloud-alibaba.version>
+        <!-- 2023.0.1.3版本修改了配置文件中配置命名空间、分组等等的方式 issue
+         https://github.com/alibaba/spring-cloud-alibaba/issues/3998?spm=7145af80.1ef41eac.0.0.1fa12d5bQ28hrM-->
+        <spring-cloud-alibaba.version>2023.0.1.2</spring-cloud-alibaba.version>
     </properties>
 
     <dependencyManagement>
