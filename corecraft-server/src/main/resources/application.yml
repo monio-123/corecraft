@@ -9,7 +9,7 @@ spring:
       username: ${NACOS_USERNAME:nacos}
       password: ${NACOS_PASSWORD:nacos}
       config:
-        namespace: ${NACOS_NAMESPACE:7d4187ca-61db-435e-b898-56e0b1aaf8ae}
+        namespace: ${NACOS_NAMESPACE:public}
         group: ${NACOS_GROUP:${spring.profiles.active}}
   config:
     import:
