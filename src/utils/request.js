@@ -1,7 +1,7 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import router from '../router'
-import { clearAuth, getToken, getTokenType } from './auth'
+import { clearAuth, getToken, getTokenType, hasToken } from './auth'
 
 const service = axios.create({
   baseURL: '/api',
@@ -56,10 +56,17 @@ service.interceptors.response.use(
     if (error.response) {
       switch (error.response.status) {
         case 401:
-          // 清除登录态并跳转到登录页
-          clearAuth()
-          router.push('/login')
-          ElMessage.error('登录已过期，请重新登录')
+          // 清登录态 + 跳登录页 + 提示是一次性副作用，必须幂等：
+          // token 过期时**在途请求会同时收到多个 401**（bootstrapSession 并行 3 个，
+          // AppHomeView/AppLayout 并行 5 个），不收敛的话用户会看到 N 个「登录已过期」。
+          // 判据取「本地还有没有 token」而不是标志位：第一个 401 执行 clearAuth 后，
+          // 后续 401 自动降级为静默 reject，不重复提示、不重复跳转。
+          // 不用标志位 → 重新登录后再次过期照样正常处理，无需手动复位。
+          if (hasToken()) {
+            clearAuth()
+            router.push('/login')
+            ElMessage.error('登录已过期，请重新登录')
+          }
           break
         default:
           // ElMessage.error(error.response.data.error_description || '请求失败')

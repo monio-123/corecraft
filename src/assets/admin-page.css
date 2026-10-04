@@ -1,0 +1,231 @@
+/* ============================================================
+ * 管理后台页面骨架 —— admin 壳（Layout.vue）内页面共用
+ *
+ * 2026-10-03 新增：Users / Roles / Permissions / Dictionaries 四个页面
+ * 原本各自复制了一份完全相同的 .card-header / .card-header h2 /
+ * `-container { padding: 20px 0 }`（4 × 6 行完全重复），收敛到这里。
+ *
+ * 2026-10-03 补：所有类统一加 `.page` 前缀。
+ *   原因：这些是【非 scoped】的全局类，而业务壳（AppLayout）的
+ *   AppHomeView 里也有一个叫 `.panel` / `.panel__title` 的类。
+ *   scoped 样式虽然能盖住同名属性，但盖不住本文件额外加的
+ *   `overflow: auto` —— 业务壳的面板会莫名多出滚动条。
+ *   加前缀是两个壳互不干扰的硬边界。
+ * ============================================================ */
+
+/* 页面根容器。内容区的 padding 由壳的 .main-content 负责，
+   这里不再重复加 padding —— 原来 -container 自带 padding: 20px 0
+   叠加壳的 20px，是"双重留白"的来源。 */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* 页头：标题在左、主操作在右 */
+.page .page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.page .page-head__title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--cc-text-1);
+  letter-spacing: 0.2px;
+}
+
+.page .page-head__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 面板：双栏布局里的每一格（树 / 详情 / 列表）。
+   min-height 给在这里，两个双栏页面共用一份，不再各写一个 520 / 540。 */
+.page .panel {
+  background: var(--cc-surface);
+  border: 1px solid var(--cc-border-strong);
+  border-radius: var(--cc-radius);
+  padding: 16px;
+  min-height: 520px;
+  overflow: auto;
+}
+
+.page .panel__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--cc-text-1);
+}
+
+/* 面板头部：标题 + 一组操作 */
+.page .panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.page .panel-head__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 操作区：一行文字链接，右对齐，间距均匀。
+   不用实心彩色按钮 —— 一行三个（蓝/绿/红）会把视线全钉在操作区上，
+   真正要扫的数据反而被压过去。表格操作列和面板头部操作区共用这一套。 */
+.page .ops {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+.page .ops .el-button + .el-button {
+  margin-left: 0;
+}
+
+/* 次要说明文字。和它上面的控件之间要有呼吸，否则会贴成一坨。
+   故意不加 .page 前缀：弹窗里的同类说明被 teleport 到 body，已经不在 .page 之内，
+   加前缀会让弹窗内那一份彻底没有样式（面板内的还在，看起来"半边生效"）。 */
+.hint {
+  font-size: 12px;
+  color: var(--cc-text-3);
+  line-height: 1.6;
+  margin-top: 6px;
+}
+
+/* ============================================================
+ * 表格皮肤
+ *
+ * Element Plus 默认表格是"满屏竖线 + 灰底表头 + 斑马纹"，
+ * 和新的浅色扁平基调冲突。这里统一改成"只留横向分隔"的现代写法。
+ *
+ * 全部以 .page 前缀限定 —— 业务壳（AppLayout 下的知识点表格等）不受影响。
+ * ============================================================ */
+
+.page .el-table {
+  --el-table-border-color: var(--cc-border);
+  --el-table-header-text-color: var(--cc-text-3);
+  --el-table-header-bg-color: transparent;
+  --el-table-row-hover-bg-color: var(--cc-surface-2);
+  font-size: 14px;
+  border-radius: var(--cc-radius);
+  overflow: hidden;
+}
+
+/* 去掉竖分隔线：列与列之间不再画竖线 */
+.page .el-table th.el-table__cell,
+.page .el-table td.el-table__cell {
+  border-right: none;
+}
+
+/* 表头：淡字、无底色、字重轻 */
+.page .el-table thead th.el-table__cell {
+  background: transparent;
+  font-weight: 500;
+  font-size: 13px;
+  height: 44px;
+}
+
+/* 数据行：给足呼吸高度 */
+.page .el-table tbody td.el-table__cell {
+  height: 50px;
+}
+
+/* 单元格一律单行。EP 默认 word-break: break-all，会把"系统管理员"、
+   "2025-11-03 15:48:19" 这类内容折成两行，把行高撑乱、列宽挤没。
+   长内容用 show-overflow-tooltip 兜底。 */
+.page .el-table .cell {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 取消斑马纹：横向分隔线已经够了，再加条纹就是噪音 */
+.page .el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
+  background: transparent;
+}
+.page .el-table--striped .el-table__body tr.el-table__row--striped:hover > td.el-table__cell {
+  background: var(--cc-surface-2);
+}
+
+/* EP 2.x 在 inner-wrapper 上画了一条底边，圆角卡片不需要它 */
+.page .el-table .el-table__inner-wrapper::before {
+  display: none;
+}
+
+/* ============================================================
+ * 右侧固定操作列
+ *
+ * 列一多，表格就会进入横向滚动（el-table--scrollable-x），操作列会被推出
+ * 可视区 —— 用户必须横向拖才能点到"删除"。把它 fixed 住。
+ *
+ * EP 默认给固定列画的是一层 10px 的柔和投影（--el-table-fixed-*-column），
+ * 和这里"只留横向分隔"的扁平基调不合，而且我们会额外给一列竖线，投影就成了
+ * 重复的两层分隔。关掉投影，改成一条 1px 竖线。
+ * ============================================================ */
+.page .el-table {
+  --el-table-fixed-right-column: none;
+  --el-table-fixed-left-column: none;
+}
+
+/* 固定列是 sticky 的，底色必须不透明。
+   表头这里要比 EP 的 `.el-table.is-scrolling-left th.el-table-fixed-column--right`
+   更高一级（多一个元素选择器），否则同优先级下谁后加载谁赢，
+   会出现"操作"和被遮住的"创建时间"两行字叠在一起。
+   斑马行要单独再写一遍：上面取消斑马纹那条规则的特异性 (0,5,2) 比这里高，
+   不重写的话斑马行的固定列会被重置成透明，底下的创建时间会透出来叠字。 */
+.page .el-table thead th.el-table-fixed-column--right,
+.page .el-table tbody td.el-table-fixed-column--right,
+.page .el-table--striped .el-table__body tr.el-table__row--striped > td.el-table-fixed-column--right {
+  background-color: var(--cc-surface);
+  box-shadow: inset 1px 0 0 var(--cc-border);
+}
+
+.page .el-table tbody tr:hover > td.el-table-fixed-column--right,
+.page .el-table--striped .el-table__body tr.el-table__row--striped:hover > td.el-table-fixed-column--right {
+  background-color: var(--cc-surface-2);
+}
+
+/* ============================================================
+ * 标签
+ *
+ * EP 默认标签是"彩色描边 + 彩色底"的 chip，一屏十几枚（资源树的每个节点
+ * 都挂一个类型标签）会盖过数据本身。去掉描边、留淡底，安静一档。
+ * ============================================================ */
+.page .el-tag {
+  border: none;
+  font-weight: 500;
+}
+
+/* 树节点里的类型标签：再降一档，12px 就够，它是结构信息不是状态信息 */
+.page .tree-node__tag,
+.page .permission-node__tag {
+  font-size: 12px;
+  padding: 0 6px;
+  height: 20px;
+  line-height: 20px;
+}
+
+/* ============================================================
+ * 空状态
+ *
+ * EP 的 el-empty 自带一张巨大的灰色几何插画，半屏都是它，和这里的
+ * 扁平基调完全不是一回事。去掉插画，只留一行淡字。
+ * 表格空态（el-table__empty-block）内部也是 el-empty，一并生效。
+ * ============================================================ */
+.page .el-empty {
+  padding: 32px 0;
+}
+.page .el-empty__image {
+  display: none;
+}
+.page .el-empty__description,
+.page .el-table__empty-text {
+  color: var(--cc-text-3);
+  font-size: 13px;
+}

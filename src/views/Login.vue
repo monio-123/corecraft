@@ -42,6 +42,7 @@ import { ElMessage } from 'element-plus'
 import { User, Lock } from '@element-plus/icons-vue'
 import { login } from '../api/auth'
 import { saveAuth } from '../utils/auth'
+import { bootstrapSession, landingRoute } from '../utils/session'
 
 const router = useRouter()
 const loginFormRef = ref(null)
@@ -72,7 +73,9 @@ const handleLogin = async () => {
         saveAuth(res)
         
         ElMessage.success('登录成功')
-        router.push('/')
+        // 先拉菜单才知道该落哪个壳：有管理后台菜单（超管）→ 后台，只有业务菜单 → 业务界面
+        try { await bootstrapSession() } catch { /* 拉不到就按默认落点，不挡住登录 */ }
+        router.replace(landingRoute())
       } catch (error) {
         // 处理错误信息
         const errorMsg = error.response?.data?.error_description || '登录失败'

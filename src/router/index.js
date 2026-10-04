@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { getMenuPaths, hasToken } from '../utils/auth'
+import { bootstrapSession, isSessionReady, landingRoute } from '../utils/session'
 import Users from '../views/Users.vue'
 import Dictionaries from '../views/Dictionaries.vue'
 import Forbidden from '../views/Forbidden.vue'
@@ -11,6 +12,35 @@ const routes = [
     name: 'Login',
     component: () => import('../views/Login.vue'),
     meta: { requiresAuth: false }
+  },
+  // 业务壳：/app/* 走 AppLayout（沉浸式、左侧栏 + 居中窄栏）
+  // 与 admin 壳（/ 下的 Layout.vue：顶部菜单 + 可拖拽页面 tabs）完全独立。
+  // 走哪个壳由菜单项的 meta.shell 决定，超管在资源管理页配置。
+  {
+    path: '/app',
+    component: () => import('../components/corecraft-web/AppLayout.vue'),
+    meta: { requiresAuth: true },
+    children: [
+      {
+        path: '',
+        name: 'AppHome',
+        component: () => import('../views/corecraft-web/AppHomeView.vue'),
+        meta: { title: '首页' }
+      },
+      {
+        path: 'learn',
+        name: 'AppLearn',
+        component: () => import('../views/corecraft-web/AppLearnView.vue'),
+        meta: { title: '随手记' }
+      },
+      {
+        // 详情页不是菜单项（meta.path 含 ':'，导航里会被过滤掉），只能从卡片点进
+        path: 'topic/:id',
+        name: 'AppTopicDetail',
+        component: () => import('../views/corecraft-web/AppTopicDetailView.vue'),
+        meta: { title: '知识点' }
+      }
+    ]
   },
   {
     path: '/',
@@ -48,20 +78,6 @@ const routes = [
         meta: { title: '字典管理' }
       },
       {
-        path: 'corecraft-web/learn',
-        name: 'CorecraftWebLearnTopic',
-        component: () => import('../views/corecraft-web/LearnTopicView.vue'),
-        meta: { title: '随手记' }
-      },
-      {
-        // 知识点详情：从列表卡片点进 / 关联跳转都用 router.push，
-        // 进入 Layout 顶部 tabs 作为可关闭、可切换的标签页（不需要菜单项）。
-        path: 'corecraft-web/topic/:id',
-        name: 'CorecraftWebTopicDetail',
-        component: () => import('../views/corecraft-web/TopicDetailView.vue'),
-        meta: { title: '知识点详情' }
-      },
-      {
         path: 'forbidden',
         name: 'Forbidden',
         component: Forbidden,
@@ -84,24 +100,49 @@ const router = createRouter({
 const protectedMenuPaths = ['/users', '/roles', '/permissions', '/dicts']
 
 // 路由守卫
-router.beforeEach((to, from, next) => {
-  const token = hasToken()
-  const menuPaths = getMenuPaths()
-  
-  if (to.meta.requiresAuth && !token) {
-    next({ name: 'Login' })
-  } else if (
-    to.meta.requiresAuth &&
-    protectedMenuPaths.includes(to.path) &&
-    !menuPaths.includes(to.path)
-  ) {
-    next({ name: 'Forbidden' })
-  } else if (to.name === 'Login' && token) {
-    // 已登录用户访问登录页，重定向到首页
-    next({ name: 'Home' })
-  } else {
+router.beforeEach(async (to, from, next) => {
+  // 登录页：已登录就按"你拥有哪个壳的菜单"决定落点
+  if (to.name === 'Login') {
+    if (hasToken()) {
+      if (!isSessionReady()) {
+        try { await bootstrapSession() } catch { /* 拉不到就按默认落点 */ }
+      }
+      next(landingRoute())
+      return
+    }
     next()
+    return
   }
+
+  if (!to.meta.requiresAuth) {
+    next()
+    return
+  }
+
+  if (!hasToken()) {
+    next({ name: 'Login' })
+    return
+  }
+
+  // 判路由权限之前必须先把菜单拉回来。
+  // 硬刷新 / 直接输地址 / 新标签打开时，两个壳的组件都还没挂载，
+  // localStorage 里的菜单是空的 —— 守卫不等会话就查 getMenuPaths()，
+  // 会把有权限的用户也弹到 /forbidden。
+  if (!isSessionReady()) {
+    try {
+      await bootstrapSession()
+    } catch {
+      // 拉不到（token 过期等）就按"没有权限"往下走，
+      // request.js 的拦截器会负责清 token 并跳登录
+    }
+  }
+
+  if (protectedMenuPaths.includes(to.path) && !getMenuPaths().includes(to.path)) {
+    next({ name: 'Forbidden' })
+    return
+  }
+
+  next()
 })
 
 export default router 

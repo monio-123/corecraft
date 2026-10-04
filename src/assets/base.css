@@ -1,53 +1,51 @@
-/* color palette from <https://github.com/vuejs/theme> */
+/* ============================================================
+ * 项目设计 tokens —— 两个壳（Layout.vue / AppLayout.vue）共用的唯一权威来源
+ *
+ * 2026-10-03 重写：删掉 Vite 脚手架残留的 --vt-c-* / --color-* / --section-gap
+ * （20 个变量，定义后从未被任何文件引用），换成实际在用的色阶与尺度。
+ * 新增颜色一律先加到这里，不要在组件里硬编码 hex。
+ * ============================================================ */
+
 :root {
-  --vt-c-white: #ffffff;
-  --vt-c-white-soft: #f8f8f8;
-  --vt-c-white-mute: #f2f2f2;
+  /* 文字色阶：由强到弱，四级够用，不要更多。
+     对应 AppLayout 原有的 #1f2329 / #5a6270 / #a0a5ad / #b6bac1 */
+  --cc-text-1: #1f2329; /* 标题、当前项 */
+  --cc-text-2: #5a6270; /* 正文、常规条目 */
+  --cc-text-3: #a0a5ad; /* 分组标题、辅助说明 */
+  --cc-text-4: #b6bac1; /* 计数、占位、禁用 */
+  --cc-icon: #8a9099; /* 纯图标控件，介于 text-2 与 text-3 之间 */
 
-  --vt-c-black: #181818;
-  --vt-c-black-soft: #222222;
-  --vt-c-black-mute: #282828;
+  /* 面：三层，从页面底到卡片 */
+  --cc-bg: #fafbfc; /* 页面底 */
+  --cc-surface: #ffffff; /* 顶栏、卡片 */
+  --cc-surface-2: #f4f6f8; /* hover 底、输入框底 */
 
-  --vt-c-indigo: #2c3e50;
+  /* 线：两级。分隔用轻，面板边框用重 */
+  --cc-border: #f0f2f5;
+  --cc-border-strong: #e4e7ed;
 
-  --vt-c-divider-light-1: rgba(60, 60, 60, 0.29);
-  --vt-c-divider-light-2: rgba(60, 60, 60, 0.12);
-  --vt-c-divider-dark-1: rgba(84, 84, 84, 0.65);
-  --vt-c-divider-dark-2: rgba(84, 84, 84, 0.48);
+  /* 主色：比 Element Plus 默认 #409eff 更聚焦。
+     对应 AppLayout 原有的 #2b7fff / #eef5ff / #66b1ff */
+  --cc-primary: #2b7fff;
+  --cc-primary-soft: #eef5ff;
+  /* 主色提亮一档，用在 hover（比主色浅，不是更浅的 pastel） */
+  --cc-primary-hover: #408cff;
 
-  --vt-c-text-light-1: var(--vt-c-indigo);
-  --vt-c-text-light-2: rgba(60, 60, 60, 0.66);
-  --vt-c-text-dark-1: var(--vt-c-white);
-  --vt-c-text-dark-2: rgba(235, 235, 235, 0.64);
-}
+  /* 语义色：只补上面缺的 4 支。Element Plus 默认是 #67c23a / #e6a23c /
+     #f56c6c / #909399，和主色不是一条色阶 —— 标签、按钮、开关混排时
+     会明显发脏，这是 admin 壳"看着不高级"的最后一块。 */
+  --cc-success: #34a853;
+  --cc-warning: #d98a1f;
+  --cc-danger: #e5484d;
+  --cc-info: #8a9099;
 
-/* semantic color variables for this project */
-:root {
-  --color-background: var(--vt-c-white);
-  --color-background-soft: var(--vt-c-white-soft);
-  --color-background-mute: var(--vt-c-white-mute);
+  /* 品牌徽标渐变 */
+  --cc-logo-gradient: linear-gradient(135deg, #409eff, #66b1ff);
 
-  --color-border: var(--vt-c-divider-light-2);
-  --color-border-hover: var(--vt-c-divider-light-1);
-
-  --color-heading: var(--vt-c-text-light-1);
-  --color-text: var(--vt-c-text-light-1);
-
-  --section-gap: 160px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-background: var(--vt-c-black);
-    --color-background-soft: var(--vt-c-black-soft);
-    --color-background-mute: var(--vt-c-black-mute);
-
-    --color-border: var(--vt-c-divider-dark-2);
-    --color-border-hover: var(--vt-c-divider-dark-1);
-
-    --color-heading: var(--vt-c-text-dark-1);
-    --color-text: var(--vt-c-text-dark-2);
-  }
+  /* 尺度 */
+  --cc-radius: 8px;
+  --cc-radius-sm: 6px;
+  --cc-transition: background 0.15s, color 0.15s;
 }
 
 *,
@@ -59,6 +57,98 @@
 }
 
 body {
+  /* ---- Element Plus 主题接管 ------------------------------------
+   * EP 启动时用 JS 把全部 --el-* 变量写成 <html> 上的【内联 style】。
+   * 内联样式压过任何样式表，所以在 :root 里写同名 --el-color-* 是无效的，
+   * 必须在 <html> 的后代元素上重新声明才能盖掉继承来的内联值。
+   * 挂在 body 上：全站生效，且覆盖到 teleport 到 body 的弹窗 / 下拉 / 消息框。
+   *
+   * light-N 档位 = ((10-N)/10) × 主色 + (N/10) × 白色。
+   * 注意方向：N 越大越浅，light-9 是 10% 主色 + 90% 白（标签底色用的就是它）。
+   * 改上面任一语义色，这 5 组 light 值都要按这条规则重算 —— 算反了标签会变成实心色块。
+   */
+  --el-color-primary: var(--cc-primary);
+  --el-color-primary-light-3: #6ba5ff;
+  --el-color-primary-light-5: #95bfff;
+  --el-color-primary-light-7: #bfd9ff;
+  --el-color-primary-light-8: #d5e5ff;
+  --el-color-primary-light-9: #eaf2ff;
+  --el-color-primary-dark-2: #2266cc;
+
+  --el-color-success: var(--cc-success);
+  --el-color-success-light-3: #71c287;
+  --el-color-success-light-5: #9ad4a9;
+  --el-color-success-light-7: #c2e5cb;
+  --el-color-success-light-8: #d6eedd;
+  --el-color-success-light-9: #ebf6ee;
+  --el-color-success-dark-2: #2a8642;
+
+  --el-color-warning: var(--cc-warning);
+  --el-color-warning-light-3: #e4ad62;
+  --el-color-warning-light-5: #ecc58f;
+  --el-color-warning-light-7: #f4dcbc;
+  --el-color-warning-light-8: #f7e8d2;
+  --el-color-warning-light-9: #fbf3e9;
+  --el-color-warning-dark-2: #ae6e19;
+
+  --el-color-danger: var(--cc-danger);
+  --el-color-danger-light-3: #ed7f82;
+  --el-color-danger-light-5: #f2a4a6;
+  --el-color-danger-light-7: #f7c8ca;
+  --el-color-danger-light-8: #fadaDB;
+  --el-color-danger-light-9: #fceded;
+  --el-color-danger-dark-2: #b73a3e;
+
+  --el-color-error: var(--cc-danger);
+  --el-color-error-light-3: #ed7f82;
+  --el-color-error-light-5: #f2a4a6;
+  --el-color-error-light-7: #f7c8ca;
+  --el-color-error-light-8: #fadaDB;
+  --el-color-error-light-9: #fceded;
+  --el-color-error-dark-2: #b73a3e;
+
+  --el-color-info: var(--cc-info);
+  --el-color-info-light-3: #adb1b8;
+  --el-color-info-light-5: #c5c8cc;
+  --el-color-info-light-7: #dcdfe0;
+  --el-color-info-light-8: #e8e9eb;
+  --el-color-info-light-9: #f3f4f5;
+  --el-color-info-dark-2: #6e737a;
+
+  /* 文字四阶，与 --cc-text-* 同一套 */
+  --el-text-color-primary: var(--cc-text-1);
+  --el-text-color-regular: var(--cc-text-2);
+  --el-text-color-secondary: var(--cc-text-3);
+  --el-text-color-placeholder: var(--cc-text-3);
+  --el-text-color-disabled: var(--cc-text-4);
+
+  /* 线与面 */
+  --el-border-color-hover: var(--cc-primary);
+  --el-border-color: var(--cc-border-strong);
+  --el-border-color-light: var(--cc-border);
+  --el-border-color-lighter: #f7f8fa;
+  --el-border-color-extra-light: #fafbfc;
+  --el-border-color-dark: #d4d7de;
+  --el-border-color-darker: #cdd0d6;
+  --el-fill-color: var(--cc-surface-2);
+  --el-fill-color-light: #f7f8fa;
+  --el-fill-color-lighter: #fafbfc;
+  --el-fill-color-extra-light: #fcfcfd;
+  --el-fill-color-blank: var(--cc-surface);
+  --el-fill-color-dark: #ebedf0;
+  --el-fill-color-darker: #e6e8eb;
+  --el-bg-color: var(--cc-surface);
+  --el-bg-color-page: var(--cc-bg);
+  --el-bg-color-overlay: var(--cc-surface);
+  --el-disabled-bg-color: var(--cc-surface-2);
+  --el-disabled-text-color: var(--cc-text-3);
+  --el-disabled-border-color: var(--cc-border-strong);
+
+  /* 圆角：EP 默认 base=4px，和壳的 8px 卡片不是一套，一眼就是"外来件"。
+     控件用小一档的 6px（= --cc-radius-sm），卡片 8px，正好是 sm / base 的层级。 */
+  --el-border-radius-base: var(--cc-radius-sm);
+  --el-border-radius-small: 4px;
+
   min-height: 100vh;
   font-family:
     Inter,

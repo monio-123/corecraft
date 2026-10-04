@@ -1,98 +1,96 @@
 <template>
-  <div class="dict-container">
-    <el-card shadow="never">
-      <template #header>
-        <div class="card-header">
-          <h2>字典管理</h2>
-          <div class="header-actions">
-            <el-button type="primary" @click="openTypeDialog()">
-              <el-icon><Plus /></el-icon>
-              新增字典类型
-            </el-button>
-            <el-button @click="fetchDictTypes">
-              <el-icon><Refresh /></el-icon>
-              刷新
-            </el-button>
-          </div>
-        </div>
-      </template>
+  <div class="page">
+    <div class="page-head">
+      <div class="page-head__title">字典管理</div>
+      <div class="page-head__actions">
+        <el-button type="primary" @click="openTypeDialog()">
+          <el-icon><Plus /></el-icon>
+          新增字典类型
+        </el-button>
+        <el-button @click="fetchDictTypes">
+          <el-icon><Refresh /></el-icon>
+          刷新
+        </el-button>
+      </div>
+    </div>
 
-      <div class="dict-content">
-        <div class="dict-type-panel">
-          <el-input
-            v-model="keyword"
-            placeholder="搜索字典名称 / 编码"
-            clearable
-            class="search-input"
-          />
+    <div class="dict-content">
+      <div class="panel">
+        <el-input
+          v-model="keyword"
+          placeholder="搜索字典名称 / 编码"
+          clearable
+          class="search-input"
+        />
 
-          <div class="dict-type-list">
-            <div
-              v-for="item in filteredDictTypes"
-              :key="item.id"
-              class="dict-type-item"
-              :class="{ active: currentType && currentType.id === item.id }"
-              @click="selectType(item)"
-            >
-              <div class="dict-type-item__main">
-                <div class="dict-type-item__title">{{ item.name }}</div>
-                <div class="dict-type-item__code">{{ item.code }}</div>
-              </div>
-              <div class="dict-type-item__meta">
-                <el-tag size="small" :type="item.enabled ? 'success' : 'info'">
-                  {{ item.enabled ? '启用' : '停用' }}
-                </el-tag>
-                <span class="dict-type-item__count">{{ item.itemCount || 0 }} 项</span>
-              </div>
+        <div class="dict-type-list">
+          <div
+            v-for="item in filteredDictTypes"
+            :key="item.id"
+            class="dict-type-item"
+            :class="{ active: currentType && currentType.id === item.id }"
+            @click="selectType(item)"
+          >
+            <div class="dict-type-item__main">
+              <div class="dict-type-item__title">{{ item.name }}</div>
+              <div class="dict-type-item__code">{{ item.code }}</div>
+            </div>
+            <div class="dict-type-item__meta">
+              <el-tag size="small" :type="item.enabled ? 'success' : 'info'">
+                {{ item.enabled ? '启用' : '停用' }}
+              </el-tag>
+              <span class="dict-type-item__count">{{ item.itemCount || 0 }} 项</span>
             </div>
           </div>
-        </div>
-
-        <div class="dict-item-panel">
-          <el-empty v-if="!currentType" description="请选择左侧字典类型" />
-
-          <template v-else>
-            <div class="panel-header">
-              <div>
-                <div class="panel-title">{{ currentType.name }}</div>
-                <div class="panel-subtitle">
-                  编码：{{ currentType.code }} ｜ 描述：{{ currentType.remark || '无' }}
-                </div>
-              </div>
-              <div class="panel-actions">
-                <el-button @click="openTypeDialog(currentType)">编辑类型</el-button>
-                <el-button type="danger" plain @click="removeType(currentType.id)">删除类型</el-button>
-                <el-button type="primary" @click="openItemDialog()">
-                  <el-icon><Plus /></el-icon>
-                  新增字典项
-                </el-button>
-              </div>
-            </div>
-
-            <el-table :data="dictItems" stripe style="width: 100%" v-loading="itemsLoading">
-              <el-table-column prop="label" label="标签" min-width="160" />
-              <el-table-column prop="value" label="键值" min-width="120" />
-              <el-table-column prop="sort" label="排序" width="90" />
-              <el-table-column prop="cssClass" label="样式标记" min-width="120" />
-              <el-table-column prop="remark" label="备注" min-width="180" />
-              <el-table-column label="状态" width="90">
-                <template #default="{ row }">
-                  <el-tag size="small" :type="row.enabled ? 'success' : 'info'">
-                    {{ row.enabled ? '启用' : '停用' }}
-                  </el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column label="操作" width="180" fixed="right">
-                <template #default="{ row }">
-                  <el-button link type="primary" @click="openItemDialog(row)">编辑</el-button>
-                  <el-button link type="danger" @click="removeItem(row.id)">删除</el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-          </template>
         </div>
       </div>
-    </el-card>
+
+      <div class="panel">
+        <el-empty v-if="!currentType" description="请选择左侧字典类型" />
+
+        <template v-else>
+          <div class="panel-head">
+            <div>
+              <div class="panel__title">{{ currentType.name }}</div>
+              <div class="panel-subtitle">
+                编码：{{ currentType.code }} ｜ 描述：{{ currentType.remark || '无' }}
+              </div>
+            </div>
+            <div class="panel-head__actions">
+              <el-button @click="openTypeDialog(currentType)">编辑类型</el-button>
+              <el-button type="primary" @click="openItemDialog()">
+                <el-icon><Plus /></el-icon>
+                新增字典项
+              </el-button>
+              <el-button link type="danger" @click="removeType(currentType.id)">删除类型</el-button>
+            </div>
+          </div>
+
+          <el-table :data="dictItems" stripe style="width: 100%" v-loading="itemsLoading">
+            <el-table-column prop="label" label="标签" min-width="120" />
+            <el-table-column prop="value" label="键值" min-width="100" />
+            <el-table-column prop="sort" label="排序" width="80" />
+            <el-table-column prop="cssClass" label="样式标记" min-width="110" show-overflow-tooltip />
+            <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip />
+            <el-table-column label="状态" width="90">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.enabled ? 'success' : 'info'">
+                  {{ row.enabled ? '启用' : '停用' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="120" fixed="right">
+              <template #default="{ row }">
+                <div class="ops">
+                  <el-button link type="primary" @click="openItemDialog(row)">编辑</el-button>
+                  <el-button link type="danger" @click="removeItem(row.id)">删除</el-button>
+                </div>
+              </template>
+            </el-table-column>
+          </el-table>
+        </template>
+      </div>
+    </div>
 
     <el-dialog
       v-model="typeDialogVisible"
@@ -370,39 +368,13 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.dict-container {
-  padding: 20px 0;
-}
-
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.card-header h2 {
-  margin: 0;
-  font-size: 20px;
-}
-
-.header-actions {
-  display: flex;
-  gap: 10px;
-}
+/* 页面骨架（.page / .page-head / .page-head__title / .panel / .panel-head / .panel__title）
+   在 assets/admin-page.css，这里只留本页专有样式 */
 
 .dict-content {
   display: grid;
-  grid-template-columns: 320px 1fr;
+  grid-template-columns: 280px 1fr;
   gap: 16px;
-}
-
-.dict-type-panel,
-.dict-item-panel {
-  min-height: 540px;
-  border: 1px solid #ebeef5;
-  border-radius: 8px;
-  padding: 16px;
-  background: #fff;
 }
 
 .search-input {
@@ -412,7 +384,7 @@ onMounted(async () => {
 .dict-type-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .dict-type-item {
@@ -420,29 +392,29 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  padding: 14px 12px;
-  border: 1px solid #ebeef5;
-  border-radius: 8px;
+  padding: 12px;
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: border-color 0.15s, background 0.15s;
 }
-
-.dict-type-item:hover,
+.dict-type-item:hover {
+  border-color: var(--cc-primary);
+}
 .dict-type-item.active {
-  border-color: #409eff;
-  background: #ecf5ff;
+  border-color: var(--cc-primary);
+  background: var(--cc-primary-soft);
 }
 
 .dict-type-item__title {
-  font-size: 15px;
-  font-weight: 600;
-  color: #303133;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--cc-text-1);
 }
-
 .dict-type-item__code {
   margin-top: 4px;
   font-size: 12px;
-  color: #909399;
+  color: var(--cc-text-3);
 }
 
 .dict-type-item__meta {
@@ -454,30 +426,12 @@ onMounted(async () => {
 
 .dict-type-item__count {
   font-size: 12px;
-  color: #909399;
-}
-
-.panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
-.panel-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: #303133;
+  color: var(--cc-text-3);
 }
 
 .panel-subtitle {
   margin-top: 4px;
-  color: #909399;
+  color: var(--cc-text-3);
   font-size: 13px;
-}
-
-.panel-actions {
-  display: flex;
-  gap: 10px;
 }
 </style>

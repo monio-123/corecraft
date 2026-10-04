@@ -1,57 +1,44 @@
 <template>
-  <div class="users-container">
-    <el-card shadow="never">
-      <template #header>
-        <div class="card-header">
-          <h2>用户管理</h2>
-          <el-button v-if="canCreateUser" type="primary" @click="openCreate">
-            <el-icon><Plus /></el-icon>
-            新增用户
-          </el-button>
-        </div>
-      </template>
-      
-      <!-- 用户管理内容区域 -->
-      <div class="users-content">
-        <el-table :data="usersList" stripe style="width: 100%" v-loading="loading">
-          <el-table-column prop="id" label="用户ID" width="80" />
-          <el-table-column prop="username" label="用户名" />
-          <el-table-column prop="nickname" label="昵称" />
-          <el-table-column prop="email" label="邮箱" />
-          <el-table-column prop="mobile" label="手机" width="140" />
-          <el-table-column prop="roleCode" label="角色" width="140" />
-          <el-table-column prop="createTime" label="创建时间" width="180" />
-          <el-table-column label="操作" width="280">
-            <template #default="scope">
-              <el-button type="primary" size="small" @click="editUser(scope.row)">
-                <el-icon><Edit /></el-icon>
-                编辑
-              </el-button>
-              <el-button type="success" size="small" @click="openAssignRole(scope.row)">
-                分配角色
-              </el-button>
-              <el-button type="danger" size="small" @click="removeUser(scope.row.id)">
-                <el-icon><Delete /></el-icon>
-                删除
-              </el-button>
-            </template>
-          </el-table-column>
-        </el-table>
+  <div class="page">
+    <div class="page-head">
+      <div class="page-head__title">用户管理</div>
+      <el-button v-if="canCreateUser" type="primary" @click="openCreate">
+        <el-icon><Plus /></el-icon>
+        新增用户
+      </el-button>
+    </div>
 
-        <div class="users-pagination">
-          <el-pagination
-            background
-            layout="total, prev, pager, next, sizes"
-            :total="total"
-            :page-sizes="[10, 20, 50, 100]"
-            :page-size="pageSize"
-            :current-page="page"
-            @update:current-page="onPageChange"
-            @update:page-size="onPageSizeChange"
-          />
-        </div>
-      </div>
-    </el-card>
+    <el-table :data="usersList" stripe style="width: 100%" v-loading="loading">
+      <el-table-column prop="id" label="用户ID" width="80" />
+      <el-table-column prop="username" label="用户名" min-width="110" />
+      <el-table-column prop="nickname" label="昵称" min-width="100" />
+      <el-table-column prop="email" label="邮箱" min-width="160" show-overflow-tooltip />
+      <el-table-column prop="mobile" label="手机" width="140" />
+      <el-table-column prop="roleCode" label="角色" width="130" />
+      <el-table-column prop="createTime" label="创建时间" width="170" />
+      <el-table-column label="操作" width="180" fixed="right">
+        <template #default="scope">
+          <div class="ops">
+            <el-button link type="primary" @click="editUser(scope.row)">编辑</el-button>
+            <el-button link @click="openAssignRole(scope.row)">分配角色</el-button>
+            <el-button link type="danger" @click="removeUser(scope.row.id)">删除</el-button>
+          </div>
+        </template>
+      </el-table-column>
+    </el-table>
+
+    <div class="users-pagination">
+      <el-pagination
+        background
+        layout="total, prev, pager, next, sizes"
+        :total="total"
+        :page-sizes="[10, 20, 50, 100]"
+        :page-size="pageSize"
+        :current-page="page"
+        @update:current-page="onPageChange"
+        @update:page-size="onPageSizeChange"
+      />
+    </div>
 
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="560px">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
@@ -108,10 +95,10 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Edit, Delete } from '@element-plus/icons-vue'
+import { Plus } from '@element-plus/icons-vue'
 import { assignUserRole, createUser, deleteUser, getUserPage, updateUser } from '../api/sysUser'
 import { getRoleList } from '../api/role'
-import { hasToken, hasPermission, isAdmin } from '../utils/auth'
+import { hasToken, hasPermission } from '../utils/auth'
 
 const usersList = ref([])
 const loading = ref(false)
@@ -144,7 +131,8 @@ const roleForm = reactive({
 })
 
 const dialogTitle = computed(() => (mode.value === 'create' ? '新增用户' : '编辑用户'))
-const canCreateUser = computed(() => hasPermission('user:add') || isAdmin())
+// 按钮显隐完全由权限配置决定，没有"超管恒真"的旁路
+const canCreateUser = computed(() => hasPermission('user:add'))
 
 const rules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
@@ -299,28 +287,10 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.users-container {
-  padding: 20px 0;
-}
-
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.card-header h2 {
-  margin: 0;
-  font-size: 20px;
-}
-
-.users-content {
-  margin-top: 20px;
-}
+/* 页面骨架（.page / .page-head / .page-head__title）在 assets/admin-page.css，这里只留本页专有样式 */
 
 .users-pagination {
   display: flex;
   justify-content: flex-end;
-  margin-top: 16px;
 }
 </style>

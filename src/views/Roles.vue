@@ -1,60 +1,36 @@
 <template>
-  <div class="roles-container">
-    <el-card shadow="never">
-      <template #header>
-        <div class="card-header">
-          <h2>角色管理</h2>
-          <el-button type="primary" @click="openRoleDialog()">
-            <el-icon><Plus /></el-icon>
-            新增角色
-          </el-button>
-        </div>
-      </template>
+  <div class="page">
+    <div class="page-head">
+      <div class="page-head__title">角色管理</div>
+      <el-button type="primary" @click="openRoleDialog()">
+        <el-icon><Plus /></el-icon>
+        新增角色
+      </el-button>
+    </div>
 
-      <div class="roles-content">
-        <el-table :data="rolesList" stripe style="width: 100%" v-loading="loading">
-          <el-table-column prop="id" label="角色ID" width="80" />
-          <el-table-column prop="code" label="角色编码" min-width="140" />
-          <el-table-column prop="name" label="角色名称" />
-          <el-table-column prop="description" label="角色描述" />
-          <el-table-column label="状态" width="100">
-            <template #default="{ row }">
-              <el-tag size="small" :type="row.enabled ? 'success' : 'info'">
-                {{ row.enabled ? '启用' : '停用' }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="createTime" label="创建时间" width="180" />
-          <el-table-column label="操作" width="240" fixed="right">
-            <template #default="{ row }">
-              <el-button type="primary" size="small" @click="openRoleDialog(row.id)">
-                <el-icon><Edit /></el-icon>
-                编辑
-              </el-button>
-              <el-tooltip
-                content="超级管理员默认拥有所有权限，无需手动分配"
-                :disabled="!isAdminRoleCode(row.code)"
-                placement="top"
-              >
-                <el-button size="small" @click="openPermDialog(row.id)" :disabled="isAdminRoleCode(row.code)">
-                  资源分配
-                </el-button>
-              </el-tooltip>
-              <el-tooltip
-                content="超级管理员角色不允许删除"
-                :disabled="!isAdminRoleCode(row.code)"
-                placement="top"
-              >
-                <el-button type="danger" size="small" @click="removeRole(row.id)" :disabled="isAdminRoleCode(row.code)">
-                  <el-icon><Delete /></el-icon>
-                  删除
-                </el-button>
-              </el-tooltip>
-            </template>
-          </el-table-column>
-        </el-table>
-      </div>
-    </el-card>
+    <el-table :data="rolesList" stripe style="width: 100%" v-loading="loading">
+      <el-table-column prop="id" label="角色ID" width="80" />
+      <el-table-column prop="code" label="角色编码" min-width="130" />
+      <el-table-column prop="name" label="角色名称" min-width="120" />
+      <el-table-column prop="description" label="角色描述" show-overflow-tooltip />
+      <el-table-column label="状态" width="90">
+        <template #default="{ row }">
+          <el-tag size="small" :type="row.enabled ? 'success' : 'info'">
+            {{ row.enabled ? '启用' : '停用' }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column prop="createTime" label="创建时间" width="170" />
+      <el-table-column label="操作" width="180" fixed="right">
+        <template #default="{ row }">
+          <div class="ops">
+            <el-button link type="primary" @click="openRoleDialog(row.id)">编辑</el-button>
+            <el-button link @click="openPermDialog(row.id)">资源分配</el-button>
+            <el-button link type="danger" @click="removeRole(row.id)">删除</el-button>
+          </div>
+        </template>
+      </el-table-column>
+    </el-table>
 
     <el-dialog
       v-model="roleDialogVisible"
@@ -116,8 +92,7 @@
 <script setup>
 import { nextTick, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Edit, Delete } from '@element-plus/icons-vue'
-import { isAdminRoleCode } from '../utils/auth'
+import { Plus } from '@element-plus/icons-vue'
 import request from '../utils/request'
 import { createRole, deleteRole, getRoleDetail, getRoleList, updateRole } from '../api/role'
 
@@ -277,38 +252,14 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.roles-container {
-  padding: 20px 0;
-}
-
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.card-header h2 {
-  margin: 0;
-  font-size: 20px;
-}
-
-.roles-content {
-  margin-top: 20px;
-}
+/* 页面骨架（.page / .page-head / .page-head__title）在 assets/admin-page.css */
 
 .permission-panel {
-  border: 1px solid #ebeef5;
-  border-radius: 8px;
-  padding: 12px;
+  border: 1px solid var(--cc-border-strong);
+  border-radius: var(--cc-radius);
+  padding: 16px;
   min-height: 360px;
   overflow: auto;
-}
-
-.permission-panel__title {
-  margin-bottom: 12px;
-  font-size: 14px;
-  font-weight: 600;
-  color: #303133;
 }
 
 .permission-node {

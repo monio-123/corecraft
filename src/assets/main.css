@@ -1,31 +1,12 @@
+/* 全局布局基底。
+ * 2026-10-03 清理：删掉 Vite 脚手架残留的 `a, .green { color: green; padding: 3px; transition: .4s }`
+ * —— 全项目没有任何 <a> 标签、没有 .green class，该规则零命中；
+ * 且全局给 a 加 padding 是隐患（会污染任何后续新增的链接）。
+ * 设计 tokens 定义在 ./base.css，【必须由本文件引入】，否则 var(--cc-*) 全部失效。 */
+
 @import './base.css';
 
 #app {
   width: 100%;
   height: 100%;
-}
-
-a,
-.green {
-  text-decoration: none;
-  color: hsla(160, 100%, 37%, 1);
-  transition: 0.4s;
-  padding: 3px;
-}
-
-@media (hover: hover) {
-  a:hover {
-    background-color: hsla(160, 100%, 37%, 0.2);
-  }
-}
-
-@media (min-width: 1024px) {
-  /* Removed grid layout that was causing right half white screen */
-  body {
-    display: block;
-  }
-
-  #app {
-    padding: 0;
-  }
 }

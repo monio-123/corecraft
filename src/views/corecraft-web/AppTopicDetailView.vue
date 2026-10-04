@@ -21,6 +21,8 @@
         @blur="saveTitle"
       />
 
+      <!-- 这里没有目录行：目录一多，平铺的下拉列表就没法用了。
+           归类和改类都回列表页——把卡片拖到右侧浮出的那棵树上。 -->
       <!-- 标签：自定义输入 + tag pill 列表，避免 el-select multiple 模式的重复添加问题 -->
       <div class="meta-row">
         <div class="tag-editor">
@@ -135,10 +137,8 @@
 </template>
 
 <script setup>
-// 同 LearnTopicView：让 component.name = 'CorecraftWebTopicDetail' 对齐 route.name。
-// 否则 keep-alive include 匹配 'CorecraftWebTopicDetail' 但 SFC 默认 name 是 'TopicDetailView'，
-// 不命中 → 详情页切走再回来重新加载（route.params.id 变化 + load() 又跑）。
-defineOptions({ name: 'CorecraftWebTopicDetail' })
+// 让 component.name = 'AppTopicDetail' 对齐 route.name，配合 AppLayout 的 keep-alive 缓存实例。
+defineOptions({ name: 'AppTopicDetail' })
 import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -398,12 +398,17 @@ async function handleDelete() {
   goBack()
 }
 
+// 详情页不是菜单项，没有"上一页"语义：优先原路返回，直接打开的（刷新/外链）才回列表
 function goBack() {
-  router.push({ name: 'CorecraftWebLearnTopic' })
+  if (window.history.state?.back) {
+    router.back()
+  } else {
+    router.push({ name: 'AppLearn' })
+  }
 }
 
 function goRelated(id) {
-  router.push({ name: 'CorecraftWebTopicDetail', params: { id } })
+  router.push({ name: 'AppTopicDetail', params: { id } })
 }
 
 // 路由 id 变化时检查是否需要重新 load：
@@ -415,7 +420,9 @@ watch(() => route.params.id, () => {
   if (topic.value && topic.value.id === id) return  // 同 id：复用缓存，不重新加载
   load()
 })
-onMounted(load)
+onMounted(() => {
+  load()
+})
 
 // 懒加载 tag 列表：用户点开"选择已有标签" popover 时才调 /kp/tag/list。
 // 详情页打开不请求；首次点开触发请求；后续复用 store 缓存。
@@ -473,6 +480,14 @@ onBeforeUnmount(() => {
   gap: 12px;
   margin-bottom: 16px;
   flex-wrap: wrap;
+}
+
+/* "目录" / "标签" 这类行首说明文字 */
+.meta-label {
+  font-size: 12px;
+  color: #909399;
+  width: 28px;
+  flex-shrink: 0;
 }
 
 .tag-select {

@@ -46,3 +46,19 @@ export function renameTag(data) {
 export function deleteTag(id) {
   return request.delete(`/kp/tag/${id}`)
 }
+
+// ============ 知识目录（树的骨架） ============
+
+// 获取当前用户的所有目录
+export function getCategoryList() {
+  return request.get('/kp/category/list')
+}
+
+export function createCategory(data) {
+  return request.post('/kp/category', data)
+}
+
+// 删除目录：其下知识点回到"未归类"（知识点本身不删）
+export function deleteCategory(id) {
+  return request.delete(`/kp/category/${id}`)
+}
