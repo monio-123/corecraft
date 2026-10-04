@@ -8,11 +8,14 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+/**
+ * 登录态读取工具。
+ * <p>
+ * <b>不设超级管理员机制</b>：这里没有任何"超管"判据，也没有角色编码常量。
+ * 菜单可见性完全由 {@code sys_role_permission} 决定，接口鉴权由
+ * {@code AuthCheck} 比对权限码完成。配错权限直接在数据库修，不在代码里留后门。
+ */
 public class SecurityUtil {
-
-    public static final String ROLE_ADMIN = "ROLE_ADMIN";
-
-    static final Set<String> ADMIN_ROLES = Set.of(ROLE_ADMIN, "ADMIN");
 
     public static Authentication getAuthentication() {
         return SecurityContextHolder.getContext().getAuthentication();
@@ -38,13 +41,5 @@ public class SecurityUtil {
 
     public static Set<String> getPermissions() {
         return Set.copyOf(getUser().getPermissions());
-    }
-
-    public static boolean isAdmin() {
-        return ADMIN_ROLES.stream().anyMatch(getRoles()::contains);
-    }
-
-    public static boolean isAdminRoleCode(String code) {
-        return ADMIN_ROLES.contains(code);
     }
 }

@@ -19,7 +19,8 @@ public class KpTopicResp {
 
     private Long parentTopicId;
 
-    private Long treeId;
+    /** 所属目录ID（null = 未归类）；目录名由前端 store 从目录列表解析 */
+    private Long categoryId;
 
     private String tags;
 

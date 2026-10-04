@@ -52,7 +52,10 @@ public class SysUserController {
     }
 
     @RequestMapping(value = "", method = RequestMethod.POST)
-    @PreAuthorize("@auth.hasRoleOrPermission(T(com.mo.corecraft.utils.SecurityUtil).ROLE_ADMIN, 'user:add')")
+    // 样本接口：演示"权限码 → 库内定义与授权"的接口鉴权能力。
+    // user:add 是 OP 类型权限，挂在「用户管理」菜单下，由 sys_role_permission 决定谁有。
+    // 本期只有这一个端点接入该体系，其余接口暂不接入。
+    @PreAuthorize("@auth.hasPermission('user:add')")
     public ResultResp<Void> createSysUser(@Validated @RequestBody SysUserCreateReq req) {
         sysUserService.createSysUser(req);
         return ResultResp.success();
@@ -95,8 +98,10 @@ public class SysUserController {
 
     @RequestMapping(value = "me/menu-tree", method = RequestMethod.GET)
     public ResultResp<List<SysPermissionResp>> myMenuTree() {
+        // 菜单完全由 sys_role_permission 决定，没有"超管绕过"分支——
+        // 配错权限直接在数据库修，不在代码里开后门
         Set<String> permissions = SecurityUtil.getPermissions();
-        return ResultResp.data(sysPermissionService.selectMenuTreeByPermissions(permissions, SecurityUtil.isAdmin()));
+        return ResultResp.data(sysPermissionService.selectMenuTreeByPermissions(permissions));
     }
 
     @RequestMapping(value = "me/profile", method = RequestMethod.GET)

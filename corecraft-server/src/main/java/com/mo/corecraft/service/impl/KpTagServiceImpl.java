@@ -9,7 +9,6 @@ import com.mo.corecraft.model.resp.KpTagResp;
 import com.mo.corecraft.repository.KpTagRepository;
 import com.mo.corecraft.repository.KpTopicTagRepository;
 import com.mo.corecraft.service.KpTagService;
-import com.mo.corecraft.service.KpTopicService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,7 +23,6 @@ public class KpTagServiceImpl implements KpTagService {
 
     private final KpTagRepository kpTagRepository;
     private final KpTopicTagRepository kpTopicTagRepository;
-    private final KpTopicService kpTopicService;
 
     @Override
     public List<KpTagResp> listTags(Long userId) {
@@ -59,8 +57,6 @@ public class KpTagServiceImpl implements KpTagService {
         }
         old.setName(req.getNewName());
         kpTagRepository.update(old);
-        // 改名后 topic 树归属可能漂，rebuild 一次
-        kpTopicService.rebuildAutoTrees(userId);
     }
 
     @Override
@@ -73,8 +69,6 @@ public class KpTagServiceImpl implements KpTagService {
         // 先删关联（持有该 tag 的 topic 不再引用此 tag；topic 本身不删）
         kpTopicTagRepository.deleteByTagId(tag.getId());
         kpTagRepository.delete(tag.getId());
-        // tag 删了 → topic 树归属可能空掉，rebuild 一次
-        kpTopicService.rebuildAutoTrees(userId);
     }
 
     /**

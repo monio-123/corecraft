@@ -15,5 +15,5 @@ public class KpTopicQuery {
 
     private Long parentTopicId;
 
-    private Long treeId;
+    private Long categoryId;
 }

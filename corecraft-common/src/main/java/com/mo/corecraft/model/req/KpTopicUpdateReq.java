@@ -19,7 +19,7 @@ public class KpTopicUpdateReq {
 
     private Long parentTopicId;
 
-    private Long treeId;
+    private Long categoryId;
 
     private List<String> tags;
 

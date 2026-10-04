@@ -21,7 +21,7 @@ public interface SysPermissionService {
 
     List<SysPermissionResp> selectSysPermissionTree(SysPermissionQuery query);
 
-    List<SysPermissionResp> selectMenuTreeByPermissions(Collection<String> permissionCodes, boolean includeAll);
+    List<SysPermissionResp> selectMenuTreeByPermissions(Collection<String> permissionCodes);
 
     void createSysPermission(SysPermissionCreateReq req);
 

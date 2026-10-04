@@ -22,10 +22,4 @@ public interface KpTopicService {
     void addTopicRelation(Long topicId, Long relatedTopicId);
 
     void removeTopicRelation(Long topicId, Long relatedTopicId);
-
-    /**
-     * 按 tag 重新给该 user 的所有 topic 回填 treeId（一个 tag 集合 = 一棵树）。
-     * tag 改名 / 删除后调用，保证 topic 树归属不漂。
-     */
-    void rebuildAutoTrees(Long userId);
 }

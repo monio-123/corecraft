@@ -2,14 +2,14 @@ spring:
   application:
     name: corecraft-server
   profiles:
-    active: ${SPRING_PROFILES_ACTIVE:prod}
+    active: ${SPRING_PROFILES_ACTIVE:dev}
   cloud:
     nacos:
-      server-addr: ${NACOS_HOST:127.0.0.1}:${NACOS_PORT:8848}
+      server-addr: ${NACOS_HOST:106.53.205.69}:${NACOS_PORT:8848}
       username: ${NACOS_USERNAME:nacos}
       password: ${NACOS_PASSWORD:nacos}
       config:
-        namespace: ${NACOS_NAMESPACE:public}
+        namespace: ${NACOS_NAMESPACE:7d4187ca-61db-435e-b898-56e0b1aaf8ae}
         group: ${NACOS_GROUP:${spring.profiles.active}}
   config:
     import:

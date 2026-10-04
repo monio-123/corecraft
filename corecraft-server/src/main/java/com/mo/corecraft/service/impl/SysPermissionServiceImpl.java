@@ -52,16 +52,13 @@ public class SysPermissionServiceImpl implements SysPermissionService {
     }
 
     @Override
-    public List<SysPermissionResp> selectMenuTreeByPermissions(Collection<String> permissionCodes, boolean includeAll) {
+    public List<SysPermissionResp> selectMenuTreeByPermissions(Collection<String> permissionCodes) {
         SysPermissionQuery query = new SysPermissionQuery();
         query.setEnabled(true);
         List<SysPermissionResp> list = selectSysPermissionList(query).stream()
                 .filter(p -> p.getType() == PermissionTypeEnum.MENU || p.getType() == PermissionTypeEnum.GROUP)
                 .toList();
         List<SysPermissionResp> roots = toTree(list);
-        if (includeAll) {
-            return roots;
-        }
         Set<String> codes = permissionCodes == null ? Set.of() : Set.copyOf(permissionCodes);
         return roots.stream()
                 .map(node -> pruneByCodes(node, codes))

@@ -22,7 +22,7 @@ public class KpTopicRepository extends AbstractRepository<KpTopic, KpTopicQuery,
                 .ifNotNull(query.getUserId(), (w, userId) -> w.eq(KpTopic::getUserId, userId))
                 .ifNotBlank(query.getTitle(), (w, title) -> w.like(KpTopic::getTitle, title))
                 .ifNotNull(query.getParentTopicId(), (w, pid) -> w.eq(KpTopic::getParentTopicId, pid))
-                .ifNotNull(query.getTreeId(), (w, treeId) -> w.eq(KpTopic::getTreeId, treeId))
+                .ifNotNull(query.getCategoryId(), (w, cid) -> w.eq(KpTopic::getCategoryId, cid))
                 .when(true, (w, q) -> w.orderByDesc(KpTopic::getCreateTime));
     }
 }

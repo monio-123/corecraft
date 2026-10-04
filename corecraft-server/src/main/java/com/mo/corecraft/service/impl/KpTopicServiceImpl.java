@@ -61,8 +61,6 @@ public class KpTopicServiceImpl implements KpTopicService {
         kpTopicRepository.insert(entity);
         saveTopicTags(entity.getId(), req.getTags(), userId);
         saveTopicQuizzes(entity.getId(), req.getQuizQuestions());
-        // 标签驱动：回填每个 topic 的 treeId（一个 tag = 一棵树）
-        rebuildAutoTrees(userId);
     }
 
     @Override
@@ -78,14 +76,13 @@ public class KpTopicServiceImpl implements KpTopicService {
             if (r.getParentTopicId() != null) {
                 e.setParentTopicId(r.getParentTopicId());
             }
-            if (r.getTreeId() != null) {
-                e.setTreeId(r.getTreeId());
-            }
+            // 无条件写 categoryId：null = 未归类，是有意义的值，不能当"不修改"跳过。
+            // KpTopic.categoryId 上标了 updateStrategy = ALWAYS，null 也会进 UPDATE 语句。
+            e.setCategoryId(r.getCategoryId());
         });
         if (req.getTags() != null) {
             kpTopicTagRepository.deleteByTopicId(req.getId());
             saveTopicTags(req.getId(), req.getTags(), userId);
-            rebuildAutoTrees(userId);
         }
         if (req.getQuizQuestions() != null) {
             kpTopicQuizRepository.deleteByTopicId(req.getId());
@@ -96,12 +93,15 @@ public class KpTopicServiceImpl implements KpTopicService {
     @Override
     @Transactional
     public void deleteTopic(Long id, Long userId) {
-        kpTopicTagRepository.deleteByTopicId(id);
-        kpTopicRelationRepository.deleteByTopicId(id);
-        kpTopicQuizRepository.deleteByTopicId(id);
-        kpTopicRepository.delete(id);
-        // 删除后重建剩余 topic 的 treeId 归属
-        rebuildAutoTrees(userId);
+        // 按 (id, userId) 取实体：既用上了 userId，也挡住越权删除别人的知识点
+        KpTopicQuery query = new KpTopicQuery();
+        query.setId(id);
+        query.setUserId(userId);
+        KpTopic topic = kpTopicRepository.get(query, e -> e);
+        kpTopicTagRepository.deleteByTopicId(topic.getId());
+        kpTopicRelationRepository.deleteByTopicId(topic.getId());
+        kpTopicQuizRepository.deleteByTopicId(topic.getId());
+        kpTopicRepository.delete(topic.getId());
     }
 
     @Override
@@ -115,44 +115,6 @@ public class KpTopicServiceImpl implements KpTopicService {
     @Override
     public void removeTopicRelation(Long topicId, Long relatedTopicId) {
         kpTopicRelationRepository.deleteByTopicIdAndRelatedTopicId(topicId, relatedTopicId);
-    }
-
-    // ==================== 标签驱动的 treeId 回填 ====================
-
-    /**
-     * 一个 tag = 一棵树：相同 tagKey 必同组（不复用 hashCode + 偏移，避免把同 tag 拆开）。
-     * 给所有 topic 回填 treeId，前端可按 treeId 过滤。
-     * <p>
-     * tagKey 用 kp_tag.id（不取 category+name 字符串），保证 rename 不影响 treeId 稳定性。
-     */
-    @Override
-    @Transactional
-    public void rebuildAutoTrees(Long userId) {
-        KpTopicQuery query = new KpTopicQuery();
-        query.setUserId(userId);
-        List<KpTopic> topics = kpTopicRepository.list(query, e -> e);
-        if (topics == null || topics.isEmpty()) {
-            return;
-        }
-        // 一次性查所有 topic 的 tag 关联
-        List<Long> topicIds = topics.stream().map(KpTopic::getId).toList();
-        List<KpTopicTag> allLinks = kpTopicTagRepository.listByTopicIds(topicIds);
-        Map<Long, List<Long>> topicIdToTagIds = new HashMap<>();
-        for (KpTopicTag link : allLinks) {
-            topicIdToTagIds.computeIfAbsent(link.getTopicId(), k -> new ArrayList<>()).add(link.getTagId());
-        }
-
-        Map<Long, Long> tagIdToTreeId = new HashMap<>();
-        for (KpTopic t : topics) {
-            List<Long> tagIds = topicIdToTagIds.getOrDefault(t.getId(), List.of());
-            Long treeId = null;
-            if (!tagIds.isEmpty()) {
-                // 取第一个 tag 的 id 当 key（保证同 topic 同一棵树）
-                Long firstTagId = tagIds.get(0);
-                treeId = tagIdToTreeId.computeIfAbsent(firstTagId, k -> (long) k.hashCode());
-            }
-            kpTopicRepository.update(t.getId(), treeId, (newTreeId, e) -> e.setTreeId(newTreeId));
-        }
     }
 
     // ==================== 辅助方法 ====================
