@@ -1,35 +1,18 @@
 <template>
   <div class="learn">
-    <!-- 紧凑录入 -->
-    <section class="composer">
-      <el-input
-        v-model="draft"
-        type="textarea"
-        :rows="2"
-        resize="none"
-        placeholder="记一条…（Ctrl + Enter 保存）"
-        @keydown.ctrl.enter="save"
-        @keydown.meta.enter="save"
-      />
-      <div class="composer__actions">
-        <span class="composer__hint">随手记，不用想结构，之后再归类</span>
-        <el-button type="primary" size="small" :loading="saving" :disabled="!draft.trim()" @click="save">
-          记下来
-        </el-button>
-      </div>
-    </section>
+    <!-- 这里原来还有一条录入框（MilkdownEditor）。本页的职能是**浏览 + 归类**：
+         目录筛选 / 标签筛选 / 搜索 / 卡片网格 / 拖拽归类，录入框只是顶部一条，
+         名字叫「随手记」名不副实。录入已统一收到首页，这一页改成纯浏览页，
+         侧边菜单同步改名「知识点」。 -->
 
-    <!-- 面包屑：只在层级 > 1 时出现。层级本身不常驻展示，靠拖拽树（放）和 hover 级联（进）。 -->
-    <nav v-if="crumbs.length > 1" class="crumbs">
-      <template v-for="(c, i) in crumbs" :key="c.id">
-        <span v-if="i" class="crumbs__sep">›</span>
-        <button
-          class="crumbs__link"
-          :class="{ 'is-cur': c.id === currentCategoryId }"
-          @click="setCategoryFilter(c.id)"
-        >{{ c.name }}</button>
-      </template>
-    </nav>
+    <!-- 面包屑：只在层级 > 1 时出现。层级本身不常驻展示，靠拖拽树（放）和 hover 级联（进）。
+         和知识点详情页共用 CategoryCrumbs；这里要 replace 不 push，免得每切一次目录
+         就往浏览历史里塞一条。 -->
+    <CategoryCrumbs
+      :category-id="currentCategoryId"
+      :min-level="2"
+      @pick="setCategoryFilter"
+    />
 
     <!-- 筛选：一行，不再两排 chip 糊满屏 -->
     <div class="bar">
@@ -75,16 +58,21 @@
               全部标签
             </button>
             <div v-if="tagList.length" class="tagpanel__list">
-              <button
+              <!-- 整行是 div 不是 button：行尾还要再放一个「⋯」按钮，
+                   <button> 套 <button> 是非法 HTML，浏览器会把里层那个提到外层外面，
+                   结果布局和点击都乱。拆成"选它的按钮"+"操作按钮"两个兄弟节点。 -->
+              <div
                 v-for="t in tagList"
                 :key="t.name"
                 class="tagpanel__item"
                 :class="{ 'is-on': tagFilter === t.name }"
-                @click="pickTag(t.name)"
               >
-                <span>{{ t.name }}</span>
-                <span class="tagpanel__count">{{ t.count }}</span>
-              </button>
+                <button class="tagpanel__pick" @click="pickTag(t.name)">
+                  <span class="tagpanel__name">{{ t.name }}</span>
+                  <span class="tagpanel__count">{{ t.count }}</span>
+                </button>
+                <TagRowMenu :tag="t" />
+              </div>
             </div>
             <p v-else class="tagpanel__empty">还没有标签</p>
           </div>
@@ -121,19 +109,24 @@ import { ElMessage, ElMessageBox, ElPopover } from 'element-plus'
 import { Search, ArrowDown } from '@element-plus/icons-vue'
 import {
   ensureTopicsLoaded, ensureCategoriesLoaded, ensureAllTagsLoaded,
-  getTopics, getUncategorizedCount, getCategory, getCategoryPath, getCategorySubtreeIds,
-  getAllTags, createTopic, deleteTopic, encodeTag, UNCATEGORIZED
+  getTopics, getUncategorizedCount, getCategory, getCategorySubtreeIds,
+  getAllTags, deleteTopic, encodeTag, deleteConfirmMessage, UNCATEGORIZED
 } from './useCorecraftWebStore'
+import CategoryCrumbs from './CategoryCrumbs.vue'
 import TopicCard from './TopicCard.vue'
+import TagRowMenu from './TagRowMenu.vue'
 
 const route = useRoute()
 const router = useRouter()
 
-const draft = ref('')
-const saving = ref(false)
 const tagPanelVisible = ref(false)
 const tagFilter = ref(null)
-const tagList = ref([])
+// 标签列表：**直接算，不存快照**。
+// 原来是 `ref([])` + refresh() 里 `tagList.value = [...getAllTags()].sort(...)`，那是一次性拷贝——
+// store 的 renameTag / confirmDeleteTag 刷的是它自己那份 allTags，本地这份是副本不会跟着变，
+// 于是"在标签下拉里改名/删除之后列表不动，必须手动刷新页面"。
+// 知识点列表没这个问题是因为它一直是 computed(() => getTopics())，只有标签这一处漏了。
+const tagList = computed(() => [...getAllTags()].sort((a, b) => b.count - a.count))
 const ALL = 'all'
 
 // 目录筛选的真相源是 URL：侧边栏的目录链接和这里的两个药丸都在写它，本地 ref 只是它的镜像。
@@ -159,7 +152,6 @@ const uncategorizedCount = computed(() => getUncategorizedCount())
 
 // 目录被删掉后 URL 还指着它时 getCategory 拿不到，当成"全部"，不白屏
 const currentCategoryId = computed(() => getCategory(categoryFilter.value)?.id ?? null)
-const crumbs = computed(() => (currentCategoryId.value ? getCategoryPath(currentCategoryId.value) : []))
 
 function matchTag(t) {
   return tagFilter.value === null || (t.tags || []).some((tag) => encodeTag(tag) === tagFilter.value)
@@ -170,7 +162,9 @@ function matchTag(t) {
  *
  * 为什么不是"只显示直接挂载"：那样进到「集合」只能看到 3 条，
  * 它父目录里另外 20 条就凭空消失了，层级会变成"建得进、看不见"。
- * 子树平铺让页面永远是一排卡片，表达层级靠卡片上的目录 chip，不靠额外的子目录区块。
+ * 子树平铺让页面永远是一排卡片，层级靠侧边栏当前高亮的那一项表达，
+ * 不靠额外的子目录区块。（原来这里写的是"靠卡片上的目录 chip"，
+ *  那个 chip 早就撤掉了，注释和代码对不上。）
  */
 const subtreeIds = computed(() =>
   currentCategoryId.value ? getCategorySubtreeIds(currentCategoryId.value) : null
@@ -212,22 +206,8 @@ function clearFilters() {
 }
 
 async function refresh() {
+  // 标签列表是 computed(tagList)，这里只管把 store 的三份缓存刷一遍就够了
   await Promise.all([ensureTopicsLoaded(true), ensureCategoriesLoaded(true), ensureAllTagsLoaded(true)])
-  tagList.value = [...getAllTags()].sort((a, b) => b.count - a.count)
-}
-
-async function save() {
-  const content = draft.value.trim()
-  if (!content || saving.value) return
-  saving.value = true
-  try {
-    await createTopic({ title: '', content, tags: [] })
-    draft.value = ''
-    await refresh()
-    ElMessage.success('已记下')
-  } finally {
-    saving.value = false
-  }
 }
 
 function goDetail(t) {
@@ -236,7 +216,7 @@ function goDetail(t) {
 
 async function handleDelete(t) {
   try {
-    await ElMessageBox.confirm(`确定删除「${t.title || '未命名'}」吗？`, '删除知识点', {
+    await ElMessageBox.confirm(deleteConfirmMessage(t), '删除知识点', {
       confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning'
     })
   } catch {
@@ -254,6 +234,16 @@ watch(() => route.query.category, (c) => { categoryFilter.value = readCategoryQu
 // 重复提交同一个关键词本来就没区别，不存在"点不动"的副作用。
 watch(() => route.query.q, (q) => { keyword.value = String(q || '') })
 
+// 正在筛的标签被改名或删掉了 → 回到"全部"。
+// 兜在这里而不是让 TagRowMenu 回调里清：改标签的入口不止这一个（详情页的标签编辑也能改），
+// 在这一处 watch 一次，所有入口都覆盖到。不兜的表现是"筛选还开着但列表空了"，
+// 用户会以为知识点被删了。
+watch(tagList, () => {
+  if (tagFilter.value && !tagList.value.some((t) => t.name === tagFilter.value)) {
+    tagFilter.value = null
+  }
+})
+
 onMounted(refresh)
 </script>
 
@@ -264,38 +254,9 @@ onMounted(refresh)
   gap: 14px;
 }
 
-/* 录入 */
-.composer {
-  background: #fff;
-  border: 1px solid #eef0f3;
-  border-radius: 12px;
-  padding: 12px 14px 10px;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-.composer:focus-within {
-  border-color: #a8ceff;
-  box-shadow: 0 2px 12px rgba(43, 127, 255, 0.08);
-}
-.composer :deep(.el-textarea__inner) {
-  border: none;
-  box-shadow: none;
-  padding: 0;
-  font-size: 14px;
-  line-height: 1.7;
-  background: transparent;
-}
-.composer__actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid #f4f6f8;
-}
-.composer__hint {
-  font-size: 12px;
-  color: #b6bac1;
-}
+/* 录入（原 .composer 六条规则）：录入框已统一收到首页，这里跟着删。
+   连着删掉的还有 `.composer :deep(.el-textarea__inner)`（textarea 早就不存在了）、
+   `draft` / `editorKey` / `saving` 三个 state、`save()`、MilkdownEditor 的 import。 */
 
 /* 筛选条：一行 */
 .bar {
@@ -371,10 +332,11 @@ onMounted(refresh)
   max-height: 240px;
   overflow-y: auto;
 }
+/* 一行 = 行容器（现在带标签的行是 div，因为要再塞一个「⋯」按钮）+ 选它的按钮 + 操作按钮。
+   「全部标签」那行不带菜单，还是个 button，所以 cursor/字体这些两处都要留着。 */
 .tagpanel__item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   padding: 6px 8px;
   border: none;
@@ -384,6 +346,13 @@ onMounted(refresh)
   color: #4b5563;
   cursor: pointer;
   text-align: left;
+  /* 和侧边栏目录行同一套：行尾「⋯」默认不显形，悬停/聚焦这一行才露出来。
+     focus-within 不能省——opacity:0 的按钮照样能被 Tab 选中。 */
+  --row-menu-show: 0;
+}
+.tagpanel__item:hover,
+.tagpanel__item:focus-within {
+  --row-menu-show: 1;
 }
 .tagpanel__item:hover {
   background: #f4f6f8;
@@ -393,9 +362,32 @@ onMounted(refresh)
   color: #2b7fff;
   font-weight: 500;
 }
+/* 行里的"选它"那一半。名字太长得靠 min-width:0 + ellipsis 让位给右边的数字和 ⋯，
+   不设的话 flex 子项的 min-width:auto 会顶着把行撑宽。 */
+.tagpanel__pick {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.tagpanel__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .tagpanel__count {
   font-size: 11px;
   color: #b6bac1;
+  flex-shrink: 0;
 }
 .tagpanel__empty {
   margin: 0;
@@ -417,38 +409,7 @@ onMounted(refresh)
   flex-direction: column;
 }
 
-/* ---------- 面包屑（层级 > 1 才出现） ---------- */
-.crumbs {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  flex-wrap: wrap;
-  font-size: 12px;
-}
-.crumbs__link {
-  border: none;
-  background: transparent;
-  padding: 2px 5px;
-  border-radius: 4px;
-  color: #9096a0;
-  font-size: 12px;
-  cursor: pointer;
-}
-.crumbs__link:hover {
-  color: #1f2329;
-}
-.crumbs__link.is-cur {
-  color: #1f2329;
-  font-weight: 600;
-  cursor: default;
-}
-.crumbs__link.is-cur:hover {
-  color: #1f2329;
-}
-.crumbs__sep {
-  color: #d0d3d9;
-}
-
+/* ---------- 空状态 ---------- */
 .empty {
   padding: 48px 0;
   text-align: center;

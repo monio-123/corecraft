@@ -46,6 +46,22 @@
   --cc-radius: 8px;
   --cc-radius-sm: 6px;
   --cc-transition: background 0.15s, color 0.15s;
+
+  /* 「一句话交互」弹窗的宽度。EP 的 MessageBox 默认 420px，比窄 dialog 还宽一圈，
+     而"新建 / 重命名 / 删除"是同一个操作簇、挨着出现在屏幕上，宽度必须一致
+     （用户反馈"这几个弹框大小可以统一的吧"）。
+     只能收敛成一个 token：dialog 的宽度是 width prop 渲染出来的内联 style，
+     CSS 变量盖不住；MessageBox 的宽度是 --el-messagebox-width。
+     两边各自引用同一个值，才不会改一边漏一边。 */
+  --cc-dialog-w-sm: 380px;
+
+  /* 内容区两档宽度。业务壳的"视觉签名"是"内容居中、两侧留白"，不是"内容撑满"——
+     这正是它和 admin 壳满宽表格流的区别。留白留多少分两档：
+     列表 / 首页是卡片流，1280 能多排一列，喂得饱；
+     详情页是长文，1280 一行能塞 80+ 个汉字，超出舒适行宽，退回 920。
+     壳取默认档，详情页自己覆盖，所以值只在这里定一次。 */
+  --cc-content-w: 1280px;
+  --cc-content-w-reading: 920px;
 }
 
 *,
@@ -165,4 +181,152 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============================================================
+ * 弹窗皮肤 —— el-dialog / el-message-box
+ *
+ * 之前全项目所有弹窗都是 Element Plus 原样：dialog 6px 圆角、message-box
+ * 4px 圆角，标题 16px，按钮是描边白底。壳里卡片是 12px 圆角 + 柔和阴影 +
+ * 扁平浅灰按钮，弹窗夹在中间一眼就是"外来件"（用户反馈"跟系统不搭"）。
+ *
+ * EP 把圆角/标题字号/内边距/阴影全做成了元素上的 CSS 变量，所以优先改变量，
+ * 只有变量管不到的（关闭按钮尺寸、按钮形态）才写选择器。
+ * 放在 body 之外：EP 把这些变量定义在 .el-dialog / .el-message-box 自身上，
+ * 继承自 body 的同名变量会被盖掉，必须同级重定义。
+ * ============================================================ */
+
+.el-dialog {
+  /* 跟 .card 的 12px 对齐 */
+  --el-dialog-border-radius: 12px;
+  /* 标题跟 .card__title / 面包屑同一档，不要 EP 的 large 再叠一层粗细差 */
+  --el-dialog-title-font-size: 15px;
+  --el-dialog-padding-primary: 18px;
+  --el-dialog-box-shadow: 0 10px 36px rgb(31 35 41 / 10%);
+}
+.el-dialog__title {
+  font-weight: 600;
+}
+/* EP 的关闭按钮是 48×48 顶死右上角，比标题还抢眼；收到 28×28 退到边上，
+   hover 给个浅灰底，跟侧边栏行 hover 是同一套反馈。 */
+.el-dialog__headerbtn {
+  top: 10px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  font-size: 13px;
+  border-radius: 6px;
+}
+.el-dialog__headerbtn .el-dialog__close {
+  color: var(--cc-text-3);
+}
+.el-dialog__headerbtn:hover {
+  background: var(--cc-surface-2);
+}
+.el-dialog__headerbtn:hover .el-dialog__close {
+  color: var(--cc-text-1);
+}
+
+.el-message-box {
+  /* EP 默认 4px，比 dialog 还锐，和 12px 的卡片差了一倍还多 */
+  --el-messagebox-border-radius: 12px;
+  --el-messagebox-font-size: 15px;
+  /* 跟 --el-dialog-padding-primary 一样，两个框的左右留白才对得上 */
+  --el-messagebox-padding-primary: 18px;
+  --el-messagebox-box-shadow: 0 10px 36px rgb(31 35 41 / 10%);
+  /* 跟 CategoryNameDialog 同一个 token，两者挨着出现时宽度必须一样 */
+  --el-messagebox-width: var(--cc-dialog-w-sm);
+  /* EP 的 .el-message-box__message p 直接读这个变量。写父级
+     .el-message-box__message 的 line-height 是死代码——选择器权重 0,1,0
+     输给 p 那条 0,2,0，实测一直是这个变量的默认值在起作用。 */
+  --el-messagebox-font-line-height: 1.6;
+}
+/* EP 把 MessageBox 的空间摊在三个区块各自的 padding 上：header 上下各
+   18(原 20)、content 12/18、btns 再加 18(原 20)。叠起来标题到正文 32px、
+   正文到按钮 38px —— 比 dialog 里同样的两处（20 / 18）宽了一倍，整个框空且
+   虚高（实测 216px，而 dialog 只有 162px）。逐段收到跟 dialog 同一档，
+   改完约 170px，两者才是一个级别。 */
+.el-message-box__header {
+  padding-bottom: 4px;
+}
+.el-message-box__content {
+  padding: 12px 0 8px;
+}
+.el-message-box__btns {
+  padding-top: 8px;
+}
+.el-message-box__title {
+  font-weight: 600;
+}
+.el-message-box__message {
+  color: var(--cc-text-2);
+}
+
+/* 两处弹窗的次要按钮统一：壳里是扁平的浅灰块，EP 默认的描边白底在这个
+   浅色界面上显脏。非 primary / 非 danger 的一律按次要处理。 */
+.el-dialog__footer .el-button,
+.el-message-box__btns .el-button {
+  height: 34px;
+  padding: 0 16px;
+  border-radius: 8px;
+  font-weight: 500;
+}
+.el-dialog__footer .el-button:not(.el-button--primary):not(.el-button--danger),
+.el-message-box__btns .el-button:not(.el-button--primary):not(.el-button--danger) {
+  background: var(--cc-surface-2);
+  border-color: transparent;
+  color: var(--cc-text-2);
+}
+.el-dialog__footer .el-button:not(.el-button--primary):not(.el-button--danger):hover,
+.el-message-box__btns .el-button:not(.el-button--primary):not(.el-button--danger):hover {
+  background: #eceff3;
+  color: var(--cc-text-1);
+}
+
+/* ============================================================
+ * 下拉菜单皮肤 —— el-dropdown-menu
+ *
+ * 目录行的「⋯」菜单挂在 30px 高、13px 字号的侧边栏行上，EP 默认却是 32px 高、
+ * 14px 字号、左右 16px padding（实测菜单项 102×32，整块 119px 高）——比它所属的
+ * 行还粗，撑在窄侧边栏边上很笨重（用户反馈"不是很好看，有点大"）。
+ *
+ * 三处不是同一套，叠起来才是"外来件"的观感：
+ * ① hover 是主色蓝块 + 蓝字（--el-dropdown-menuItem-hover-fill / -color），
+ *    全站别处 hover 都是灰底 --cc-surface-2
+ * ② 边框挂在 .el-dropdown__popper 外壳上，圆角却只给了内层 .el-dropdown-menu，
+ *    结果外面直角、里面圆 —— 最显眼的一处
+ * ③ 阴影用的是 EP 的 --el-box-shadow-light（0 2px 12px rgb(0 0 0 / 10%)），
+ *    比卡片那档重一倍，浅色界面上显脏
+ *
+ * 放 base.css 而不是组件里：菜单 teleport 到 body，scoped 样式到不了；而且
+ * Layout.vue 的用户菜单（编辑个人信息 / 修改密码 / 退出登录）是同一个组件，
+ * 一起收口，不用两处各改一遍。
+ * ============================================================ */
+
+.el-dropdown__popper {
+  /* 补上外壳圆角，跟 .card 同档 */
+  border-radius: var(--cc-radius);
+  box-shadow: 0 6px 20px rgb(31 35 41 / 8%);
+}
+.el-dropdown-menu {
+  padding: 4px;
+  border-radius: var(--cc-radius);
+  /* EP 把这两个定义在 .el-dropdown__popper 上。在后代同名重定义对整棵子树生效，
+     比重写 :hover 规则干净。 */
+  --el-dropdown-menuItem-hover-fill: var(--cc-surface-2);
+  --el-dropdown-menuItem-hover-color: var(--cc-text-1);
+}
+.el-dropdown-menu__item {
+  /* 字号 / 行高 / 内边距 EP 全是硬编码的，没有对应变量，只能写选择器。
+     14px → 13px 是跟侧边栏行对齐（.app-cats__item 同样是 13px）。 */
+  font-size: 13px;
+  line-height: 20px;
+  padding: 4px 10px;
+  border-radius: var(--cc-radius-sm);
+  color: var(--cc-text-2);
+}
+.el-dropdown-menu__item--divided {
+  /* 三项的菜单，分隔线只留够"这是另一组"的分量，别撑高度 */
+  margin: 4px 0;
+  border-top-color: var(--cc-border);
 }

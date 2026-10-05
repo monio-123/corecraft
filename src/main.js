@@ -4,6 +4,7 @@
 import 'element-plus/dist/index.css'
 import './assets/main.css'
 import './assets/admin-page.css'
+import './assets/kb.css'
 // Milkdown / ProseMirror 接管 contenteditable div 后，div 上有 .ProseMirror class
 // 但这个类不带任何基础样式，必须手动加载，否则编辑器光标 / 文本无样式
 import '@milkdown/prose/view/style/prosemirror.css'

@@ -3,7 +3,9 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getTopicList, getTopicById, getTagList, getCategoryList,
   createTopic as apiCreateTopic, updateTopic as apiUpdateTopic, deleteTopic as apiDeleteTopic,
-  createCategory as apiCreateCategory, deleteCategory as apiDeleteCategory
+  createCategory as apiCreateCategory, renameCategory as apiRenameCategory,
+  deleteCategory as apiDeleteCategory,
+  renameTag as apiRenameTag, deleteTag as apiDeleteTag
 } from '../../api/knowledge'
 import { onAuthChange } from '../../utils/auth'
 
@@ -141,17 +143,29 @@ export async function fetchTopic(id) {
   return topic
 }
 
+// 知识点变动之后刷缓存。**tagsChanged 必须由调用点老实说**：
+// 标签的 refCount 存在**另一份**缓存 allTags 里（来自 /kp/tag/list），刷 topicMap 刷不到它。
+// 之前三条路径（建 / 改 / 删知识点）都只刷了 topicMap，标签下拉里的计数于是永远是旧的，
+// 表现为"详情页移掉一个标签 → 返回列表 → 计数没变，得刷新页面"。
+// 收敛成一个函数，调用点只回答"这次动没动标签"，没动就不发那个多余请求。
+async function refreshAfterTopicChange(tagsChanged) {
+  await ensureTopicsLoaded(true)
+  if (tagsChanged) await ensureAllTagsLoaded(true)
+}
+
 export async function createTopic({ title, content, tags, quizQuestions, parentTopicId, categoryId }) {
   const beforeIds = new Set(getTopics().map((item) => item.id))
+  const encoded = (tags || []).map(encodeTag).filter(Boolean)
   await apiCreateTopic({
     title: title || '',
     content: content || '',
     parentTopicId: parentTopicId || null,
     categoryId: categoryId || null,
-    tags: (tags || []).map(encodeTag).filter(Boolean),
+    tags: encoded,
     quizQuestions: (quizQuestions || []).map((q) => typeof q === 'string' ? q : JSON.stringify(q))
   })
-  await ensureTopicsLoaded(true)
+  // 带标签建出来才会多出引用；不带标签建一条不碰 refCount
+  await refreshAfterTopicChange(encoded.length > 0)
   return getTopics().find((item) => !beforeIds.has(item.id)) || null
 }
 
@@ -173,13 +187,14 @@ export async function updateTopic(id, patch) {
       ? patch.quizQuestions.map((q) => typeof q === 'string' ? q : JSON.stringify(q))
       : undefined
   })
-  await ensureTopicsLoaded(true)
+  await refreshAfterTopicChange(patch.tags !== undefined)
   return getTopic(id)
 }
 
 export async function deleteTopic(id) {
   await apiDeleteTopic(id)
-  await ensureTopicsLoaded(true)
+  // 删一条一定会带走它身上的标签引用（哪怕它本来没标签），所以这里没法省那个请求
+  await refreshAfterTopicChange(true)
 }
 
 // ==================== 标签 ====================
@@ -202,6 +217,91 @@ export async function ensureAllTagsLoaded(force = false) {
 
 export function resolveTags(rawTags) {
   return (rawTags || []).map(decodeTag).filter((tag) => tag.name)
+}
+
+/**
+ * 改标签名 / 删标签。放在 store 而不是组件里，是因为这两件事都不是"组件能自己做完"的：
+ * 改名要连带刷**两份**缓存（标签表 + 每个 topic 上的 tags 字段），
+ * 删标签要连带清所有 topic 的关联。两个入口（列表页的标签下拉、详情页的标签编辑）
+ * 共用同一份，逻辑写在组件里就得抄两遍。
+ *
+ * 确认框/输入框也收在这里，和 confirmDeleteCategory 同一个路子——
+ * 免得"目录的删除确认在 store、标签的删除确认在组件"这种不对称。
+ *
+ * 返回是否真的做了（用户取消一律 false，调用方据此不刷新界面）。
+ */
+export async function renameTag(tag) {
+  let next
+  try {
+    const r = await ElMessageBox.prompt('新的标签名', `重命名「${tag.name}」`, {
+      confirmButtonText: '保存',
+      cancelButtonText: '取消',
+      inputValue: tag.name,
+      // 长度限制是后端 @Size(max=50) 定死的，前端先挡一道，省得发出去被弹回来
+      inputValidator: (v) => {
+        const s = String(v || '').trim()
+        if (!s) return '标签名不能为空'
+        if (s.length > 50) return '标签名不能超过 50 个字'
+        return true
+      }
+    })
+    next = String(r.value || '').trim()
+  } catch {
+    return false  // 用户取消
+  }
+  if (!next || next === tag.name) return false
+  // 后端按名字定位（KpTagRenameReq 只有 oldName / newName，没有 id）
+  await apiRenameTag({ oldName: tag.name, newName: next })
+  await ensureAllTagsLoaded(true)
+  await ensureTopicsLoaded(true)  // topic 上的 tags 字段带着旧名字，不刷就是脏的
+  ElMessage.success('标签已重命名')
+  return true
+}
+
+/** 删标签。后端会同时清掉所有 topic 上的关联，topic 本身不删（和删目录一个语义）。 */
+export async function confirmDeleteTag(tag) {
+  try {
+    await ElMessageBox.confirm(
+      `「${tag.name}」会从 ${tag.count || 0} 条知识点上移除，知识点本身不删。确定删除？`,
+      '删除标签',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch {
+    return false  // 用户取消
+  }
+  await apiDeleteTag(tag.id)
+  await ensureAllTagsLoaded(true)
+  await ensureTopicsLoaded(true)
+  ElMessage.success('标签已删除')
+  return true
+}
+
+/**
+ * 正文摘要：去掉 markdown 标记和多余空白，截到 max 字。
+ * 两处共用同一份规则——知识点卡片的标题区、以及删除确认框里"删的是哪一条"。
+ * 之前这份只内联在 TopicCard 里，确认框要显示内容首句就得再抄一遍，
+ * 两处的清洗规则以后必然走偏（谁改了一处，另一处还按老规则转）。
+ */
+export function excerptOf(content, max = 90) {
+  const text = String(content || '')
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/[*#>`_]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!text) return ''
+  return text.length > max ? `${text.slice(0, max)}…` : text
+}
+
+/**
+ * 删除确认框的整句文案。有标题用标题，没标题退回正文首句，都没有就用兜底句。
+ * 列表页卡片和详情页顶栏是两个删除入口，规则必须一致：随手记存进来的知识点
+ * title 本来就是空的，一屏卡片全是「未命名」时两个弹框长得一模一样，
+ * 删错了都不知道删了哪条。两个入口调 ElMessageBox 的参数（按钮文案等）也相同，
+ * 所以整句一起收敛在这里，而不是只共享"叫什么"再各自拼三元。
+ */
+export function deleteConfirmMessage(topic) {
+  const label = String(topic?.title || excerptOf(topic?.content, 20) || '').trim()
+  return label ? `确定删除「${label}」吗？` : '确定删除这条知识点吗？'
 }
 
 // ==================== 知识目录（树的骨架） ====================
@@ -230,8 +330,8 @@ export function getChildCategories(parentId) {
 }
 
 /**
- * 该目录下还有没有下级。侧边栏据此决定给「›」还是给「＋」、级联据此决定给不给箭头，
- * 收在这里一处，别让两个组件各写一遍 length > 0。
+ * 该目录下还有没有下级。只剩一个用途：空目录 hover 时不弹弹层（弹出来是个空壳）。
+ * 之前还拿它决定侧边栏给「›」还是给「＋」——那行现在统一成「⋯」菜单，不再判断。
  */
 export function hasChildCategories(id) {
   return getChildCategories(id).length > 0
@@ -310,35 +410,99 @@ export async function categorizeTopic(topic, categoryId) {
 // ==================== 拖拽归类 ====================
 
 /**
- * 卡片在 AppLearnView，目录在 AppLayout 侧边栏——两个组件，跨组件拖拽靠这一个上下文。
- * 拖拽数据本身走 dataTransfer（标准做法），这里只共享"正在拖"和"拖到哪个"两个状态，
- * 前者给目录项加可投放提示，后者给命中的目录加高亮。
+ * 拖拽状态。卡片在 AppLearnView，落点浮层在 AppLayout 侧边栏外——跨组件共享这一份。
+ *
+ * ⚠️ 这里**不用 HTML5 Drag and Drop**：那套 API 在触摸设备上不工作（iOS Safari 完全
+ * 不支持，Android Chrome 长按会先触发原生文本选择菜单，dragstart 根本轮不到触发），
+ * 平板上表现为"长按没反应"。现在由自建的 Pointer Events 接管三端，见 useTopicDrag.js。
+ *
+ * 原来靠 dataTransfer 传 topicId，现在直接放 topicId —— 省掉一次序列化，
+ * 也让命中检测（elementFromPoint）能独立于拖拽协议存在。
  */
-export const TOPIC_DND_TYPE = 'application/x-kp-topic'
-export const dnd = reactive({ live: false, over: null })
+export const dnd = reactive({
+  live: false,      // 浮层可见（PC 拖拽中 / 触屏点了「⋯」）
+  picking: false,   // 触屏的"点选归类"模式：点树上一行即归类，不拖东西进去
+  topicId: null,    // 正在归类哪条
+  over: null,       // 当前命中的目录
+  x: 0, y: 0,       // 指针当前位置（幽灵跟这个走）
+  ax: 0, ay: 0,     // 浮层锚点：起拖那一刻记下来，拖拽期间不再变
+  label: ''         // 幽灵上显示的一行文字
+})
 
-/**
- * 落点协议。
+/** 命中检测：指针下最近的、带 data-cat-id 的目录行（CategoryTree drop 模式渲染的）。
  *
- * 全站只有拖拽浮出的目录树是落点：侧边栏和筛选条都不是。
- * 层级只在"放东西"那两秒需要被看见，平时不该有常驻的落点区。
- * 归类和改类是同一个动作——所有卡片都是拖拽源，卡片上不再挂目录入口
- * （目录一多，平铺的下拉列表就没法用了）。
- *
- * dragover 不 preventDefault，浏览器就不会派发 drop——HTML5 拖放的硬约定。
- * 高亮用 dragover 设、drop/dragend 清；不用 dragleave，避免跨节点时的闪烁。
+ * 拿不到坐标（0,0）时返回 null 而不是去命中 (0,0) 处的元素——
+ * 视口原点通常没有目录行，但真命中了就是一次"凭空归类"，比不命中更坏。
  */
-export function dropOver(categoryId, e) {
-  e.preventDefault()
-  e.dataTransfer.dropEffect = 'move'
-  dnd.over = categoryId
+function hitCategory(x, y) {
+  if (!x && !y) return null
+  const el = document.elementFromPoint(x, y)
+  const node = el?.closest?.('[data-cat-id]')
+  return node ? Number(node.dataset.catId) : null
 }
 
-export async function dropTo(categoryId, e) {
-  e.preventDefault()
+export function dndStart(topicId, x, y, label = '') {
+  dnd.live = true
+  dnd.picking = false
+  dnd.topicId = topicId
   dnd.over = null
-  const topic = getTopics().find((t) => t.id === Number(e.dataTransfer.getData(TOPIC_DND_TYPE)))
+  dnd.x = x
+  dnd.y = y
+  dnd.label = label
+  // 落点浮层锚在起拖的位置，整个拖拽过程中**不动**。
+  // 之前浮层跟着指针走，结果是想把卡片拖进某一行时，浮层一直在飘，
+  // 要追着它挪才能命中 —— 而且指针压在浮层上还会挡住命中检测。
+  dnd.ax = x
+  dnd.ay = y
+}
+
+export function dndMove(x, y) {
+  dnd.x = x
+  dnd.y = y
+  dnd.over = hitCategory(x, y)
+}
+
+/**
+ * 触屏的"点选归类"：点卡片的「⋯」→ 打开同一个落点浮层，改成点树上一行即归类。
+ * 和 PC 拖拽共用这一个浮层 / 这棵树 / 这一套 data-cat-id，只是打开方式不同，
+ * 所以两端看到的东西和操作结果完全一致（见 TopicCard 的 pick 入口）。
+ */
+export function dndPick(topicId, anchorEl) {
+  const r = anchorEl?.getBoundingClientRect()
+  const x = r ? r.left + r.width / 2 : window.innerWidth / 2
+  const y = r ? r.bottom : window.innerHeight / 3
+  dnd.live = true
+  dnd.picking = true
+  dnd.topicId = topicId
+  dnd.over = null
+  dnd.x = x
+  dnd.y = y
+  dnd.ax = x
+  dnd.ay = y
+}
+
+/** 触屏点选：直接归类，不拖东西进去。浮层关掉。 */
+export async function dndPickTo(categoryId) {
+  const topicId = dnd.topicId
+  dndReset()
+  const topic = getTopics().find((t) => t.id === topicId)
   if (topic) await categorizeTopic(topic, categoryId)
+}
+
+/** 放下：命中了才归类，没命中就是取消（拖到空白处松手不该有副作用）。 */
+export async function dndDrop() {
+  const { topicId, over } = dnd
+  dndReset()
+  if (topicId == null || over == null) return
+  const topic = getTopics().find((t) => t.id === topicId)
+  if (topic) await categorizeTopic(topic, over)
+}
+
+export function dndReset() {
+  dnd.live = false
+  dnd.picking = false
+  dnd.topicId = null
+  dnd.over = null
 }
 
 export function getCategoryName(categoryId) {
@@ -383,6 +547,12 @@ export async function createCategory(name, parentId = ROOT_CATEGORY) {
   await ensureCategoriesLoaded(true)
 }
 
+/** 重命名。后端按 (userId, oldName) 定位，所以要传当前真名而不是 id */
+export async function renameCategory(oldName, newName) {
+  await apiRenameCategory({ oldName, newName })
+  await ensureCategoriesLoaded(true)
+}
+
 export async function deleteCategory(id) {
   await apiDeleteCategory(id)
   // 目录下知识点回到了"未归类"，topic 缓存也得刷
@@ -391,18 +561,15 @@ export async function deleteCategory(id) {
 }
 
 /**
- * 删除目录的交互流。入口在目录树每一行的「－」。
+ * 删除目录的交互流。入口在目录行「⋯」菜单里的"删除目录"。
  * 返回是否真的执行了：调用方据此决定要不要把整条树收走（删的可能正是它锚定的那个节点）。
- *
- * 这里没有改名：卡片上的目录 chip 和详情页的「目录」行都撤了之后，
- * 前端已经没有重命名入口，`promptRenameCategory` / `renameCategory` 一起删掉，
- * 不留零调用的死代码。后端 `PUT /kp/category/rename` 还在，要接回来从这里加。
  */
 export async function confirmDeleteCategory(c) {
   try {
     await ElMessageBox.confirm(
-      `删除目录「${c.name}」后，里面的知识点会回到"未归类"（知识点不会被删），`
-      + '它的下级目录会挂到它的上级，不会跟着一起删。确定删除吗？',
+      // 只留用户真正需要预判的两件事：知识点去哪、下级目录去哪。
+      // 「不会被删」是对"回到未归类"的重复解释，删掉
+      `「${c.name}」里的知识点回到未归类，下级目录挂到它的上级。确定删除？`,
       '删除目录',
       { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
     )

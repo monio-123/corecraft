@@ -45,19 +45,40 @@ export function bootstrapSession({ force = false } = {}) {
       profile: profileRes?.data || {}
     }
     return snapshot
+  }).finally(() => {
+    // **必须清掉**：不清的话首次失败会把 inflight 永久钉成一个 rejected promise，
+    // 而上面第 29 行 `if (inflight && !force) return inflight` 会把每一次后续调用
+    // 都导向那个已经失败的 promise —— snapshot 还是 null，永远重试不了，
+    // bootstrapSession 在整个页面生命周期里再也不会成功。
+    //
+    // 症状很难认：session.profile 一直是 {}，界面显示「未登录」，
+    // 但 token 明明是好的（建目录、查目录都调得通，那些请求不走这里），
+    // 看着像"数据串号"或者"前端没登进去"。
+    //
+    // 成功路径不需要在这里清：第 28 行 snapshot 已经短路了。
+    inflight = null
   })
 
   return inflight
 }
 
 /**
- * 登录后的落点：按"你拥有哪个壳的菜单"决定，而不是按角色。
- *   - 有管理后台菜单 → 后台首页，他的工作面是配置系统
- *   - 只有业务菜单 → 业务首页
- * 一个都没有也落业务首页：业务界面是产品本体，进去至少能看到"没权限"的提示。
+ * 登录后的落点：所有人都落业务首页 `/app`，不分角色、不看有没有 admin 菜单。
+ *
+ * 不给超管开特例的理由：业务界面是这个产品本体，管理后台是脚手架带来的
+ * 用户/角色/字典管理，它是**次级入口**——AppLayout 顶栏的「管理后台」按钮
+ * 已经给了超管一键直达（且只对拥有 admin 菜单的人显示）。多这一次点击，
+ * 换来"登录后看到的东西永远和这个站是干什么的一致"。
+ *
+ * 曾经按菜单分流（有 admin 菜单 → 后台首页），代价是"登录落哪"变成三处都要
+ * 推理的分支，而且那次改动没留迭代记录，`corecraft-web-context` 和 FEATURES #4
+ * 记的还是"无条件落 /app"。策略散落在代码里而不是集中在一处，正是要避免的。
+ *
+ * 保持成函数而不是让各调用点直接写 `{ name: 'AppHome' }`：它是这条策略的唯一
+ * 出处，grep 得到、改一处生效。要改策略就连同上面的理由一起改。
  */
 export function landingRoute() {
-  return hasAdminMenus() ? { name: 'Home' } : { name: 'AppHome' }
+  return { name: 'AppHome' }
 }
 
 /** 用户是否有管理后台（admin 壳）的菜单——决定要不要给"管理后台"入口 */

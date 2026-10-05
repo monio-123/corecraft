@@ -4,24 +4,32 @@
     - 包 <MilkdownProvider>，让 <MilkdownEditorBody> 作为 Provider child 调 useEditor
     - v-model 双向：外部 props.modelValue 进来 → 内部 markdown；内部 markdown 变化 → emit update:modelValue
     - 业务 view 只用 <MilkdownEditor v-model="..." />，不接触 Milkdown API
+    - Mod-Enter 提交：Body 里注册 keymap，事件原样往上抛（@submit），由使用方接保存。
+      随手记的"Ctrl+Enter 保存"就接在这里——编辑器是 contenteditable，
+      挂在外层 div 上的 keydown 收不到这个键。
 
-    模式切换：默认简洁模式（不显示工具栏），右上角按钮切到完整模式显示 B/I/H2/H3 工具栏。
-    状态本地管理，不外传——业务 view 不需要知道当前是哪种模式。
+    #before-content 插槽落在工具栏之下、正文之上。知识点详情页把标题塞进去，
+    于是 DOM 顺序是「工具栏 → 标题 → 正文」，和语雀那类文档编辑器一致
+    （用插槽而不是让使用方把工具栏搬到标题上面：搬出去就脱离 Provider 了）。
+
+    **「简洁 / 完整」的开关不在这里，由使用方渲染**（v-model:show-toolbar）。
+    理由是它是**整个编辑器**的模式开关，不是格式动作——工具栏那一排是"格式动作区"，
+    把模式开关混进去是降一级。放在使用方自己的顶栏里还有两个好处：
+    ① 简洁模式下工具栏整行不渲染，标题直接顶到框顶，不像原来那样空一行；
+    ② 两种模式开关位置不变，来回切它不会跳。
+    插槽做不到这件事：插槽内容渲染在声明插槽的地方，而顶栏在编辑器外面。
   -->
   <div class="milkdown-editor-wrapper">
-    <div class="milkdown-editor-mode-toggle">
-      <el-tooltip
-        :content="showToolbar ? '切换到简洁模式（隐藏工具栏）' : '切换到完整模式（显示 B/I/H2/H3 工具栏）'"
-        placement="bottom-end"
-      >
-        <el-button size="small" text @click="showToolbar = !showToolbar">
-          <el-icon><Tools /></el-icon>
-          <span class="mode-label">{{ showToolbar ? '完整' : '简洁' }}</span>
-        </el-button>
-      </el-tooltip>
-    </div>
     <MilkdownProvider>
-      <MilkdownEditorBody v-model="markdown" :show-toolbar="showToolbar" />
+      <MilkdownEditorBody
+        v-model="markdown"
+        :show-toolbar="showToolbar"
+        @submit="emit('submit')"
+      >
+        <template #before-content>
+          <slot name="before-content" />
+        </template>
+      </MilkdownEditorBody>
     </MilkdownProvider>
   </div>
 </template>
@@ -29,44 +37,18 @@
 <script setup>
 import { ref, watch } from 'vue'
 import { MilkdownProvider } from '@milkdown/vue'
-import { Tools } from '@element-plus/icons-vue'
 import MilkdownEditorBody from './MilkdownEditorBody.vue'
 
-const props = defineProps({ modelValue: { type: String, default: '' } })
-const emit = defineEmits(['update:modelValue'])
+const props = defineProps({
+  modelValue: { type: String, default: '' },
+  // 工具栏显不显示。**由使用方持有**（v-model:show-toolbar），
+  // 因为开关按钮画在编辑器外面的顶栏上，状态得和使用方那份是同一份。
+  showToolbar: { type: Boolean, default: false }
+})
+const emit = defineEmits(['update:modelValue', 'update:showToolbar', 'submit'])
 
 // v-model 双向：props.modelValue 进来同步到内部 markdown，内部 markdown 变化 emit 出去
 const markdown = ref(props.modelValue)
 watch(() => props.modelValue, (v) => { markdown.value = v })
 watch(markdown, (v) => emit('update:modelValue', v))
-
-// 默认简洁模式：隐藏工具栏，只露 ProseMirror 编辑区
-const showToolbar = ref(false)
 </script>
-
-<style scoped>
-.milkdown-editor-wrapper {
-  position: relative;
-}
-/*
-  toggle 按钮用 absolute 定位在 wrapper 右上角：
-  - 完整模式（.md-toolbar 存在）：top: 4px = 工具栏 padding-top:4px，按钮视觉基线跟 B/I/H2 等工具栏按钮一致（不抢工具栏下方空间）
-  - 简洁模式（无 .md-toolbar）：按钮浮在 ProseMirror 顶部 padding 区（ProseMirror padding-top:8px），不重叠编辑器内容
-*/
-.milkdown-editor-mode-toggle {
-  position: absolute;
-  /* top: 4px = .md-toolbar padding-top:4px，让 toggle 按钮视觉基线跟 B/I/H2 等工具栏按钮一致 */
-  top: 4px;
-  right: 4px;
-  z-index: 10;
-  opacity: 0.55;
-  transition: opacity 0.15s;
-}
-.milkdown-editor-mode-toggle:hover {
-  opacity: 1;
-}
-.mode-label {
-  margin-left: 2px;
-  font-size: 12px;
-}
-</style>

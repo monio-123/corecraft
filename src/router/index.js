@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { getMenuPaths, hasToken } from '../utils/auth'
-import { bootstrapSession, isSessionReady, landingRoute } from '../utils/session'
+import { bootstrapSession, hasAdminMenus, isSessionReady, landingRoute } from '../utils/session'
 import Users from '../views/Users.vue'
 import Dictionaries from '../views/Dictionaries.vue'
 import Forbidden from '../views/Forbidden.vue'
@@ -31,7 +31,10 @@ const routes = [
         path: 'learn',
         name: 'AppLearn',
         component: () => import('../views/corecraft-web/AppLearnView.vue'),
-        meta: { title: '随手记' }
+        // 侧边栏显示的名字来自 sys_permission.name（本条 code=corecraft-web:learn），
+        // 两边要同步改：菜单名在管理后台改（附 SQL 见 resources/db/_archive），
+        // 这里改的是顶栏标题 / tab 标题，只靠前端这一处匹配不到。
+        meta: { title: '知识点' }
       },
       {
         // 详情页不是菜单项（meta.path 含 ':'，导航里会被过滤掉），只能从卡片点进
@@ -135,6 +138,19 @@ router.beforeEach(async (to, from, next) => {
       // 拉不到（token 过期等）就按"没有权限"往下走，
       // request.js 的拦截器会负责清 token 并跳登录
     }
+  }
+
+  // 根路径不是"有 token 就能进的后台首页"。
+  // `/` 是管理后台的真实首页（AppLayout 顶栏「管理后台」按钮的 goAdmin() 就 push 这里），
+  // 所以它不能变成纯分发口——那会让超管点齿轮 → `/` → 弹回 `/app` → 再点齿轮，死循环。
+  // 因此这里只把**没有 admin 菜单的人**请走，他们本来就不该看见这个壳，
+  // 落点用 landingRoute()（= 业务首页），和登录后落点保持同一个出处。
+  // ⚠️ 修法不是把 '/' 塞进 protectedMenuPaths：普通用户的落点本来就有（业务首页），
+  // 弹 Forbidden 是错的答案；而且 /forbidden 本身就是 / 的子路由，塞进去会让
+  // 无权用户看到"自己的无权页套在管理后台壳里"。
+  if (to.name === 'Home' && !hasAdminMenus()) {
+    next(landingRoute())
+    return
   }
 
   if (protectedMenuPaths.includes(to.path) && !getMenuPaths().includes(to.path)) {

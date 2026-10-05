@@ -37,7 +37,9 @@ export function getTagList() {
   return request.get('/kp/tag/list')
 }
 
-// 重命名 tag：oldCategory::oldName → newCategory::newName
+// 重命名 tag。后端 KpTagRenameReq 只有 { oldName, newName } 两个字段，
+// 按**名字**定位（不按 id）；原来这条注释写的 "oldCategory::oldName → newCategory::newName"
+// 是更早一版带分类前缀的签名，后端早就改了。
 export function renameTag(data) {
   return request.put('/kp/tag/rename', data)
 }
@@ -56,6 +58,11 @@ export function getCategoryList() {
 
 export function createCategory(data) {
   return request.post('/kp/category', data)
+}
+
+// 重命名目录：后端按 (userId, oldName) 定位，所以 oldName 要传当前真名
+export function renameCategory(data) {
+  return request.put('/kp/category/rename', data)
 }
 
 // 删除目录：其下知识点回到"未归类"（知识点本身不删）

@@ -6,20 +6,41 @@
       <p class="home__date">{{ todayText }}</p>
     </header>
 
-    <!-- 快捷录入：最高频动作，放最显眼 -->
-    <section class="quick">
-      <el-input
-        v-model="draft"
-        type="textarea"
-        :rows="3"
-        resize="none"
-        placeholder="记一条…（Ctrl + Enter 保存）"
-        @keydown.ctrl.enter="save"
-        @keydown.meta.enter="save"
-      />
+    <!-- 快捷录入：最高频动作，放最显眼。
+         原先是 <el-input type="textarea">，纯文本框——从语雀这类富文本源框选复制，
+         浏览器往 textarea 里只放 text/plain，标题/列表/代码块在【存库之前】就全塌成了
+         纯文字。这和 #51 是同一个 bug：那次只修了随手记页，首页这处漏了，
+         直到两边被放在一起看才发现它们是两份不一样还都不全的实现。
+         现在录入统一收在这一页（随手记页去掉输入框，改成纯浏览 + 归类）。
+         :key 不是可选的：defaultValueCtx 只在编辑器创建那一刻读一次，事后把 draft 置空
+         不会回写 doc，不重建的话保存之后框里还留着原文案，像保存失败。 -->
+    <section class="quick" :class="{ 'is-big': immersive.on }">
+      <MilkdownEditor :key="editorKey" v-model="draft" v-model:show-toolbar="toolbar" @submit="save" />
       <div class="quick__actions">
-        <span class="quick__hint">随手记，不用想结构，之后再归类</span>
-        <el-button type="primary" :loading="saving" :disabled="!draft.trim()" @click="save">
+        <!-- 左边两个都是"编辑器/页面"的开关（格式工具栏显不显、要不要进全屏），
+             右边是"记下来"这个主操作。space-between 要的是两个子元素，
+             所以左边得有个容器把它们圈住。 -->
+        <div class="quick__left">
+          <el-tooltip :content="toolbar ? '切换到简洁模式（隐藏工具栏）' : '切换到完整模式（显示格式工具栏）'" placement="top">
+            <button
+              class="kb-icon-btn"
+              :aria-label="toolbar ? '切换到简洁模式' : '切换到完整模式'"
+              @click="toolbar = !toolbar"
+            >
+              <el-icon><Tools /></el-icon>
+            </button>
+          </el-tooltip>
+          <el-tooltip :content="immersive.on ? '退出全屏 (Esc)' : '全屏录入'" placement="top">
+            <button
+              class="kb-icon-btn"
+              :aria-label="immersive.on ? '退出全屏' : '全屏录入'"
+              @click="immersive.toggle"
+            >
+              <el-icon><component :is="immersive.on ? Close : FullScreen" /></el-icon>
+            </button>
+          </el-tooltip>
+        </div>
+        <el-button type="primary" size="small" :loading="saving" :disabled="!draft.trim()" @click="save">
           记下来
         </el-button>
       </div>
@@ -70,7 +91,7 @@
           class="recent__item"
           @click="goDetail(t)"
         >
-          <span class="recent__title">{{ t.title || '未命名' }}</span>
+          <span class="recent__title">{{ t.title || excerptOf(t.content, 18) }}</span>
           <span class="recent__cat">{{ getCategoryName(t.categoryId) }}</span>
         </li>
       </ul>
@@ -83,16 +104,27 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Clock } from '@element-plus/icons-vue'
-import { bootstrapSession } from '../../utils/session'
+import { Clock, Close, FullScreen, Tools } from '@element-plus/icons-vue'
+import MilkdownEditor from '../../components/MilkdownEditor.vue'
+import { loadShellData } from './useShellData'
+import { useImmersive } from './useImmersive'
 import {
   ensureTopicsLoaded, ensureCategoriesLoaded, getTopics, getCategories,
-  getUncategorizedCount, getCategoryName, createTopic
+  getUncategorizedCount, getCategoryName, createTopic, excerptOf
 } from './useCorecraftWebStore'
 
 const router = useRouter()
+// 全屏录入：整页只剩这一块输入区（见下面的 .is-immersive 规则）。
+// 和详情页、AppLayout 共用同一个判据 useImmersive()，状态在 URL 上。
+const immersive = useImmersive()
+// 工具栏显不显示，状态在本层——「简洁/完整」开关按钮就在下面那个动作行里，
+// 按钮和状态得是同一份。传下去用 v-model:show-toolbar。
+const toolbar = ref(false)
 
 const draft = ref('')
+// 强制重建编辑器来清空输入框：defaultValueCtx 只在创建那一刻读一次 defaultValue，
+// 事后把 draft 置空不会回写 doc。重建顺带把 undo 历史也清了，本来也该清。
+const editorKey = ref(0)
 const saving = ref(false)
 const user = ref({})
 
@@ -129,6 +161,7 @@ async function save() {
   try {
     await createTopic({ title: '', content, tags: [] })
     draft.value = ''
+    editorKey.value++
     ElMessage.success('已记下')
   } finally {
     saving.value = false
@@ -140,13 +173,11 @@ function goDetail(t) {
 }
 
 onMounted(async () => {
-  // 共享 inflight：AppLayout 已经拉过会话时，这里不会再打一次接口
-  const [s] = await Promise.all([
-    bootstrapSession(),
-    ensureTopicsLoaded(),
-    ensureCategoriesLoaded()
-  ])
-  user.value = s.profile
+  // 共享 inflight：AppLayout 已经拉过会话时，这里不会再打一次接口。
+  // 三个 ensure 收敛在 loadShellData 一处（原来这里和 AppLayout 各写了一遍）。
+  // 这里不加 try/catch：壳先挂载，它成功了这一步必然命中缓存、不会失败；
+  // 失败的状态由壳的侧边栏那格「加载失败 · 重试」统一承担（见 AppLayout.loadShell）。
+  user.value = (await loadShellData()).profile
 })
 </script>
 
@@ -173,26 +204,54 @@ onMounted(async () => {
   color: #a0a5ad;
 }
 
-/* 快捷录入：整块可点，视觉上就是"这里能写" */
+/* 快捷录入：整块可点，视觉上就是"这里能写"。
+   padding / border / 圆角跟随手记页原来那份 .composer 对齐（首页原来是 14px 16px 12px，
+   随手记页是 12px 14px 10px），既然录入已经统一收在这一页，就用编辑器那一套的值。
+   正文字号 / 行高不在这里设：.ProseMirror 是 Milkdown 渲染出来的，节点上不带本文件的
+   data-v，从 scoped 样式里 :deep 过去匹配不可靠，统一由 MilkdownEditorBody 的全局规则负责。 */
 .quick {
   background: #fff;
   border: 1px solid #eef0f3;
   border-radius: 12px;
-  padding: 14px 16px 12px;
+  padding: 12px 14px 10px;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .quick:focus-within {
   border-color: #a8ceff;
   box-shadow: 0 2px 12px rgba(43, 127, 255, 0.08);
 }
-.quick :deep(.el-textarea__inner) {
-  border: none;
-  box-shadow: none;
-  padding: 0;
-  font-size: 15px;
-  line-height: 1.7;
-  color: #1f2329;
+/* 全屏开关：24×24 的图标按钮，和右侧「记下来」一起由 space-between 分到两头。
+   配色压到 text-4（比「记下来」轻一档），hover 才提上来。 */
+.quick__left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ---------- 沉浸模式（?full=1）----------
+   整页只剩这一块输入区，别的（问候 / 概览 / 待复习 / 最近记录）全部收掉。
+   判据类 .is-immersive 由 AppLayout 挂在 .app-content 上，编辑器撑满
+   （min-height: 60vh / 解除 80vh 封顶）在 MilkdownEditorBody 的全局块里。 */
+.is-immersive .home__hero,
+.is-immersive .stats,
+.is-immersive .panel {
+  display: none;
+}
+.is-immersive .home {
+  gap: 0;
+}
+/* 全屏下没有别的内容作参照，卡片那圈边框和圆角是多余的，直接摊成一张纸 */
+.quick.is-big {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+}
+.quick.is-big .quick__actions {
+  margin-top: auto;
 }
 .quick__actions {
   display: flex;
@@ -202,11 +261,6 @@ onMounted(async () => {
   padding-top: 10px;
   border-top: 1px solid #f4f6f8;
 }
-.quick__hint {
-  font-size: 12px;
-  color: #b6bac1;
-}
-
 /* 概览 */
 .stats {
   display: grid;

@@ -6,31 +6,35 @@
     @mouseenter="onEnter"
     @mouseleave="onLeave"
   >
-    <p v-if="mode === 'drop'" class="ct__hint">放到哪个目录</p>
+    <p v-if="mode === 'drop'" class="ct__hint">
+      {{ dnd.picking ? '点哪个目录' : '放到哪个目录' }}
+    </p>
 
+    <!-- drop 模式下 data-cat-id 是命中检测的标记（store 的 hitCategory 用
+         elementFromPoint 找最近的带这个属性的元素）。
+         dnd.picking 是触屏的"点选归类"模式——此时点一行就归类，不用把卡片拖进去。
+         两种模式共用这一棵树，用户看到的东西完全一样。 -->
     <div
       v-for="r in rows"
       :key="r.c.id"
       class="ct__node"
       :class="{ 'is-drop': dnd.over === r.c.id }"
       :style="{ paddingLeft: 8 + r.depth * 14 + 'px' }"
+      :data-cat-id="r.c.id"
       @click="onPick(r.c)"
-      @dragover="onDragOver(r.c.id, $event)"
-      @drop="onDrop(r.c.id, $event)"
     >
       <span class="ct__name">{{ r.c.name }}</span>
-      <!-- 数字只在落点模式出现：拖的时候要判断"往哪个厚目录放"，数字有用；
-           浏览层级时结构已经摊平在缩进里了，数字是侧边栏那份的重复。 -->
-      <span v-if="mode === 'drop'" class="ct__count">{{ counts[r.c.id] || 0 }}</span>
-      <!-- 建/删子目录只在浏览模式给：拖拽中不该改结构，否则手一抖就删了目录。 -->
-      <template v-if="mode === 'nav'">
-        <el-icon class="ct__act" title="新建子目录" @click.stop="$emit('add', r.c)">
-          <Plus />
-        </el-icon>
-        <el-icon class="ct__act ct__act--danger" title="删除目录" @click.stop="remove(r.c)">
-          <Minus />
-        </el-icon>
-      </template>
+      <span class="ct__count">{{ counts[r.c.id] || 0 }}</span>
+      <!-- 「⋯」只在浏览模式给：拖拽时鼠标正按着卡片，弹个菜单点一下"删除目录"就是误删。
+           浏览态的每一行（侧边栏一级、弹层任意层）都是同一个 CategoryRowMenu。 -->
+      <CategoryRowMenu
+        v-if="mode === 'nav'"
+        :category="r.c"
+        @add="emit('add', $event)"
+        @rename="emit('rename', $event)"
+        @removed="emit('close')"
+        @menu="onMenu"
+      />
     </div>
 
     <p v-if="!rows.length" class="ct__empty">还没有目录</p>
@@ -54,9 +58,9 @@
  * "本层列完再列子层"，父节点会被同层的兄弟拦腰截断，缩进表达不出父子关系。
  */
 import { computed, ref } from 'vue'
-import { Plus, Minus } from '@element-plus/icons-vue'
+import CategoryRowMenu from './CategoryRowMenu.vue'
 import {
-  dnd, dropOver, dropTo, flattenCategoryTree, getCategoryCountMap, confirmDeleteCategory
+  dnd, dndPickTo, flattenCategoryTree, getCategoryCountMap
 } from './useCorecraftWebStore'
 
 const props = defineProps({
@@ -67,23 +71,26 @@ const props = defineProps({
   anchorTop: { type: Number, default: 0 }
 })
 
-const emit = defineEmits(['pick', 'add', 'enter', 'close'])
+const emit = defineEmits(['pick', 'add', 'rename', 'enter', 'close'])
 
 const rows = computed(() => flattenCategoryTree(props.items))
-// computed 是惰性的：nav 模式模板里根本不读它，这个遍历一次都不会跑
 const counts = computed(() => getCategoryCountMap())
 
+// 某一行上的「⋯」菜单是不是开着
+const menuOpen = ref(false)
+
 function onPick(c) {
+  // 触屏的"点选归类"：点哪行就归到哪，归完浮层自动关
+  if (dnd.picking) {
+    dndPickTo(c.id)
+    return
+  }
   if (props.mode === 'nav') emit('pick', c)
 }
 
-function onDragOver(id, e) {
-  if (props.mode === 'drop') dropOver(id, e)
-}
-
-function onDrop(id, e) {
-  if (props.mode === 'drop') dropTo(id, e)
-}
+// 落点命中不走 dragover/drop（HTML5 DnD 那套），由 store 的 hitCategory() 用
+// elementFromPoint 算，行上只剩 data-cat-id 这个标记（见模板）。
+// 本组件 drop 模式下没有事件处理，也不需要。
 
 // 只有 nav 模式需要向外挂开合：落点浮层是跟着 dnd.live 生死走的，没有开合这回事。
 // 而在拖拽过程中发 close 会顺手 cancel 掉侧边栏那 300ms 的开菜单定时器。
@@ -92,12 +99,18 @@ function onEnter() {
 }
 
 function onLeave() {
-  if (props.mode === 'nav') emit('close')
+  // 菜单开着的时候不收这棵树。菜单 teleport 到 body，鼠标从行移到菜单的路上必然
+  // 触发一次 mouseleave，220ms 缓冲一到树就被收走，菜单连同它的事件处理一起没了——
+  // 表现就是"点开 ⋯ 能看见，点「重命名」没反应"。菜单本身就是当前在用的界面，
+  // 它关了树再收。
+  if (props.mode === 'nav' && !menuOpen.value) emit('close')
 }
 
-// 删掉的可能正是这棵树上的某个节点，不收的话弹层停在一棵少了一截的树上。
-async function remove(c) {
-  if (await confirmDeleteCategory(c)) emit('close')
+function onMenu(v) {
+  menuOpen.value = v
+  // 菜单关掉 = 用户已经用完了（点了某项、或点了空白、Esc）。没有命令跟着来的时候
+  // 就把树一起收走，免得"点空白关菜单"留下一个赖着不走的弹层。
+  if (!v) emit('close')
 }
 </script>
 
@@ -118,14 +131,14 @@ async function remove(c) {
   min-width: 150px;
   z-index: 40;
 }
-/* 落点浮层固定在内容区右侧居中：源卡片就在鼠标底下，浮层盖上去就没法拖了。
-   左边拖、右边选，视线不用来回找。 */
+/* 落点浮层：位置由 AppLayout 按指针坐标算好传进来（:style），这里只管外观。
+   原来是写死的 `right: 24px; top: 50%`——指针在左半屏拖、落点在右边，视线要来回找。
+   跟着指针走之后 "指针右下" 是默认位，靠近右/下边缘时由 AppLayout 翻到另一侧。 */
 .ct--drop {
   position: fixed;
-  right: 24px;
-  top: 50%;
-  transform: translateY(-50%);
   width: 232px;
+  max-height: 260px;
+  overflow-y: auto;
   z-index: 20;
 }
 .ct__hint {
@@ -169,20 +182,6 @@ async function remove(c) {
   font-size: 11px;
   color: #b6bac1;
   flex-shrink: 0;
-}
-/* ＋/－ 常显：hover 才显的话，"删掉一个空目录"就等于没有入口，
-   而空目录恰恰是最该被清掉的。 */
-.ct__act {
-  font-size: 12px;
-  color: #c0c4cc;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.ct__node:hover .ct__act {
-  color: #606a75;
-}
-.ct__act--danger:hover {
-  color: #d93026;
 }
 .ct__empty {
   margin: 0;
