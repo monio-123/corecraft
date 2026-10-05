@@ -1,0 +1,87 @@
+/* ============================================================
+ * 知识库（app 壳）共用的视觉原语 —— 非 scoped 全局类
+ *
+ * 和 admin-page.css 同一思路：同一份规则被两个以上页面用到时，
+ * 写进各自的 <style scoped> 就是多份副本，改一次要同步改另一处。
+ *
+ * 全部用 kb- 前缀：这些类不带壳限定（不像 admin-page.css 的 .page 那样能靠
+ * 容器 class 圈住），名字本身就是边界，admin 壳撞不上。
+ * ============================================================ */
+
+/* ---------- 标签 chip ----------
+ * 知识点卡片（TopicCard）和知识点详情页的标签是同一个东西，
+ * 之前各写一份 hex，两处灰度还不一样（#f4f5f7 vs 底色 token），
+ * 在同一屏上并排出现时能看出色差。 */
+.kb-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--cc-surface-2);
+  color: var(--cc-text-3);
+  white-space: nowrap;
+  max-width: 160px;
+  flex-shrink: 0;
+}
+.kb-chip__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 可点的 chip（详情页删标签用的 × 按钮） */
+.kb-chip__x {
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin-right: -2px;
+  color: var(--cc-text-4);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  transition: var(--cc-transition);
+}
+.kb-chip__x svg {
+  width: 11px;
+  height: 11px;
+}
+.kb-chip__x:hover {
+  color: var(--el-color-danger);
+}
+
+/* ---------- 图标按钮 ----------
+ * AppLayout 顶栏、知识点卡片删除、知识点详情页删除是同一个控件的三处皮肤。
+ * 尺寸 24×24 一档：够点，又不至于比旁边的文字抢眼。 */
+.kb-icon-btn {
+  border: none;
+  background: transparent;
+  color: var(--cc-text-4);
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: var(--cc-radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+  transition: var(--cc-transition);
+}
+.kb-icon-btn:hover {
+  background: var(--cc-surface-2);
+  color: var(--cc-text-1);
+}
+.kb-icon-btn--danger:hover {
+  background: var(--el-color-danger-light-9);
+  color: var(--el-color-danger);
+}
+.kb-icon-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+/* 拖拽幽灵已回到 AppLayout 里的手写实现（原因见那里的注释）：
+   SortableJS 的 fallback 会给克隆体写**行内** width/height 且每次移动重写，CSS 改不动。 */
