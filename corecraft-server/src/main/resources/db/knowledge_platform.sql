@@ -134,3 +134,39 @@ CREATE TABLE IF NOT EXISTS `kp_topic_quiz` (
   PRIMARY KEY (`id`),
   KEY `idx_topic_id` (`topic_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='知识点自测题';
+
+-- ============================================================
+-- AI 设置 + AI 接口（2026-10-06 新增，2026-10-07 拆成两张表）
+-- 详细取舍见同目录 2026-10-07_ai_endpoint_multi.sql 的头部注释。
+--
+-- **两张表各管一件事**：
+--   ai_config   —— 一人一行，只有一个总开关。enabled 默认 0：没开启就不出现任何 AI 入口。
+--   ai_endpoint —— 一人多行，每个 base_url + model + api_key 一行，提问时选一个用。
+--   name 是自己起的别名，列表里靠它区分（同一个厂商可能配两个不同模型）。
+--
+-- 不设 provider 字段（厂商靠 base_url 决定）；
+-- 不放 sys_dict（字典表无 user_id，放进去就是全局一份，与"每人一份"矛盾）。
+-- 「当前选中哪个接口」不落库，存前端 localStorage——那是当下的临时选择，不是用户资料。
+-- ============================================================
+CREATE TABLE `ai_config` (
+  `id`          BIGINT       NOT NULL AUTO_INCREMENT,
+  `user_id`     BIGINT       NOT NULL COMMENT '所属用户ID',
+  `enabled`     TINYINT      NOT NULL DEFAULT 0 COMMENT '是否启用AI功能：0关闭 1开启',
+  `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_user_id` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI设置：每人一行，只管开关。接口在 ai_endpoint';
+
+CREATE TABLE `ai_endpoint` (
+  `id`          BIGINT       NOT NULL AUTO_INCREMENT,
+  `user_id`     BIGINT       NOT NULL COMMENT '所属用户ID',
+  `name`        VARCHAR(64)  NOT NULL COMMENT '自己起的名字，列表里靠它区分',
+  `base_url`    VARCHAR(255)          DEFAULT NULL COMMENT 'OpenAI兼容接口地址，例：https://api.deepseek.com/v1',
+  `model`       VARCHAR(100)          DEFAULT NULL COMMENT '模型名，例：deepseek-chat',
+  `api_key`     VARCHAR(255)          DEFAULT NULL COMMENT 'API Key。只存后端，绝不返回给前端',
+  `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_user_id` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI接口：每人多个，提问时选一个用';

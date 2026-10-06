@@ -35,4 +35,22 @@ public class KpTopic extends BaseEntity {
      */
     @TableField(value = "category_id", updateStrategy = FieldStrategy.ALWAYS)
     private Long categoryId;
+
+    /**
+     * 知识点类型（单选），指向 {@code sys_dict_item.id}。
+     * <p>
+     * 与目录、标签并列的第四个正交维度，回答的是「这条知识是什么性质」——
+     * 随手记 / 系统学。解决的是"记的太多，想找成体系的那部分却筛不出来"。
+     * <p>
+     * 存的是**字典项 id（纯数字）**而不是名字或 0/1/2 编码：字典项增删排序都不影响
+     * 任何代码，代码里也不存在"1 = 笔记"这种要同步维护的映射。
+     * <p>
+     * 没有外键约束：字典项是软删的（{@code is_delete}），加外键会在字典管理里
+     * 删项时把删除卡住。查不到对应字典项时由前端兜底成"排第一的那档"。
+     * <p>
+     * 这里**不用** {@code updateStrategy = ALWAYS}：类型没有"清空=某个含义"的语义，
+     * MP 默认的 NOT_NULL 策略正好合适——没传就跳过。
+     */
+    @TableField("type_id")
+    private Long typeId;
 }

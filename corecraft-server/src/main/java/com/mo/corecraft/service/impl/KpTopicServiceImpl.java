@@ -1,14 +1,18 @@
 package com.mo.corecraft.service.impl;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.mo.corecraft.exception.CoreCraftException;
 import com.mo.corecraft.model.entity.KpTag;
 import com.mo.corecraft.model.entity.KpTopic;
 import com.mo.corecraft.model.entity.KpTopicQuiz;
 import com.mo.corecraft.model.entity.KpTopicRelation;
 import com.mo.corecraft.model.entity.KpTopicTag;
+import com.mo.corecraft.model.query.KpCategoryQuery;
 import com.mo.corecraft.model.query.KpTopicQuery;
 import com.mo.corecraft.model.req.KpTopicCreateReq;
 import com.mo.corecraft.model.req.KpTopicUpdateReq;
 import com.mo.corecraft.model.resp.KpTopicResp;
+import com.mo.corecraft.repository.KpCategoryRepository;
 import com.mo.corecraft.repository.KpTagRepository;
 import com.mo.corecraft.repository.KpTopicQuizRepository;
 import com.mo.corecraft.repository.KpTopicRelationRepository;
@@ -33,6 +37,7 @@ public class KpTopicServiceImpl implements KpTopicService {
     private final KpTagRepository kpTagRepository;
     private final KpTopicRelationRepository kpTopicRelationRepository;
     private final KpTopicQuizRepository kpTopicQuizRepository;
+    private final KpCategoryRepository kpCategoryRepository;
 
     @Override
     public List<KpTopicResp> selectTopicList(KpTopicQuery query) {
@@ -57,6 +62,7 @@ public class KpTopicServiceImpl implements KpTopicService {
     public void createTopic(KpTopicCreateReq req, Long userId) {
         KpTopic entity = BeanUtils.createFrom(req, KpTopic.class);
         entity.setUserId(userId);
+        requireOwnCategory(entity.getCategoryId(), userId);
         entity.setTitle(StringUtils.defaultIfBlank(req.getTitle(), ""));
         kpTopicRepository.insert(entity);
         saveTopicTags(entity.getId(), req.getTags(), userId);
@@ -66,6 +72,10 @@ public class KpTopicServiceImpl implements KpTopicService {
     @Override
     @Transactional
     public void updateTopic(KpTopicUpdateReq req, Long userId) {
+        // categoryId 是无条件覆盖写（下面第 81 行），传错就会造出"指向不存在目录"的脏数据。
+        // 归类这一点没有外键兜着，所以归属校验放在这条入口上——不放在那儿，
+        // 一个手滑的 id 就进库了，界面上只表现为"这条知识点在哪个目录都找不到"。
+        requireOwnCategory(req.getCategoryId(), userId);
         kpTopicRepository.update(req.getId(), req, (r, e) -> {
             if (r.getTitle() != null) {
                 e.setTitle(r.getTitle());
@@ -79,6 +89,11 @@ public class KpTopicServiceImpl implements KpTopicService {
             // 无条件写 categoryId：null = 未归类，是有意义的值，不能当"不修改"跳过。
             // KpTopic.categoryId 上标了 updateStrategy = ALWAYS，null 也会进 UPDATE 语句。
             e.setCategoryId(r.getCategoryId());
+            // 类型反过来：没传就当"不修改"跳过。typeId 没有"清空=某个含义"的语义，
+            // 所以**不能**学 categoryId 那样无条件写。
+            if (r.getTypeId() != null) {
+                e.setTypeId(r.getTypeId());
+            }
         });
         if (req.getTags() != null) {
             kpTopicTagRepository.deleteByTopicId(req.getId());
@@ -179,6 +194,25 @@ public class KpTopicServiceImpl implements KpTopicService {
     }
 
     /**
+     * 目录必须是这个人自己的、且真的存在。**null 放行**——null = 未归类，是有意义的值。
+     *
+     * 这是外部输入边界上的基本校验（HTTP 入口），不是给内部调用兜底：
+     * updateTopic 对 categoryId 是无条件覆盖写、库里又没有外键，不在这里挡一下，
+     * 传错一个 id 就是一条永远归不了类的脏数据，而且界面上完全看不出发生了什么。
+     */
+    private void requireOwnCategory(Long categoryId, Long userId) {
+        if (categoryId == null) {
+            return;
+        }
+        var query = new KpCategoryQuery();
+        query.setId(categoryId);
+        query.setUserId(userId);
+        if (kpCategoryRepository.find(query, e -> e).isEmpty()) {
+            throw new CoreCraftException("目录不存在或不属于当前用户");
+        }
+    }
+
+    /**
      * 入参 tag 字符串 → upsert kp_tag 主表 → 批量插入 kp_topic_tag 关联。
      * 入参做 dedup（LinkedHashSet 保序）：同一字符串重复时只插一次，避免撞 (topic_id, tag_id) 唯一键。
      * 空字符串 / 纯空白跳过；同 (user, name) 复用同一 kp_tag。
@@ -211,6 +245,34 @@ public class KpTopicServiceImpl implements KpTopicService {
         }
     }
 
+    /**
+     * 一道题落到实体上。入参有两种形态：**结构化对象被 JSON.stringify 过的串**，
+     * 或者一段纯文本（前端 `decodeQuizQuestion` 对应的老数据）。判据是"以 { 开头"——
+     * 长得像 JSON 就按 JSON 解析，解析不了让它抛出去，不悄悄降级当纯文本，
+     * 那会把一份坏数据伪装成一次正常写入。
+     *
+     * ⚠️ 纯文本分支**也必须填 options / answer**：`kp_topic_quiz` 这两列是 NOT NULL
+     * 且没有默认值，原来这条写入路径只写 question，于是**任何一次插入都会被数据库拒掉**
+     * （该表至今 0 行就是这个原因，2026-10-07 采纳测验题时才撞出来）。
+     * 表本来就是为结构化题设计的（question_type / question / options / answer 四列齐），
+     * 只是赋值这半边从来没写过。
+     */
+    private void applyQuestion(KpTopicQuiz quiz, String raw) {
+        String text = StringUtils.defaultString(raw).trim();
+        if (text.startsWith("{")) {
+            JsonNode node = JsonUtils.readTree(text);
+            quiz.setQuestionType(node.path("type").asText("single"));
+            quiz.setQuestion(node.path("question").asText());
+            quiz.setOptions(JsonUtils.toJsonString(node.path("options")));
+            quiz.setAnswer(node.path("answer").asInt(0));
+            return;
+        }
+        quiz.setQuestionType("single");
+        quiz.setQuestion(text);
+        quiz.setOptions("[]");
+        quiz.setAnswer(0);
+    }
+
     private void saveTopicQuizzes(Long topicId, List<String> quizQuestions) {
         if (quizQuestions == null || quizQuestions.isEmpty()) {
             return;
@@ -218,7 +280,7 @@ public class KpTopicServiceImpl implements KpTopicService {
         for (int i = 0; i < quizQuestions.size(); i++) {
             KpTopicQuiz quiz = new KpTopicQuiz();
             quiz.setTopicId(topicId);
-            quiz.setQuestion(quizQuestions.get(i));
+            applyQuestion(quiz, quizQuestions.get(i));
             quiz.setSort(i);
             kpTopicQuizRepository.insert(quiz);
         }

@@ -21,6 +21,8 @@ public class KpTopicResp {
 
     /** 所属目录ID（null = 未归类）；目录名由前端 store 从目录列表解析 */
     private Long categoryId;
+    /** 知识点类型，指向 sys_dict_item.id（纯数字）。见 KpTopic.typeId */
+    private Long typeId;
 
     private String tags;
 

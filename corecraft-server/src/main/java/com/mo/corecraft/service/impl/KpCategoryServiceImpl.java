@@ -37,12 +37,14 @@ public class KpCategoryServiceImpl implements KpCategoryService {
     @Transactional
     public void createCategory(KpCategoryCreateReq req, Long userId) {
         String name = req.getName().trim();
-        // 唯一键仍是 (user_id, name)，所以查重保持按名字。等唯一键换成
-        // (user_id, parent_id, name) 之后，这里要同步改成按 (userId, parentId, name) 查。
-        if (kpCategoryRepository.findByKey(userId, name).isPresent()) {
-            throw new CoreCraftException(ResultCodeEnum.FAIL, "同名目录已存在");
-        }
+        // parentId 必须**先归一再查重**：查重用的是唯一键那三列，
+        // 拿没归一的 parentId 去查会漏——库里历史数据有 parent_id 为 NULL 的。
         Long parentId = req.getParentId() == null ? KpCategory.ROOT_ID : req.getParentId();
+        // 唯一键是 (user_id, parent_id, name)，所以只有**同一层**才不许重名。
+        // 不同父目录下的同名目录（操作系统/内存 和 计算机网络/内存）是允许的。
+        if (kpCategoryRepository.findByKey(userId, parentId, name).isPresent()) {
+            throw new CoreCraftException(ResultCodeEnum.FAIL, "同一层下已有同名目录");
+        }
         if (!KpCategory.ROOT_ID.equals(parentId)) {
             // 父目录必须存在且是本人的，否则能把目录挂到别人的树上去
             KpCategoryQuery pq = new KpCategoryQuery();
@@ -62,17 +64,27 @@ public class KpCategoryServiceImpl implements KpCategoryService {
     @Override
     @Transactional
     public void renameCategory(KpCategoryRenameReq req, Long userId) {
-        KpCategory old = kpCategoryRepository.findByKey(userId, req.getOldName())
-                .orElseThrow(() -> new CoreCraftException(ResultCodeEnum.NOT_FOUND, "目录不存在"));
+        // 身份是 id，不是名字。名字是可变的：拿它当定位键，改名那一刻"它是谁"就变了；
+        // 允许同名之后更糟——同一层两个同名目录，按名字根本认不出改的是哪一个。
+        KpCategoryQuery q = new KpCategoryQuery();
+        q.setId(req.getId());
+        q.setUserId(userId);
+        KpCategory category = kpCategoryRepository.get(q, e -> e);
         String newName = req.getNewName().trim();
-        if (old.getName().equals(newName)) {
+        if (category.getName().equals(newName)) {
             return;
         }
-        if (kpCategoryRepository.findByKey(userId, newName).isPresent()) {
-            throw new CoreCraftException(ResultCodeEnum.FAIL, "同名目录已存在");
+        // 同级重名检查。真正的保证在 DB 的 uk_user_parent_name 上，这一步只是为了
+        // 给人话错误——让唯一键直接抛 DuplicateKeyException 的话用户看到的是 SQL 异常。
+        // 排除自己：改到同名（换个说法但同层唯一）不算撞。
+        KpCategory dup = kpCategoryRepository
+                .findByKey(userId, category.getParentId(), newName)
+                .orElse(null);
+        if (dup != null && !dup.getId().equals(category.getId())) {
+            throw new CoreCraftException(ResultCodeEnum.FAIL, "同一层下已有同名目录");
         }
-        old.setName(newName);
-        kpCategoryRepository.update(old);
+        category.setName(newName);
+        kpCategoryRepository.update(category);
     }
 
     @Override
