@@ -7,6 +7,7 @@ import {
   deleteCategory as apiDeleteCategory,
   renameTag as apiRenameTag, deleteTag as apiDeleteTag
 } from '../../api/knowledge'
+import { getDictTypeList, getDictItemList } from '../../api/dict'
 import { onAuthChange } from '../../utils/auth'
 
 // ==================== 内部状态 ====================
@@ -26,11 +27,19 @@ let allTagsLoaded = false
 const categories = ref([])
 let categoriesLoaded = false
 
+// 知识点类型缓存：[{ id, label }]，来自字典 sys_dict_type.code = 'kp_topic_type'。
+//
+// **字典是全局的**，所以每个用户天然都有默认档——不给它建独立主表正是因为这个。
+// kp_topic.typeId 存的是这里的 id（纯数字），不是 label 也不是 0/1/2：
+// 字典项增删排序都不影响任何代码，代码里也不存在"1 = 笔记"这种要同步维护的映射。
+const topicTypes = ref([])
+let topicTypesLoaded = false
+
 function normalizeCategory(c) {
   return { id: c.id, name: c.name, parentId: c.parentId || ROOT_CATEGORY }
 }
 
-// 三个缓存都是模块级的，只有整页刷新才会重建。换账号时不丢，B 会看到 A 的知识点/目录/标签。
+// 四个缓存都是模块级的，只有整页刷新才会重建。换账号时不丢，B 会看到 A 的知识点/目录/标签。
 // 登录态一变就全部作废：数据本身也要清，否则 loaded=false 但列表里还挂着旧账号的内容。
 onAuthChange(() => {
   topicMap.value = new Map()
@@ -39,6 +48,8 @@ onAuthChange(() => {
   allTagsLoaded = false
   categories.value = []
   categoriesLoaded = false
+  topicTypes.value = []
+  topicTypesLoaded = false
 })
 
 // ==================== 通用 helpers ====================
@@ -47,6 +58,8 @@ onAuthChange(() => {
 export const ROOT_CATEGORY = 0
 /** 「待归类」不是目录，是个固定桶。用字符串哨兵，避免和数字 id 撞类型 */
 export const UNCATEGORIZED = 'uncategorized'
+/** 知识点类型所在的字典编码。类型存字典而不是本地表——字典是全局的，每个用户都有默认档 */
+export const TOPIC_TYPE_DICT = 'kp_topic_type'
 
 function parseJson(raw, fallback) {
   try {
@@ -54,10 +67,6 @@ function parseJson(raw, fallback) {
   } catch {
     return fallback
   }
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 export function encodeTag(tag) {
@@ -102,6 +111,7 @@ function normalizeTopic(item) {
     content: item.content || '',
     parentTopicId: item.parentTopicId ?? null,
     categoryId: item.categoryId ?? null,
+    typeId: item.typeId ?? null,
     tags: parseJson(item.tags, []).map(decodeTag),
     quizQuestions: parseJson(item.quizQuestions, []).map(decodeQuizQuestion),
     relatedTopicIds: item.relatedTopicIds || [],
@@ -153,7 +163,7 @@ async function refreshAfterTopicChange(tagsChanged) {
   if (tagsChanged) await ensureAllTagsLoaded(true)
 }
 
-export async function createTopic({ title, content, tags, quizQuestions, parentTopicId, categoryId }) {
+export async function createTopic({ title, content, tags, quizQuestions, parentTopicId, categoryId, typeId }) {
   const beforeIds = new Set(getTopics().map((item) => item.id))
   const encoded = (tags || []).map(encodeTag).filter(Boolean)
   await apiCreateTopic({
@@ -161,6 +171,9 @@ export async function createTopic({ title, content, tags, quizQuestions, parentT
     content: content || '',
     parentTopicId: parentTopicId || null,
     categoryId: categoryId || null,
+    // 类型没传就用默认档（字典里排第一的那条）。后端 typeId 允许为空，
+    // 但录入路径永远给得出来——默认档一直存在
+    typeId: typeId ?? defaultTopicTypeId(),
     tags: encoded,
     quizQuestions: (quizQuestions || []).map((q) => typeof q === 'string' ? q : JSON.stringify(q))
   })
@@ -182,6 +195,8 @@ export async function updateTopic(id, patch) {
     content: patch.content,
     parentTopicId: patch.parentTopicId,
     categoryId,
+    // 没传 typeId = 不打算改它；后端那边也是这么判的（不像 categoryId 无条件写）
+    typeId: patch.typeId,
     tags: patch.tags ? patch.tags.map(encodeTag).filter(Boolean) : undefined,
     quizQuestions: patch.quizQuestions
       ? patch.quizQuestions.map((q) => typeof q === 'string' ? q : JSON.stringify(q))
@@ -203,6 +218,63 @@ export function getAllTags() {
   // 直接返回缓存（懒加载见 ensureAllTagsLoaded）。不再从 topicMap 聚合——避免详情页打开时
   // 必须先 ensureTopicsLoaded 拉全部 topic。
   return allTags.value
+}
+
+// ==================== 知识点类型 ====================
+
+/** 类型清单。字典是全局的，懒加载一次就够 */
+export function getTopicTypes() {
+  return topicTypes.value
+}
+
+export async function ensureTopicTypesLoaded(force = false) {
+  if (topicTypesLoaded && !force) return topicTypes.value
+  // 字典编码 → 字典类型 id。取的是 sys_dict_type 那张表的行，不是硬编码的数字。
+  const typeRes = await getDictTypeList({ code: TOPIC_TYPE_DICT })
+  const dictType = (typeRes?.data || [])[0]
+  if (!dictType) {
+    // **不上锁**：loaded 保持 false，这次查不到就当没发生过，下一个调用方会重试。
+    //
+    // 原来这里是 `topicTypes.value = []; topicTypesLoaded = true`——把"这一次没查到"
+    // 存成了"字典里就是没有类型"这个结论。于是上一行的短路生效，之后所有调用
+    // 都直接返回那个空数组，永远不重试，只有整页刷新才能恢复。症状是"类型下拉
+    // 忽然空了，刷新一下又好"，看起来像随机，其实是被缓存住的失败。
+    //
+    // 另外三个缓存（topics / categories / allTags）本来就只在真拿到数据时置 true，
+    // 只有这一份反着来——口径统一，别给它开特例。
+    return topicTypes.value
+  }
+  const itemRes = await getDictItemList({ dictTypeId: dictType.id })
+  topicTypes.value = (itemRes?.data || [])
+    .filter((i) => i.enabled)
+    .map((i) => ({ id: i.id, label: i.label }))
+  topicTypesLoaded = true
+  return topicTypes.value
+}
+
+/**
+ * 「默认档」= 清单里排第一的那条。**不靠 is_default 标记列**：
+ * 排第一是可查可判的（一条 SELECT 就知道），而 NULL / 标记位那种"靠约定猜"的隐式
+ * 状态最后都会变成 bug。新建知识点默认选它，它改名也还是默认——"它是默认档"
+ * 和它叫什么名字无关。
+ */
+export function defaultTopicTypeId() {
+  return topicTypes.value[0]?.id ?? null
+}
+
+/**
+ * 把知识点上可能悬空的 typeId 收口成清单里真实存在的 id。
+ * 字典项是**软删**的，后台删掉一条之后，引用它的知识点 typeId 就指向一个查不出来的行。
+ * 界面上不能因此显示一个空白或裸数字——统一当"排第一的那档"。
+ */
+export function resolveTopicTypeId(typeId) {
+  if (typeId != null && topicTypes.value.some((t) => t.id === typeId)) return typeId
+  return defaultTopicTypeId()
+}
+
+export function getTopicTypeLabel(typeId) {
+  const hit = topicTypes.value.find((t) => t.id === resolveTopicTypeId(typeId))
+  return hit?.label || ''
 }
 
 export async function ensureAllTagsLoaded(force = false) {
@@ -547,9 +619,9 @@ export async function createCategory(name, parentId = ROOT_CATEGORY) {
   await ensureCategoriesLoaded(true)
 }
 
-/** 重命名。后端按 (userId, oldName) 定位，所以要传当前真名而不是 id */
-export async function renameCategory(oldName, newName) {
-  await apiRenameCategory({ oldName, newName })
+/** 重命名。按 id 定位，不按名字——名字是可变字段，拿它当键认不准改的是哪一个 */
+export async function renameCategory(id, newName) {
+  await apiRenameCategory({ id, newName })
   await ensureCategoriesLoaded(true)
 }
 
@@ -584,80 +656,4 @@ export async function confirmDeleteCategory(c) {
     ElMessage.error(e?.message || '删除失败')
     return false
   }
-}
-
-// ==================== AI（占位实现） ====================
-
-const TOPIC_TEMPLATE = `## {{title}}
-
-### 概述
-{{title}} 是什么，解决什么问题，在什么场景下使用。
-
-### 核心原理
-深入解释 {{title}} 的底层工作机制，不只是表面概念。
-
-### 关键要点
-- 最重要的核心知识点 1
-- 最重要的核心知识点 2
-- 最重要的核心知识点 3
-
-### 常见误区
-学习 {{title}} 时容易混淆或理解错误的地方。
-
-### 实践建议
-实际开发/工作中如何应用 {{title}}，有哪些最佳实践。`
-
-export async function aiGenerateTopic(title, onProgress) {
-  onProgress?.('正在分析知识点...')
-  await sleep(600)
-  onProgress?.('生成知识点内容...')
-  await sleep(1000)
-  onProgress?.('分析标签关联...')
-  await sleep(400)
-  onProgress?.('完成！')
-  return {
-    content: TOPIC_TEMPLATE.replace(/\{\{title\}\}/g, title),
-    tags: []
-  }
-}
-
-export async function aiGenerateQuiz(title, content, onProgress) {
-  onProgress?.('正在分析知识点内容...')
-  await sleep(500)
-  onProgress?.('生成自测题目...')
-  await sleep(800)
-
-  const lines = (content || '').split('\n').filter((line) => line.trim())
-  const keywords = []
-  lines.forEach((line) => {
-    const matches = line.match(/\*\*(.+?)\*\*/g)
-    if (!matches) return
-    matches.forEach((match) => {
-      const keyword = match.replace(/\*\*/g, '').trim()
-      if (keyword.length >= 2 && keyword.length <= 15 && !keywords.includes(keyword)) {
-        keywords.push(keyword)
-      }
-    })
-  })
-
-  const questions = keywords.slice(0, 4).map((keyword) => ({
-    type: 'single',
-    question: `在「${title}」中，「${keyword}」的含义是什么？`,
-    options: ['见上文内容中的定义', '与该知识点无关', '是一个错误概念', '尚未定义'],
-    answer: 0
-  }))
-
-  if (questions.length === 0) {
-    return [
-      {
-        type: 'single',
-        question: `关于「${title}」，以下哪个说法最准确？`,
-        options: ['需要理解原理并实践', '只需了解概念', '工作中很少用到', '已被新技术替代'],
-        answer: 0
-      }
-    ]
-  }
-
-  onProgress?.('完成！')
-  return questions
 }

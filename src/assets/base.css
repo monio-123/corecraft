@@ -42,9 +42,26 @@
   /* 品牌徽标渐变 */
   --cc-logo-gradient: linear-gradient(135deg, #409eff, #66b1ff);
 
+  /* ---- 界面缩放：唯一的旋钮 ----------------------------------------
+   *
+   * 全站所有尺寸都写成 `calc(Npx * var(--ui-scale))`，所以改这一个数就整体缩放。
+   * **为什么不用 CSS `zoom`**：zoom 是在**渲染那一刻**乘，会把 JS 写进行内样式的像素值
+   * （`style="left: 800px"`）也一起乘一遍，于是「JS 量到的坐标」和「浏览器画出来的位置」
+   * 对不上 —— 拖拽幽灵飘到光标旁边、`elementFromPoint` 命中的不是你看到的那行，
+   * Element Plus 的浮层（floating-ui 算完写回 translate）同样飘。而这两个系统
+   * （自建拖拽 + EP 浮层定位）都靠「JS 坐标 = 视口坐标」这条不变式。
+   *
+   * `calc()` 是在**声明那一刻**乘：样式表里的值放大，JS 写的行内值原样不动，
+   * 两个坐标空间始终一致。**行内样式不包 calc，这是这套方案能成立的前提。**
+   *
+   * 1 = 基准尺寸（2026-10-06 整体上调后的样子）。调它就是整体缩放。
+   * 两个壳各取各的值：知识库写在 body.is-app-scale，管理后台自己再声明，互不影响。
+   * ---------------------------------------------------------------- */
+  --ui-scale: 1;
+
   /* 尺度 */
-  --cc-radius: 8px;
-  --cc-radius-sm: 6px;
+  --cc-radius: calc(10px * var(--ui-scale));
+  --cc-radius-sm: calc(8px * var(--ui-scale));
   --cc-transition: background 0.15s, color 0.15s;
 
   /* 「一句话交互」弹窗的宽度。EP 的 MessageBox 默认 420px，比窄 dialog 还宽一圈，
@@ -53,15 +70,15 @@
      只能收敛成一个 token：dialog 的宽度是 width prop 渲染出来的内联 style，
      CSS 变量盖不住；MessageBox 的宽度是 --el-messagebox-width。
      两边各自引用同一个值，才不会改一边漏一边。 */
-  --cc-dialog-w-sm: 380px;
+  --cc-dialog-w-sm: calc(440px * var(--ui-scale));
 
   /* 内容区两档宽度。业务壳的"视觉签名"是"内容居中、两侧留白"，不是"内容撑满"——
      这正是它和 admin 壳满宽表格流的区别。留白留多少分两档：
      列表 / 首页是卡片流，1280 能多排一列，喂得饱；
      详情页是长文，1280 一行能塞 80+ 个汉字，超出舒适行宽，退回 920。
      壳取默认档，详情页自己覆盖，所以值只在这里定一次。 */
-  --cc-content-w: 1280px;
-  --cc-content-w-reading: 920px;
+  --cc-content-w: calc(1280px * var(--ui-scale));
+  --cc-content-w-reading: calc(920px * var(--ui-scale));
 }
 
 *,
@@ -165,7 +182,8 @@ body {
   --el-border-radius-base: var(--cc-radius-sm);
   --el-border-radius-small: 4px;
 
-  min-height: 100vh;
+  /* 全高链的起点，见 main.css 的说明：不能用 100vh，那会被 body 上的 zoom 再乘一遍 */
+  min-height: 100%;
   font-family:
     Inter,
     -apple-system,
@@ -200,8 +218,8 @@ body {
   /* 跟 .card 的 12px 对齐 */
   --el-dialog-border-radius: 12px;
   /* 标题跟 .card__title / 面包屑同一档，不要 EP 的 large 再叠一层粗细差 */
-  --el-dialog-title-font-size: 15px;
-  --el-dialog-padding-primary: 18px;
+  --el-dialog-title-font-size: 18px;
+  --el-dialog-padding-primary: 22px;
   --el-dialog-box-shadow: 0 10px 36px rgb(31 35 41 / 10%);
 }
 .el-dialog__title {
@@ -210,12 +228,12 @@ body {
 /* EP 的关闭按钮是 48×48 顶死右上角，比标题还抢眼；收到 28×28 退到边上，
    hover 给个浅灰底，跟侧边栏行 hover 是同一套反馈。 */
 .el-dialog__headerbtn {
-  top: 10px;
-  right: 10px;
-  width: 28px;
-  height: 28px;
-  font-size: 13px;
-  border-radius: 6px;
+  top: calc(10px * var(--ui-scale));
+  right: calc(10px * var(--ui-scale));
+  width: calc(34px * var(--ui-scale));
+  height: calc(40px * var(--ui-scale));
+  font-size: calc(16px * var(--ui-scale));
+  border-radius: calc(6px * var(--ui-scale));
 }
 .el-dialog__headerbtn .el-dialog__close {
   color: var(--cc-text-3);
@@ -230,9 +248,9 @@ body {
 .el-message-box {
   /* EP 默认 4px，比 dialog 还锐，和 12px 的卡片差了一倍还多 */
   --el-messagebox-border-radius: 12px;
-  --el-messagebox-font-size: 15px;
+  --el-messagebox-font-size: 18px;
   /* 跟 --el-dialog-padding-primary 一样，两个框的左右留白才对得上 */
-  --el-messagebox-padding-primary: 18px;
+  --el-messagebox-padding-primary: 22px;
   --el-messagebox-box-shadow: 0 10px 36px rgb(31 35 41 / 10%);
   /* 跟 CategoryNameDialog 同一个 token，两者挨着出现时宽度必须一样 */
   --el-messagebox-width: var(--cc-dialog-w-sm);
@@ -247,13 +265,13 @@ body {
    虚高（实测 216px，而 dialog 只有 162px）。逐段收到跟 dialog 同一档，
    改完约 170px，两者才是一个级别。 */
 .el-message-box__header {
-  padding-bottom: 4px;
+  padding-bottom: calc(4px * var(--ui-scale));
 }
 .el-message-box__content {
-  padding: 12px 0 8px;
+  padding: calc(12px * var(--ui-scale)) 0 calc(8px * var(--ui-scale));
 }
 .el-message-box__btns {
-  padding-top: 8px;
+  padding-top: calc(8px * var(--ui-scale));
 }
 .el-message-box__title {
   font-weight: 600;
@@ -266,9 +284,9 @@ body {
    浅色界面上显脏。非 primary / 非 danger 的一律按次要处理。 */
 .el-dialog__footer .el-button,
 .el-message-box__btns .el-button {
-  height: 34px;
-  padding: 0 16px;
-  border-radius: 8px;
+  height: calc(40px * var(--ui-scale));
+  padding: 0 calc(20px * var(--ui-scale));
+  border-radius: calc(8px * var(--ui-scale));
   font-weight: 500;
 }
 .el-dialog__footer .el-button:not(.el-button--primary):not(.el-button--danger),
@@ -309,7 +327,7 @@ body {
   box-shadow: 0 6px 20px rgb(31 35 41 / 8%);
 }
 .el-dropdown-menu {
-  padding: 4px;
+  padding: calc(4px * var(--ui-scale));
   border-radius: var(--cc-radius);
   /* EP 把这两个定义在 .el-dropdown__popper 上。在后代同名重定义对整棵子树生效，
      比重写 :hover 规则干净。 */
@@ -318,15 +336,16 @@ body {
 }
 .el-dropdown-menu__item {
   /* 字号 / 行高 / 内边距 EP 全是硬编码的，没有对应变量，只能写选择器。
-     14px → 13px 是跟侧边栏行对齐（.app-cats__item 同样是 13px）。 */
-  font-size: 13px;
-  line-height: 20px;
-  padding: 4px 10px;
+     字号跟侧边栏目录行对齐（.app-cats__item 同为 15px）—— 同一个"菜单里挑一项"
+     在两处的字高必须一样，否则点开菜单会觉得界面换了一套字号。 */
+  font-size: calc(15px * var(--ui-scale));
+  line-height: calc(24px * var(--ui-scale));
+  padding: calc(6px * var(--ui-scale)) calc(12px * var(--ui-scale));
   border-radius: var(--cc-radius-sm);
   color: var(--cc-text-2);
 }
 .el-dropdown-menu__item--divided {
   /* 三项的菜单，分隔线只留够"这是另一组"的分量，别撑高度 */
-  margin: 4px 0;
+  margin: calc(4px * var(--ui-scale)) 0;
   border-top-color: var(--cc-border);
 }

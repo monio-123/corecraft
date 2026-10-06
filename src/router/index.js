@@ -42,6 +42,13 @@ const routes = [
         name: 'AppTopicDetail',
         component: () => import('../views/corecraft-web/AppTopicDetailView.vue'),
         meta: { title: '知识点' }
+      },
+      {
+        // 也不进导航列表：入口在侧边栏底部的用户菜单里。低频操作不该占导航的一行。
+        path: 'settings/ai',
+        name: 'AppAiSettings',
+        component: () => import('../views/corecraft-web/AiSettingsView.vue'),
+        meta: { title: 'AI 设置' }
       }
     ]
   },

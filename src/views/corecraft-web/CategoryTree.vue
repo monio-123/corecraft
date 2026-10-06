@@ -118,17 +118,17 @@ function onMenu(v) {
 .ct {
   background: #fff;
   border: 1px solid #e3e6eb;
-  border-radius: 10px;
+  border-radius: calc(10px * var(--ui-scale));
   box-shadow: 0 8px 28px rgba(31, 35, 41, 0.12);
-  padding: 6px;
+  padding: calc(7px * var(--ui-scale));
   max-height: 60vh;
   overflow-y: auto;
 }
 /* 贴侧边栏右缘，右移 6px 让它和触发行"接上"，留空隙就是死区 */
 .ct--nav {
   position: fixed;
-  left: 220px;
-  min-width: 150px;
+  left: calc(220px * var(--ui-scale));
+  min-width: calc(180px * var(--ui-scale));
   z-index: 40;
 }
 /* 落点浮层：位置由 AppLayout 按指针坐标算好传进来（:style），这里只管外观。
@@ -136,24 +136,24 @@ function onMenu(v) {
    跟着指针走之后 "指针右下" 是默认位，靠近右/下边缘时由 AppLayout 翻到另一侧。 */
 .ct--drop {
   position: fixed;
-  width: 232px;
-  max-height: 260px;
+  width: calc(264px * var(--ui-scale));
+  max-height: calc(312px * var(--ui-scale));
   overflow-y: auto;
   z-index: 20;
 }
 .ct__hint {
-  margin: 2px 0 6px;
-  padding: 0 8px;
-  font-size: 11px;
+  margin: calc(2px * var(--ui-scale)) 0 calc(6px * var(--ui-scale));
+  padding: 0 calc(8px * var(--ui-scale));
+  font-size: calc(13px * var(--ui-scale));
   color: #b6bac1;
 }
 .ct__node {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
-  border-radius: 5px;
-  font-size: 12.5px;
+  gap: calc(7px * var(--ui-scale));
+  padding: calc(6px * var(--ui-scale)) calc(10px * var(--ui-scale));
+  border-radius: calc(5px * var(--ui-scale));
+  font-size: calc(12.5px * var(--ui-scale));
   color: #1f2329;
   cursor: pointer;
 }
@@ -179,14 +179,14 @@ function onMenu(v) {
   white-space: nowrap;
 }
 .ct__count {
-  font-size: 11px;
+  font-size: calc(13px * var(--ui-scale));
   color: #b6bac1;
   flex-shrink: 0;
 }
 .ct__empty {
   margin: 0;
-  padding: 6px 8px;
-  font-size: 12px;
+  padding: calc(7px * var(--ui-scale)) calc(10px * var(--ui-scale));
+  font-size: calc(14px * var(--ui-scale));
   color: #b6bac1;
 }
 </style>

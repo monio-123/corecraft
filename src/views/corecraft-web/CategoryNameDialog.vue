@@ -33,8 +33,10 @@ const props = defineProps({
   parentId: { type: Number, default: ROOT_CATEGORY },
   /** 父目录名，用来写清"建在哪" / "改的是谁" */
   parentLabel: { type: String, default: '' },
-  /** 改名时的当前名字；新建时为空 */
-  initialName: { type: String, default: '' }
+  /** 改名时的当前名字；新建时为空。只用来回显和"没改就别提交" */
+  initialName: { type: String, default: '' },
+  /** 改名时被改的是哪个目录。后端按 id 定位——名字是可变字段，认名字认不准 */
+  initialId: { type: Number, default: null }
 })
 const emit = defineEmits(['update:modelValue'])
 
@@ -69,7 +71,7 @@ async function submit() {
   try {
     if (isRename.value) {
       if (n === props.initialName) { visible.value = false; return }
-      await renameCategory(props.initialName, n)
+      await renameCategory(props.initialId, n)
       ElMessage.success('已重命名')
     } else {
       await createCategory(n, props.parentId)

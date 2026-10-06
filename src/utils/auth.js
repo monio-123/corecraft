@@ -38,6 +38,19 @@ export function hasToken() {
   return Boolean(getToken())
 }
 
+/**
+ * 拼 Authorization 头。
+ *
+ * **收敛点**：axios 拦截器（utils/request.js）和 AI 流式调用（api/ai.js 的 streamChat，
+ * 走原生 fetch）都要这行。流式那条不能走 axios —— 全局 `timeout: 5000` 会把流掐断，
+ * 于是这里成了第 2 处出现。两处各拼一遍，token 格式一改就只改一处、另一处悄悄失效。
+ */
+export function authHeaders() {
+  const token = getToken()
+  const tokenType = getTokenType()
+  return token && tokenType ? { Authorization: `${tokenType} ${token}` } : {}
+}
+
 export function saveAuth(payload = {}) {
   localStorage.setItem(TOKEN_KEY, payload.access_token || '')
   localStorage.setItem(TOKEN_TYPE_KEY, payload.token_type || 'Bearer')

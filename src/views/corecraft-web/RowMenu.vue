@@ -59,9 +59,9 @@ function onVisible(v) {
   background: transparent;
   color: #c0c4cc;
   cursor: pointer;
-  padding: 2px;
-  border-radius: 4px;
-  font-size: 12px;
+  padding: calc(3px * var(--ui-scale));
+  border-radius: calc(4px * var(--ui-scale));
+  font-size: calc(14px * var(--ui-scale));
   flex-shrink: 0;
   /* 默认不显形，由**所在那一行**决定：行在自己 hover / focus-within 时设
      `--row-menu-show: 1`（自定义属性会继承到子组件里），这里只管照着用。

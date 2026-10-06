@@ -92,12 +92,12 @@ const isMenuType = computed(() => props.form.type === 'MENU')
 
 <style scoped>
 .permission-form {
-  max-width: 760px;
+  max-width: calc(760px * var(--ui-scale));
 }
 
 .icon-option {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: calc(8px * var(--ui-scale));
 }
 </style>

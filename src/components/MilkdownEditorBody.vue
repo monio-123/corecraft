@@ -76,8 +76,9 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { Link, Grid, List, Rank } from '@element-plus/icons-vue'
 import { Milkdown, useEditor } from '@milkdown/vue'
-import { Editor, rootCtx, commandsCtx, defaultValueCtx } from '@milkdown/core'
+import { Editor, rootCtx, commandsCtx, defaultValueCtx, editorViewOptionsCtx } from '@milkdown/core'
 import { $useKeymap } from '@milkdown/utils'
+import { Fragment, Slice } from '@milkdown/prose/model'
 import { listener, listenerCtx } from '@milkdown/plugin-listener'
 import { history } from '@milkdown/plugin-history'
 import { clipboard } from '@milkdown/plugin-clipboard'
@@ -212,6 +213,23 @@ const submitKeymap = $useKeymap('submitKeymap', {
   }
 })
 
+// 纯文本粘贴：原样逐行贴。
+//
+// 为什么不让 @milkdown/plugin-clipboard 那条路走：它把纯文本按 **markdown** 解析，
+// 而 markdown 把 `\n\n` 和 `\n\n\n` **都**折叠成"段落边界"——**空了几行这个信息
+// 在解析那一步就丢了**。所以不管后面怎么调 CSS，`a\n\nb\n\n\nc` 都还原不出
+// "空 1 行"和"空 2 行"的区别，而且 `c\nd\ne` 这种本来没有空行的也看不出差别。
+// 用户要的正是这个区分，所以纯文本这条路改成自己走：一个段落，每个 \n 放一个
+// 真 hardbreak（渲染成 <br>），空一行 = 两个 hardbreak，间距就是精确的。
+//
+// 挂在 `editorViewOptionsCtx` 而不是自己注册一个 prose plugin：prosemirror-view 的
+// someProp 查 props 的顺序是 **view._props → directPlugins → state.plugins**
+// （prosemirror-view/dist/index.js:5684）。`editorViewOptionsCtx` 会被展开进 EditorView
+// 构造参数（@milkdown/core 的 editorView 里 `...options`）、进入 `view._props`，
+// **无条件第一个被查到**，不依赖 `.use(clipboard)` 的注册顺序。
+// 放在 config() 里改是安全的：config 先 ConfigReady → init(initTimerCtx: [ConfigReady])
+// → schema → … → editorView 才建视图，这条链串行。
+
 // 关键：本组件被 <MilkdownEditor> 包在 <MilkdownProvider> 子树中
 // Provider 的 setup 跑完后才进入本组件 setup → useEditor() inject ✓
 // 编辑器内部变化 → 通过 v-model 上抛给外层
@@ -228,6 +246,41 @@ const { get } = useEditor((root) =>
       ctx.get(listenerCtx).markdownUpdated((_, markdown) => {
         emit('update:modelValue', markdown)
       })
+      // 纯文本粘贴：原样逐行贴，不当 markdown 解析（理由见上面那段注释）。
+      ctx.update(editorViewOptionsCtx, (prev) => ({
+        ...prev,
+        handlePaste: (view, event) => {
+          const { clipboardData } = event
+          if (!clipboardData) return false
+          // 有 text/html = 网页 / Word / 富文本；vscode-editor-data = 从 VS Code 复制
+          // （原插件会按语法高亮建代码块）；光标在代码块里 = 原生逐行插入。
+          // 这三种一律交回原插件，行为一点不动。
+          if (clipboardData.getData('text/html') || clipboardData.getData('vscode-editor-data')) return false
+          if (view.state.selection.$from.parent.type.spec.code) return false
+
+          const raw = clipboardData.getData('text/plain')
+          if (!raw) return false
+
+          // 文本文件结尾那一个换行是"文件结束标记"不是内容，去掉，否则末尾凭空多一个空行
+          const lines = raw.replace(/\r\n?/g, '\n').replace(/\n$/, '').split('\n')
+
+          // 每个 \n → 一个真 hardbreak（渲染成 <br>）。空一行就是两个 \n = 两个 hardbreak，
+          // 屏幕上就是一个空行；c/d/e 之间没有 \n 就是没有 hardbreak = 紧挨着。
+          // 空了几行这么算出来是精确的——markdown 解析做不到，它把 \n\n 和 \n\n\n 一起折叠。
+          const { schema } = view.state
+          const content = []
+          lines.forEach((line, i) => {
+            if (i > 0) content.push(schema.nodes.hardbreak.create({ isInline: false }))
+            if (line) content.push(schema.text(line))
+          })
+          view.dispatch(
+            view.state.tr.replaceSelection(
+              new Slice(Fragment.from([schema.nodes.paragraph.create(null, content)]), 0, 0)
+            )
+          )
+          return true
+        }
+      }))
     })
     .use(listener)
     .use(commonmark)
@@ -299,16 +352,16 @@ function onTableDialogClose() {
 .md-toolbar {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: calc(2px * var(--ui-scale));
   flex-wrap: wrap;
-  padding-bottom: 6px;
+  padding-bottom: calc(6px * var(--ui-scale));
   border-bottom: 1px solid var(--cc-border);
 }
 .md-toolbar .el-button {
-  height: 26px;
+  height: calc(26px * var(--ui-scale));
   margin: 0;
-  padding: 0 7px;
-  font-size: 13px;
+  padding: 0 calc(7px * var(--ui-scale));
+  font-size: calc(13px * var(--ui-scale));
   color: var(--cc-text-2);
   border-radius: var(--cc-radius-sm);
 }
@@ -326,7 +379,7 @@ function onTableDialogClose() {
        变成唯一的导航手段，翻找任一段都要滚很久。
      这三个值随手记和知识点详情页共用一份，不按实例区分：详情页读长笔记时靠
      "跟着内容长"顶起来，旧的 270px 封顶反而是它嫌小的原因。 */
-  min-height: 135px;
+  min-height: calc(135px * var(--ui-scale));
   max-height: 80vh;
   overflow-y: auto;
   outline: none;       /* 去掉浏览器对 contenteditable 默认画的 focus outline（黑色长方形边框） */
@@ -336,7 +389,7 @@ function onTableDialogClose() {
   /* 字号 / 行高：原来**根本没设**，contenteditable 继承浏览器默认 16px。
      知识点的正文比它在列表卡片里的摘要（12.5px）还大一档，同一条知识在两个页面
      看着像两种东西，一行放不下几个字。 */
-  font-size: 14px;
+  font-size: calc(14px * var(--ui-scale));
   line-height: 1.75;
   color: var(--cc-text-1);
   word-break: break-word;
@@ -357,6 +410,25 @@ function onTableDialogClose() {
   min-height: 60vh;
 }
 
+/* ---------- 软换行 ----------
+   markdown 段落里的单换行（软换行）在 milkdown 里**不是** "\n"，也不是 `<br>`：
+   `remark-line-break.ts` 插件（`composed/plugins.ts` 里确实注册了）会把 text 节点里的每个
+   \n 拆成一个 mdast `break` 节点并打上 `data.isInline = true`；`hardbreak.ts` 的 toDOM 对
+   isInline=true 渲染成 **`<span data-type="hardbreak" data-is-inline="true"> </span>`
+   ——一个装着空格的 span**（源码注释原话："The inline line break should be treated as
+   a `space`"）。库里已存的、带软换行的笔记重新打开就会全部并成一行。
+
+   这条只负责**渲染**已经存在的软换行（新粘贴的内容走上面的 handlePaste，已经是 <br>，
+   不经过这个 span）。真 hardbreak（Shift+Enter，isInline=false）渲染的是 <br>，
+   选择器只认 span，两条路互不干扰。
+
+   ::after 里用 '\A'（CSS 换行转义）而不是改 span 本身：span 里那个空格是节点自带的，
+   删掉会改变 doc 的可选择文本。留一个行尾空格本来也就是标准 markdown 硬换行
+   （行尾两空格 / 反斜杠）在视觉上的样子。 */
+.milkdown-editor-body .ProseMirror span[data-type="hardbreak"]::after {
+  content: '\A';
+  white-space: pre;
+}
 /* ---------- 列表 ----------
    全局 reset（base.css 的 `* { margin: 0; padding: 0 }`）把浏览器默认那套
    40px 缩进和项目符号挂位**全归零了**，prosemirror.css 自己也没有任何列表规则。
@@ -365,9 +437,7 @@ function onTableDialogClose() {
    缩进用 em 而不是 px：1.6em ≈ 22px，跟着字号走；浏览器默认的 40px 在 920px
    的阅读栏里会把列表项的可用宽度吃掉一大截。
 
-   **不加纵向 margin**：ProseMirror 用 `white-space: break-spaces` 保留 markdown
-   源里的空行，段落间距本来就是空行给的。再叠 margin 会和空行相加，
-   列表看起来会比正文松一截。 */
+   **不加纵向 margin**：段落间距由编辑器渲染层负责，这里不重复给。 */
 .milkdown-editor-body .ProseMirror ul,
 .milkdown-editor-body .ProseMirror ol {
   padding-left: 1.6em;
@@ -381,29 +451,29 @@ function onTableDialogClose() {
    prosemirror 官方样式表只管排版不管字体，默认还是正文的无衬线。 */
 .milkdown-editor-body .ProseMirror code {
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-  font-size: 13px;
+  font-size: calc(13px * var(--ui-scale));
   background: var(--cc-surface-2);
   color: #c7254e;
-  padding: 1px 5px;
-  border-radius: 4px;
+  padding: calc(1px * var(--ui-scale)) calc(5px * var(--ui-scale));
+  border-radius: calc(4px * var(--ui-scale));
 }
 .milkdown-editor-body .ProseMirror pre {
   background: var(--cc-surface-2);
-  border-radius: 8px;
-  padding: 12px 14px;
+  border-radius: calc(8px * var(--ui-scale));
+  padding: calc(12px * var(--ui-scale)) calc(14px * var(--ui-scale));
   overflow-x: auto;
-  margin: 10px 0;
+  margin: calc(10px * var(--ui-scale)) 0;
 }
 .milkdown-editor-body .ProseMirror pre code {
   background: transparent;
   color: var(--cc-text-1);
   padding: 0;
-  font-size: 13px;
+  font-size: calc(13px * var(--ui-scale));
   line-height: 1.7;
 }
 .milkdown-editor-body .ProseMirror blockquote {
-  margin: 10px 0;
-  padding: 2px 0 2px 12px;
+  margin: calc(10px * var(--ui-scale)) 0;
+  padding: calc(2px * var(--ui-scale)) 0 calc(2px * var(--ui-scale)) calc(12px * var(--ui-scale));
   border-left: 2px solid var(--cc-border-strong);
   color: var(--cc-text-2);
 }
@@ -424,17 +494,17 @@ function onTableDialogClose() {
 .table-dialog {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 4px 0;
+  gap: calc(12px * var(--ui-scale));
+  padding: calc(4px * var(--ui-scale)) 0;
 }
 .table-dialog__row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: calc(12px * var(--ui-scale));
 }
 .table-dialog__label {
-  width: 50px;
-  font-size: 14px;
+  width: calc(50px * var(--ui-scale));
+  font-size: calc(14px * var(--ui-scale));
   color: #606266;
 }
 
@@ -442,17 +512,17 @@ function onTableDialogClose() {
 .ctx-menu {
   position: fixed;
   z-index: 9999;
-  min-width: 140px;
+  min-width: calc(140px * var(--ui-scale));
   background: #fff;
   border: 1px solid #ebeef5;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--ui-scale));
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
-  padding: 4px 0;
-  font-size: 14px;
+  padding: calc(4px * var(--ui-scale)) 0;
+  font-size: calc(14px * var(--ui-scale));
   color: #303133;
 }
 .ctx-menu__item {
-  padding: 8px 16px;
+  padding: calc(8px * var(--ui-scale)) calc(16px * var(--ui-scale));
   cursor: pointer;
   white-space: nowrap;
   user-select: none;
@@ -464,8 +534,8 @@ function onTableDialogClose() {
 }
 .ctx-menu__item--sep {
   padding: 0;
-  margin: 4px 0;
-  height: 1px;
+  margin: calc(4px * var(--ui-scale)) 0;
+  height: calc(1px * var(--ui-scale));
   background: #f0f2f5;
   cursor: default;
 }
@@ -481,15 +551,15 @@ function onTableDialogClose() {
   border-collapse: collapse;
   table-layout: fixed;
   width: 100%;
-  margin: 8px 0;
+  margin: calc(8px * var(--ui-scale)) 0;
   overflow: hidden;
 }
 .milkdown-editor-body .ProseMirror th,
 .milkdown-editor-body .ProseMirror td {
   border: 1px solid #dcdfe6;
-  padding: 6px 10px;
+  padding: calc(6px * var(--ui-scale)) calc(10px * var(--ui-scale));
   vertical-align: top;
-  min-width: 80px;
+  min-width: calc(80px * var(--ui-scale));
   position: relative;
 }
 .milkdown-editor-body .ProseMirror th {

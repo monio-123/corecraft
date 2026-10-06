@@ -47,40 +47,40 @@ onMounted(async () => {
 .home {
   display: flex;
   flex-direction: column;
-  gap: 32px;
-  max-width: 880px;
+  gap: calc(32px * var(--ui-scale));
+  max-width: calc(880px * var(--ui-scale));
 }
 
 .welcome__eyebrow {
-  font-size: 12px;
+  font-size: calc(12px * var(--ui-scale));
   font-weight: 500;
-  letter-spacing: 1px;
+  letter-spacing: calc(1px * var(--ui-scale));
   color: var(--cc-text-3);
 }
 .welcome__title {
-  margin: 8px 0 0;
-  font-size: 26px;
+  margin: calc(8px * var(--ui-scale)) 0 0;
+  font-size: calc(26px * var(--ui-scale));
   font-weight: 600;
   color: var(--cc-text-1);
-  letter-spacing: 0.2px;
+  letter-spacing: calc(0.2px * var(--ui-scale));
 }
 .welcome__sub {
-  margin: 6px 0 0;
-  font-size: 14px;
+  margin: calc(6px * var(--ui-scale)) 0 0;
+  font-size: calc(14px * var(--ui-scale));
   color: var(--cc-text-2);
 }
 
 .entries {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 12px;
+  gap: calc(12px * var(--ui-scale));
 }
 
 .entry {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 16px;
+  gap: calc(12px * var(--ui-scale));
+  padding: calc(16px * var(--ui-scale));
   background: var(--cc-surface);
   border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius);
@@ -95,18 +95,18 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: calc(34px * var(--ui-scale));
+  height: calc(34px * var(--ui-scale));
   flex-shrink: 0;
   border-radius: var(--cc-radius-sm);
   background: var(--cc-primary-soft);
   color: var(--cc-primary);
-  font-size: 16px;
+  font-size: calc(16px * var(--ui-scale));
 }
 .entry__name {
   flex: 1;
   min-width: 0;
-  font-size: 14px;
+  font-size: calc(14px * var(--ui-scale));
   font-weight: 500;
   color: var(--cc-text-1);
   overflow: hidden;
@@ -125,7 +125,7 @@ onMounted(async () => {
 
 .empty {
   margin: 0;
-  font-size: 14px;
+  font-size: calc(14px * var(--ui-scale));
   color: var(--cc-text-3);
 }
 </style>

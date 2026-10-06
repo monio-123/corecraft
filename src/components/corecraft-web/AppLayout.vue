@@ -72,15 +72,24 @@
           </el-tooltip>
         </template>
         <template v-else>
-        <el-avatar :size="28" :src="currentUser.avatar || undefined" class="user-avatar">
-          {{ userAvatarFallback }}
-        </el-avatar>
-        <span class="app-side__username">{{ currentUser.nickname || currentUser.username || '未登录' }}</span>
-        <el-tooltip content="退出登录" placement="right">
-          <button class="app-side__logout" aria-label="退出登录" @click="handleLogout">
-            <el-icon><SwitchButton /></el-icon>
-          </button>
-        </el-tooltip>
+        <!-- 用户菜单：AI 设置 + 退出都收在这里。
+             为什么不让「AI 设置」占导航一行：它是极低频操作（一辈子填一次），
+             而导航那几行留给每天都点的东西。跟管理后台的用户下拉同一套心智。 -->
+        <el-dropdown trigger="click" @command="handleUserCommand">
+          <span class="app-side__user-trigger">
+            <el-avatar :size="34" :src="currentUser.avatar || undefined" class="user-avatar">
+              {{ userAvatarFallback }}
+            </el-avatar>
+            <span class="app-side__username">{{ currentUser.nickname || currentUser.username || '未登录' }}</span>
+            <el-icon class="app-side__user-caret"><ArrowDown /></el-icon>
+          </span>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="ai">AI 设置</el-dropdown-item>
+              <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         </template>
       </div>
     </aside>
@@ -109,6 +118,7 @@
           >
             <template #prefix><el-icon><Search /></el-icon></template>
           </el-input>
+          <UiScaleSelect shell="app" />
           <el-tooltip v-if="hasAdminShell" content="管理后台" placement="bottom">
             <button class="app-top__icon-btn" aria-label="管理后台" @click="goAdmin">
               <el-icon><Setting /></el-icon>
@@ -177,6 +187,7 @@
       :parent-id="nameDialog.parentId"
       :parent-label="nameDialog.parentLabel"
       :initial-name="nameDialog.initialName"
+    :initial-id="nameDialog.initialId"
     />
   </div>
 </template>
@@ -184,10 +195,13 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter, RouterLink, RouterView } from 'vue-router'
-import { SwitchButton, Search, Setting, Expand, Fold, Refresh } from '@element-plus/icons-vue'
+import { Search, Setting, Expand, Fold, Refresh, ArrowDown } from '@element-plus/icons-vue'
 import { clearAuth } from '../../utils/auth'
 import { flattenShellNav, getIconComponent } from '../../utils/menu'
 import { hasAdminMenus } from '../../utils/session'
+import { applyUiScale, clearUiScale, getUiScale } from '../../utils/uiScale'
+import { resetAiConfig } from '../../views/corecraft-web/useAi'
+import UiScaleSelect from '../UiScaleSelect.vue'
 import CategoryNameDialog from '../../views/corecraft-web/CategoryNameDialog.vue'
 import CategoryRowMenu from '../../views/corecraft-web/CategoryRowMenu.vue'
 import CategoryTree from '../../views/corecraft-web/CategoryTree.vue'
@@ -233,7 +247,10 @@ const nameDialog = reactive({
   mode: 'create',
   parentId: ROOT_CATEGORY,
   parentLabel: '',
-  initialName: ''
+  initialName: '',
+  // 改名时被改的是哪个目录。后端按 id 定位：名字是可变字段，
+  // 允许同名之后按名字根本认不出要改哪一个（initialName 只用来回显）。
+  initialId: null
 })
 
 const navItems = computed(() =>
@@ -358,6 +375,7 @@ function openCreateRoot() {
   nameDialog.parentId = ROOT_CATEGORY
   nameDialog.parentLabel = ''
   nameDialog.initialName = ''
+  nameDialog.initialId = null
   nameDialog.visible = true
 }
 
@@ -367,6 +385,7 @@ function openChildCreate(c) {
   nameDialog.parentId = c.id
   nameDialog.parentLabel = c.name
   nameDialog.initialName = ''
+  nameDialog.initialId = null
   nameDialog.visible = true
 }
 
@@ -374,42 +393,72 @@ function openRename(c) {
   closeCascade()
   nameDialog.mode = 'rename'
   nameDialog.parentLabel = c.name
-  // 后端按 (userId, oldName) 定位，改名的起点必须是当前真名
+  // initialName 只用来回显输入框、判"没改就别提交"；真正发给后端的是 id
   nameDialog.initialName = c.name
+  nameDialog.initialId = c.id
   nameDialog.visible = true
 }
 
+function handleUserCommand(command) {
+  if (command === 'ai') {
+    router.push({ name: 'AppAiSettings' })
+    return
+  }
+  if (command === 'logout') handleLogout()
+}
+
 async function handleLogout() {
+  // AI 配置是个人偏好，退出时一并作废：否则下一个登进来的账号会接着用上一个的 key
+  resetAiConfig()
   clearAuth()
   router.push({ name: 'Login' })
 }
 
 // 落点浮层的位置：**锚在起拖那一刻**（dnd.ax / dnd.ay），整个拖拽过程不动。
 // 贴到视口右/下边缘就翻到另一侧，免得浮层一半露在屏幕外。
-// 树高按 CategoryTree 的 max-height 估。
 //
-// 为什么不让它跟着指针：浮层一旦跟着飘，想把卡片拖进某一行就得先追着浮层挪，
-// 而且指针压在浮层上会挡住 elementFromPoint 的命中（幽灵已经是 pointer-events:none
-// 解决了这个问题，浮层没有——它得能接收命中）。固定之后它就是个安静的靶子。
-const TREE_W = 232
-const TREE_H = 260
-const DROP_GAP = 16
+// 树的宽高是 CSS 里 `calc(264px * var(--ui-scale))` 算出来的，所以这里**读同一个变量**
+// 而不是写死常数——对不上的后果不是"浮层小一点"，是**翻边判断算错**：本来该翻到左边，
+// 翻完反而露出一半在屏幕外，而且用户看不出是哪一步错了。
+//
+// 读 getComputedStyle 而不是用 ref：dnd.ax 每次起拖都会变，这个 computed 天然会重算，
+// 用户改完档位再拖也是对的，不需要额外维护一份响应式的缩放比。
+//
+// 注意 dnd.ax / dnd.ay 和 window.innerWidth **不用乘缩放比**：它们是视口坐标，
+// 而这个定位写在缩放区之外（弹层 teleport 到 body），两边本来就同一空间。
+// 用 CSS zoom 的时候这里必须除，那是 zoom 破坏坐标不变式才需要的补丁。
+const TREE_W = 264
+const TREE_H = 312
+const DROP_GAP = 19
 const dropTreeStyle = computed(() => {
-  const flipX = dnd.ax + DROP_GAP + TREE_W > window.innerWidth
-  const flipY = dnd.ay + DROP_GAP + TREE_H > window.innerHeight
+  const s =
+    Number(getComputedStyle(document.documentElement).getPropertyValue('--ui-scale')) || 1
+  const w = Math.round(TREE_W * s)
+  const h = Math.round(TREE_H * s)
+  const gap = Math.round(DROP_GAP * s)
+  const flipX = dnd.ax + gap + w > window.innerWidth
+  const flipY = dnd.ay + gap + h > window.innerHeight
   return {
-    left: `${flipX ? dnd.ax - DROP_GAP - TREE_W : dnd.ax + DROP_GAP}px`,
-    top: `${Math.max(8, flipY ? dnd.ay - TREE_H - DROP_GAP : dnd.ay + DROP_GAP)}px`
+    left: `${flipX ? dnd.ax - gap - w : dnd.ax + gap}px`,
+    top: `${Math.max(8, flipY ? dnd.ay - h - gap : dnd.ay + gap)}px`
   }
 })
 
 // 落点全站只有拖拽浮出的那棵树一处（CategoryTree 的 mode="drop"），它只渲染
 // data-cat-id 标记，命中由 store 的 hitCategory() 用 elementFromPoint 算。
 // 侧边栏、药丸都不再当落点：侧边栏的目录项是导航，「待归类」药丸是纯筛选。
+
 onMounted(async () => {
+  // 本壳的缩放偏好写到 <html> 行内；teleport 到 body 的浮层也继承得到。
+  // 摘类交给 clearUiScale —— 切到管理后台时它会写自己的值覆盖上来。
+  applyUiScale(getUiScale('app'))
   // 菜单/资料和业务数据并行拉：菜单决定左侧导航，数据决定目录树。
   // 三个 ensure 收敛在 loadShellData 一处（原来这里和 AppHomeView 各写了一遍）。
   await loadShell()
+})
+
+onBeforeUnmount(() => {
+  clearUiScale()
 })
 </script>
 
@@ -422,13 +471,13 @@ onMounted(async () => {
   z-index: 60;
   pointer-events: none;
   transform: translate(-50%, -50%) rotate(2deg);
-  max-width: 200px;
-  padding: 7px 14px;
-  border-radius: 8px;
+  max-width: calc(240px * var(--ui-scale));
+  padding: calc(8px * var(--ui-scale)) calc(17px * var(--ui-scale));
+  border-radius: calc(8px * var(--ui-scale));
   border: 1px solid var(--cc-primary);
   background: var(--cc-surface);
   box-shadow: 0 8px 24px rgb(31 35 41 / 18%);
-  font-size: 13px;
+  font-size: calc(15px * var(--ui-scale));
   line-height: 1.5;
   color: var(--cc-text-1);
   white-space: nowrap;
@@ -445,20 +494,22 @@ onMounted(async () => {
 }
 .app-shell {
   display: flex;
-  height: 100vh;
+  /* 不是 100vh：body 上有 zoom(--cc-scale)，视口单位会被重复放大，
+     壳就会被撑到 1.5 倍视口高、整页开始滚。百分比在缩放坐标系里解析，天然正确。 */
+  height: 100%;
   background: var(--cc-bg);
   overflow: hidden;
 }
 
 /* ---------- 左侧栏 ---------- */
 .app-side {
-  width: 232px;
+  width: calc(264px * var(--ui-scale));
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   background: var(--cc-surface);
   border-right: 1px solid var(--cc-border);
-  padding: 20px 12px 12px;
+  padding: calc(22px * var(--ui-scale)) calc(14px * var(--ui-scale)) calc(14px * var(--ui-scale));
   /* 收起时宽度归零，必须裁掉内容，否则子元素会溢出到主区上面。
      收起用宽度过渡而不是 v-if：目录树和 hover 级联都有各自的展开/关缓冲，
      节点直接被销毁会让这些状态跟着重来一次。 */
@@ -475,41 +526,41 @@ onMounted(async () => {
 .app-side__brand {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 0 8px 20px;
+  gap: calc(11px * var(--ui-scale));
+  padding: 0 calc(8px * var(--ui-scale)) calc(20px * var(--ui-scale));
 }
 .app-side__logo {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
+  width: calc(34px * var(--ui-scale));
+  height: calc(34px * var(--ui-scale));
+  border-radius: calc(8px * var(--ui-scale));
   background: var(--cc-logo-gradient);
   color: #fff;
-  font-size: 12px;
+  font-size: calc(14px * var(--ui-scale));
   font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 .app-side__name {
-  font-size: 15px;
+  font-size: calc(18px * var(--ui-scale));
   font-weight: 600;
   color: var(--cc-text-1);
-  letter-spacing: 0.3px;
+  letter-spacing: calc(0.3px * var(--ui-scale));
 }
 
 .app-nav {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: calc(2px * var(--ui-scale));
 }
 .app-nav__item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 7px;
+  gap: calc(10px * var(--ui-scale));
+  padding: calc(10px * var(--ui-scale)) calc(12px * var(--ui-scale));
+  border-radius: calc(7px * var(--ui-scale));
   color: var(--cc-text-2);
-  font-size: 14px;
+  font-size: calc(17px * var(--ui-scale));
   text-decoration: none;
   transition: var(--cc-transition);
 }
@@ -523,11 +574,11 @@ onMounted(async () => {
   font-weight: 500;
 }
 .app-nav__icon {
-  font-size: 15px;
+  font-size: calc(18px * var(--ui-scale));
 }
 
 .app-side__section {
-  margin-top: 24px;
+  margin-top: calc(24px * var(--ui-scale));
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -536,8 +587,8 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 10px 6px;
-  font-size: 12px;
+  padding: 0 calc(10px * var(--ui-scale)) calc(6px * var(--ui-scale));
+  font-size: calc(14px * var(--ui-scale));
   color: var(--cc-text-3);
   font-weight: 500;
 }
@@ -546,10 +597,10 @@ onMounted(async () => {
   background: transparent;
   color: var(--cc-text-3);
   cursor: pointer;
-  font-size: 15px;
+  font-size: calc(18px * var(--ui-scale));
   line-height: 1;
-  padding: 0 4px;
-  border-radius: 4px;
+  padding: 0 calc(4px * var(--ui-scale));
+  border-radius: calc(4px * var(--ui-scale));
 }
 .app-side__add:hover {
   color: var(--cc-primary);
@@ -558,7 +609,7 @@ onMounted(async () => {
 .app-cats {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: calc(1px * var(--ui-scale));
   overflow-y: auto;
   max-height: 40vh;
 }
@@ -566,11 +617,11 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
-  padding: 6px 10px;
-  border-radius: 6px;
+  gap: calc(7px * var(--ui-scale));
+  padding: calc(7px * var(--ui-scale)) calc(12px * var(--ui-scale));
+  border-radius: calc(6px * var(--ui-scale));
   color: var(--cc-text-2);
-  font-size: 13px;
+  font-size: calc(15px * var(--ui-scale));
   text-decoration: none;
   /* 行尾的「⋯」默认不显形，悬停/键盘聚焦这一行时才露出来。
      一排行里全是点会像一堆图标噪点，而且点它的人只有少数几个。
@@ -602,16 +653,16 @@ onMounted(async () => {
 }
 /* 右对齐 + 最小宽度：一位数和两位数右边沿对齐，图标那一列也不会左右跳 */
 .app-cats__count {
-  font-size: 11px;
+  font-size: calc(13px * var(--ui-scale));
   color: var(--cc-text-4);
   flex-shrink: 0;
-  min-width: 14px;
+  min-width: calc(17px * var(--ui-scale));
   text-align: right;
 }
 .app-side__empty {
-  padding: 4px 10px;
+  padding: calc(5px * var(--ui-scale)) calc(12px * var(--ui-scale));
   margin: 0;
-  font-size: 12px;
+  font-size: calc(14px * var(--ui-scale));
   color: var(--cc-text-4);
 }
 
@@ -622,13 +673,13 @@ onMounted(async () => {
 .app-side__user {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 8px 4px;
+  gap: calc(10px * var(--ui-scale));
+  padding: calc(12px * var(--ui-scale)) calc(10px * var(--ui-scale)) calc(5px * var(--ui-scale));
   border-top: 1px solid var(--cc-surface-2);
 }
 .app-side__username {
   flex: 1;
-  font-size: 13px;
+  font-size: calc(15px * var(--ui-scale));
   color: var(--cc-text-2);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -638,21 +689,31 @@ onMounted(async () => {
    用户点一下重试的状态，不该和"未设置昵称"那种中性缺省长得一样。 */
 .app-side__failed {
   flex: 1;
-  font-size: 13px;
+  font-size: calc(15px * var(--ui-scale));
   color: var(--cc-danger);
 }
-.app-side__logout {
-  border: none;
-  background: transparent;
-  color: var(--cc-text-4);
-  cursor: pointer;
-  padding: 4px;
-  border-radius: 4px;
+/* 用户菜单的触发区：头像 + 名字 + 尖角，整块可点。
+   以前这一格是「头像 + 名字 + 一个独立的退出图标」，现在退出收进下拉了，
+   触发区整体变成菜单入口，所以要自己给 cursor 和 hover 反馈。 */
+.app-side__user-trigger {
+  flex: 1;
+  min-width: 0;
   display: flex;
+  align-items: center;
+  gap: calc(10px * var(--ui-scale));
+  cursor: pointer;
+  border-radius: var(--cc-radius-sm);
+  padding: calc(3px * var(--ui-scale));
+  margin: calc(-3px * var(--ui-scale));
+  transition: var(--cc-transition);
 }
-.app-side__logout:hover {
-  color: var(--el-color-danger);
-  background: var(--el-color-danger-light-9);
+.app-side__user-trigger:hover {
+  background: var(--cc-surface-2);
+}
+.app-side__user-caret {
+  font-size: calc(12px * var(--ui-scale));
+  color: var(--cc-text-4);
+  flex-shrink: 0;
 }
 
 /* ---------- 右侧 ---------- */
@@ -664,37 +725,43 @@ onMounted(async () => {
 }
 
 .app-top {
-  height: 56px;
+  height: calc(64px * var(--ui-scale));
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 0 24px;
+  gap: calc(18px * var(--ui-scale));
+  padding: 0 calc(24px * var(--ui-scale));
   background: rgba(255, 255, 255, 0.85);
   border-bottom: 1px solid var(--cc-border);
 }
 .app-top__left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: calc(10px * var(--ui-scale));
   min-width: 0;
 }
 .app-top__crumb {
-  font-size: 15px;
+  font-size: calc(18px * var(--ui-scale));
   font-weight: 600;
   color: var(--cc-text-1);
+  /* 标题就一两个词，绝不该折行。左边被挤窄时应该先让搜索框收（下面给了 min-width），
+     而不是把「知识点」竖着排成一行一个字 —— 那是最难看的破法。 */
+  white-space: nowrap;
 }
 .app-top__actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: calc(12px * var(--ui-scale));
 }
 .app-search {
-  width: 220px;
+  width: calc(260px * var(--ui-scale));
+  /* 视口不够宽时先收搜索框，别把标题挤折行（el-input 默认不缩，得显式给 min-width） */
+  min-width: calc(110px * var(--ui-scale));
+  flex-shrink: 1;
 }
 .app-search :deep(.el-input__wrapper) {
-  border-radius: 16px;
+  border-radius: calc(16px * var(--ui-scale));
   box-shadow: none;
   background: var(--cc-surface-2);
 }
@@ -703,7 +770,8 @@ onMounted(async () => {
   background: transparent;
   color: var(--cc-icon);
   cursor: pointer;
-  padding: 6px;
+  padding: calc(7px * var(--ui-scale));
+  font-size: calc(18px * var(--ui-scale));
   border-radius: var(--cc-radius-sm);
   display: flex;
 }
@@ -721,7 +789,7 @@ onMounted(async () => {
 .app-content {
   flex: 1;
   overflow-y: auto;
-  padding: 28px 24px 64px;
+  padding: calc(32px * var(--ui-scale)) calc(28px * var(--ui-scale)) calc(72px * var(--ui-scale));
 }
 .app-content > * {
   margin: 0 auto;

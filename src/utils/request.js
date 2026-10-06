@@ -1,7 +1,7 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import router from '../router'
-import { clearAuth, getToken, getTokenType, hasToken } from './auth'
+import { authHeaders, clearAuth, hasToken } from './auth'
 
 const service = axios.create({
   baseURL: '/api',
@@ -26,12 +26,8 @@ service.interceptors.request.use(
     if (config.url === '/oauth2/token') {
       return config
     }
-    
-    const token = getToken()
-    const tokenType = getTokenType()
-    if (token && tokenType) {
-      config.headers['Authorization'] = `${tokenType} ${token}`
-    }
+
+    Object.assign(config.headers, authHeaders())
     return config
   },
   error => {

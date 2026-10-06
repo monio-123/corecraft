@@ -1,11 +1,5 @@
 <template>
   <div class="home">
-    <!-- 问候 -->
-    <header class="home__hero">
-      <h1 class="home__greet">{{ greeting }}，{{ displayName }}</h1>
-      <p class="home__date">{{ todayText }}</p>
-    </header>
-
     <!-- 快捷录入：最高频动作，放最显眼。
          原先是 <el-input type="textarea">，纯文本框——从语雀这类富文本源框选复制，
          浏览器往 textarea 里只放 text/plain，标题/列表/代码块在【存库之前】就全塌成了
@@ -21,6 +15,9 @@
              右边是"记下来"这个主操作。space-between 要的是两个子元素，
              所以左边得有个容器把它们圈住。 -->
         <div class="quick__left">
+          <!-- 类型：默认就是「笔记」，不点就是零成本。放在动作行最左边——
+               它决定"这条记下来是什么"，比右边两个显示开关更像主信息。 -->
+          <TopicTypeSelect v-model="draftType" />
           <el-tooltip :content="toolbar ? '切换到简洁模式（隐藏工具栏）' : '切换到完整模式（显示格式工具栏）'" placement="top">
             <button
               class="kb-icon-btn"
@@ -74,7 +71,7 @@
       </div>
       <div class="review-empty">
         <el-icon class="review-empty__icon"><Clock /></el-icon>
-        <span>复习计划还没开启 —— 目录整理好之后就能按目录抽取知识点安排复习</span>
+        <span>复习计划还没开启</span>
       </div>
     </section>
 
@@ -108,9 +105,10 @@ import { Clock, Close, FullScreen, Tools } from '@element-plus/icons-vue'
 import MilkdownEditor from '../../components/MilkdownEditor.vue'
 import { loadShellData } from './useShellData'
 import { useImmersive } from './useImmersive'
+import TopicTypeSelect from './TopicTypeSelect.vue'
 import {
   ensureTopicsLoaded, ensureCategoriesLoaded, getTopics, getCategories,
-  getUncategorizedCount, getCategoryName, createTopic, excerptOf
+  getUncategorizedCount, getCategoryName, createTopic, excerptOf, ensureTopicTypesLoaded
 } from './useCorecraftWebStore'
 
 const router = useRouter()
@@ -120,13 +118,14 @@ const immersive = useImmersive()
 // 工具栏显不显示，状态在本层——「简洁/完整」开关按钮就在下面那个动作行里，
 // 按钮和状态得是同一份。传下去用 v-model:show-toolbar。
 const toolbar = ref(false)
+// 录入时选的类型。存 null = 用默认档（字典里排第一的那条）
+const draftType = ref(null)
 
 const draft = ref('')
 // 强制重建编辑器来清空输入框：defaultValueCtx 只在创建那一刻读一次 defaultValue，
 // 事后把 draft 置空不会回写 doc。重建顺带把 undo 历史也清了，本来也该清。
 const editorKey = ref(0)
 const saving = ref(false)
-const user = ref({})
 
 const topics = computed(() => getTopics())
 const categories = computed(() => getCategories())
@@ -134,24 +133,21 @@ const topicCount = computed(() => topics.value.length)
 const uncategorizedCount = computed(() => getUncategorizedCount())
 const recentTopics = computed(() => topics.value.slice(0, 6))
 
-const displayName = computed(() => user.value.nickname || user.value.username || '')
+// 今日新增。原来恒为 0 的原因是**日期格式对不上**：
+//   `new Date().toDateString()` 返回的是英文的 "Tue Oct 06 2026"，切前 10 位得到
+//   "Tue Oct 06 "，而 store 里 createdAt（后端 createTime 归一化过来的，yyyy-MM-dd HH:mm:ss）
+//   切前 10 位是 "2026-10-06" —— 两者永远不相等。
+//   注意字段名没错，`normalizeTopic` 已经把 createTime 映射成 createdAt 了。
+//
+// 日期键**本地拼**而不是 toISOString()：后者是 UTC，东八区凌晨 0~8 点会把当天
+// 算成前一天，"今日新增"会在刚过完零点时莫名其妙归零。
+function dateKey(d) {
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
 
-const todayCount = computed(() => {
-  const today = new Date().toDateString()
-  return topics.value.filter((t) => String(t.createdAt || '').slice(0, 10) === today.slice(0, 10)).length
-})
-
-const greeting = computed(() => {
-  const h = new Date().getHours()
-  if (h < 6) return '夜深了'
-  if (h < 11) return '早上好'
-  if (h < 14) return '中午好'
-  if (h < 18) return '下午好'
-  return '晚上好'
-})
-
-const todayText = computed(() =>
-  new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })
+const todayCount = computed(
+  () => topics.value.filter((t) => String(t.createdAt || '').slice(0, 10) === dateKey(new Date())).length
 )
 
 async function save() {
@@ -159,7 +155,7 @@ async function save() {
   if (!content || saving.value) return
   saving.value = true
   try {
-    await createTopic({ title: '', content, tags: [] })
+    await createTopic({ title: '', content, tags: [], typeId: draftType.value })
     draft.value = ''
     editorKey.value++
     ElMessage.success('已记下')
@@ -177,7 +173,8 @@ onMounted(async () => {
   // 三个 ensure 收敛在 loadShellData 一处（原来这里和 AppLayout 各写了一遍）。
   // 这里不加 try/catch：壳先挂载，它成功了这一步必然命中缓存、不会失败；
   // 失败的状态由壳的侧边栏那格「加载失败 · 重试」统一承担（见 AppLayout.loadShell）。
-  user.value = (await loadShellData()).profile
+  // 只等它把数据拉齐，不取返回值——问候语删了之后这一页已经没有 profile 要用。
+  await loadShellData()
 })
 </script>
 
@@ -185,23 +182,7 @@ onMounted(async () => {
 .home {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-}
-
-.home__hero {
-  padding: 8px 0 4px;
-}
-.home__greet {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 600;
-  color: #1f2329;
-  letter-spacing: -0.2px;
-}
-.home__date {
-  margin: 6px 0 0;
-  font-size: 13px;
-  color: #a0a5ad;
+  gap: calc(24px * var(--ui-scale));
 }
 
 /* 快捷录入：整块可点，视觉上就是"这里能写"。
@@ -212,8 +193,8 @@ onMounted(async () => {
 .quick {
   background: #fff;
   border: 1px solid #eef0f3;
-  border-radius: 12px;
-  padding: 12px 14px 10px;
+  border-radius: calc(12px * var(--ui-scale));
+  padding: calc(14px * var(--ui-scale)) calc(17px * var(--ui-scale)) calc(12px * var(--ui-scale));
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .quick:focus-within {
@@ -225,14 +206,13 @@ onMounted(async () => {
 .quick__left {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: calc(5px * var(--ui-scale));
 }
 
 /* ---------- 沉浸模式（?full=1）----------
-   整页只剩这一块输入区，别的（问候 / 概览 / 待复习 / 最近记录）全部收掉。
+   整页只剩这一块输入区，别的（概览 / 待复习 / 最近记录）全部收掉。
    判据类 .is-immersive 由 AppLayout 挂在 .app-content 上，编辑器撑满
    （min-height: 60vh / 解除 80vh 封顶）在 MilkdownEditorBody 的全局块里。 */
-.is-immersive .home__hero,
 .is-immersive .stats,
 .is-immersive .panel {
   display: none;
@@ -257,76 +237,49 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 10px;
-  padding-top: 10px;
+  margin-top: calc(10px * var(--ui-scale));
+  padding-top: calc(10px * var(--ui-scale));
   border-top: 1px solid #f4f6f8;
 }
 /* 概览 */
 .stats {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
+  gap: calc(14px * var(--ui-scale));
 }
 .stat {
   background: #fff;
   border: 1px solid #eef0f3;
-  border-radius: 12px;
-  padding: 16px 18px;
+  border-radius: calc(12px * var(--ui-scale));
+  padding: calc(19px * var(--ui-scale)) calc(22px * var(--ui-scale));
 }
 .stat__num {
-  font-size: 26px;
+  font-size: calc(31px * var(--ui-scale));
   font-weight: 600;
   color: #1f2329;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
 .stat__label {
-  font-size: 12px;
+  font-size: calc(14px * var(--ui-scale));
   color: #a0a5ad;
-  margin-top: 4px;
+  margin-top: calc(4px * var(--ui-scale));
 }
 
-/* 通用面板 */
-.panel {
-  background: #fff;
-  border: 1px solid #eef0f3;
-  border-radius: 12px;
-  padding: 14px 18px 6px;
-}
-.panel__head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 6px;
-}
-.panel__title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1f2329;
-}
-.panel__extra {
-  font-size: 12px;
-  color: #a0a5ad;
-}
-.panel__more {
-  font-size: 12px;
-  color: #8a9099;
-  text-decoration: none;
-}
-.panel__more:hover {
-  color: #2b7fff;
-}
+/* .panel / .panel__head / .panel__title / .panel__extra / .panel__more 已提到
+   kb.css——它们不再只属于这一页（AiSettingsView 也用），继续留在 scoped 里
+   就成了同名不同形的两份。 */
 
 .review-empty {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 0 16px;
-  font-size: 13px;
+  gap: calc(10px * var(--ui-scale));
+  padding: calc(14px * var(--ui-scale)) 0 calc(19px * var(--ui-scale));
+  font-size: calc(15px * var(--ui-scale));
   color: #b6bac1;
 }
 .review-empty__icon {
-  font-size: 15px;
+  font-size: calc(18px * var(--ui-scale));
 }
 
 .recent {
@@ -338,8 +291,8 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 10px 0;
+  gap: calc(14px * var(--ui-scale));
+  padding: calc(12px * var(--ui-scale)) 0;
   border-bottom: 1px solid #f7f8fa;
   cursor: pointer;
 }
@@ -350,7 +303,7 @@ onMounted(async () => {
   color: #2b7fff;
 }
 .recent__title {
-  font-size: 14px;
+  font-size: calc(17px * var(--ui-scale));
   color: #1f2329;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -358,14 +311,14 @@ onMounted(async () => {
   transition: color 0.15s;
 }
 .recent__cat {
-  font-size: 12px;
+  font-size: calc(14px * var(--ui-scale));
   color: #b6bac1;
   flex-shrink: 0;
 }
 .recent__empty {
   margin: 0;
-  padding: 12px 0 18px;
-  font-size: 13px;
+  padding: calc(14px * var(--ui-scale)) 0 calc(22px * var(--ui-scale));
+  font-size: calc(15px * var(--ui-scale));
   color: #b6bac1;
 }
 </style>

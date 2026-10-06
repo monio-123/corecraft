@@ -132,13 +132,13 @@ const excerpt = computed(() => excerptOf(props.topic.content))
   position: relative;
   background: #fff;
   border: 1px solid #eef0f3;
-  border-radius: 12px;
-  padding: 14px 15px 12px;
+  border-radius: calc(12px * var(--ui-scale));
+  padding: calc(17px * var(--ui-scale)) calc(18px * var(--ui-scale)) calc(14px * var(--ui-scale));
   cursor: pointer;
   transition: border-color 0.15s, box-shadow 0.15s;
   display: flex;
   flex-direction: column;
-  min-height: 118px;
+  min-height: calc(142px * var(--ui-scale));
   /* 卡片是拖拽源不是阅读区，禁掉文本选择。
      长按菜单是这个交互最大的敌人：Android Chrome 靠 user-select 弹选择手柄，
      iOS 靠 -webkit-touch-callout 弹系统菜单，两条任缺一条都会先被系统接管。
@@ -159,7 +159,7 @@ const excerpt = computed(() => excerptOf(props.topic.content))
 .card__head {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: calc(10px * var(--ui-scale));
 }
 /* .card__title 撑满整行，菜单要钉在卡片右上角而不是"标题右侧、跟着标题行高浮动"。
    .card__head 本身定位，按钮那层 .el-dropdown 相对它绝对定位——
@@ -175,10 +175,10 @@ const excerpt = computed(() => excerptOf(props.topic.content))
 /* 标题：可编辑时是 input、只读时是 h3，两者共用同一套字号字重，看起来才是一个东西。
    min-height 是给 h3 兜底的——input 本身恒为一行高，空标题那边自然就对齐了。 */
 .card__title {
-  padding-right: 26px;
+  padding-right: calc(26px * var(--ui-scale));
   flex: 1;
   margin: 0;
-  font-size: 14px;
+  font-size: calc(17px * var(--ui-scale));
   font-weight: 600;
   line-height: 1.5;
   color: #1f2329;
@@ -227,8 +227,8 @@ const excerpt = computed(() => excerptOf(props.topic.content))
 
 .card__excerpt {
   flex: 1;
-  margin: 6px 0 0;
-  font-size: 12.5px;
+  margin: calc(6px * var(--ui-scale)) 0 0;
+  font-size: calc(12.5px * var(--ui-scale));
   line-height: 1.65;
   color: #8a9099;
   display: -webkit-box;
@@ -241,8 +241,8 @@ const excerpt = computed(() => excerptOf(props.topic.content))
 
 .card__tags {
   display: flex;
-  gap: 4px;
-  margin-top: 10px;
+  gap: calc(5px * var(--ui-scale));
+  margin-top: calc(10px * var(--ui-scale));
   min-width: 0;
   overflow: hidden;
 }

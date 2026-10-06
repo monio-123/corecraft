@@ -17,7 +17,7 @@
   justify-content: center;
   align-items: center;
   height: 100%;
-  min-height: 400px;
+  min-height: calc(400px * var(--ui-scale));
 }
 
 .error-card {
@@ -25,14 +25,14 @@
 }
 
 .error-card h1 {
-  font-size: 72px;
+  font-size: calc(72px * var(--ui-scale));
   color: #409eff;
   margin: 0;
 }
 
 .error-card p {
-  font-size: 16px;
+  font-size: calc(16px * var(--ui-scale));
   color: #909399;
-  margin: 16px 0 24px;
+  margin: calc(16px * var(--ui-scale)) 0 calc(24px * var(--ui-scale));
 }
 </style>

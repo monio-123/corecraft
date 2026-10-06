@@ -8,22 +8,65 @@
  * 容器 class 圈住），名字本身就是边界，admin 壳撞不上。
  * ============================================================ */
 
+/* ---------- 通用面板 ----------
+ * 业务壳里"一块白底圆角卡片"的基本形：标题 + 可选右上角信息 + 内容。
+ * 原来这些规则是 AppHomeView 的 scoped 样式，AiSettingsView 又用到同名 class，
+ * 于是抄了一份却拿不到样式（scoped 只对本组件生效）。第 2 处出现就该收敛——
+ * 提到这里，业务壳的页面共用一份。名字**不能加 kb- 前缀**：`.panel` 是已有的
+ * 通用叫法，加前缀等于让两个页面各写一次改名。
+ * ⚠️ 与 admin-page.css 里的 `.page .panel*` 是两套东西：那边带 `.page` 前缀做壳隔离，
+ * 别把这几条也加上前缀——那正是当初加前缀要避开的地方。
+ */
+.panel {
+  background: #fff;
+  border: 1px solid #eef0f3;
+  border-radius: calc(12px * var(--ui-scale));
+  padding: calc(17px * var(--ui-scale)) calc(22px * var(--ui-scale)) calc(7px * var(--ui-scale));
+}
+.panel__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: calc(6px * var(--ui-scale));
+}
+.panel__title {
+  font-size: calc(17px * var(--ui-scale));
+  font-weight: 600;
+  color: #1f2329;
+}
+.panel__extra {
+  font-size: calc(14px * var(--ui-scale));
+  color: #a0a5ad;
+}
+.panel__more {
+  font-size: calc(14px * var(--ui-scale));
+  color: #8a9099;
+  text-decoration: none;
+}
+.panel__more:hover {
+  color: #2b7fff;
+}
+
 /* ---------- 标签 chip ----------
  * 知识点卡片（TopicCard）和知识点详情页的标签是同一个东西，
  * 之前各写一份 hex，两处灰度还不一样（#f4f5f7 vs 底色 token），
- * 在同一屏上并排出现时能看出色差。 */
+ * 在同一屏上并排出现时能看出色差。
+ *
+ * 尺寸是 2026-10-06 整体上调过的（见 FEATURES #48）：字号 11→13、
+ * 内边距 1/6→1/7、圆角 4→5、图标 11→13。上调的是**可读尺度**
+ * （字号 / 行高 / 内边距 / 图标），不是所有数值——1px 边框和色值没动。 */
 .kb-chip {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  font-size: 11px;
+  gap: calc(4px * var(--ui-scale));
+  font-size: calc(13px * var(--ui-scale));
   line-height: 1.6;
-  padding: 1px 6px;
-  border-radius: 4px;
+  padding: calc(1px * var(--ui-scale)) calc(7px * var(--ui-scale));
+  border-radius: calc(5px * var(--ui-scale));
   background: var(--cc-surface-2);
   color: var(--cc-text-3);
   white-space: nowrap;
-  max-width: 160px;
+  max-width: calc(190px * var(--ui-scale));
   flex-shrink: 0;
 }
 .kb-chip__text {
@@ -36,7 +79,7 @@
   border: none;
   background: transparent;
   padding: 0;
-  margin-right: -2px;
+  margin-right: -calc(2px * var(--ui-scale));
   color: var(--cc-text-4);
   cursor: pointer;
   display: inline-flex;
@@ -44,8 +87,8 @@
   transition: var(--cc-transition);
 }
 .kb-chip__x svg {
-  width: 11px;
-  height: 11px;
+  width: calc(13px * var(--ui-scale));
+  height: calc(13px * var(--ui-scale));
 }
 .kb-chip__x:hover {
   color: var(--el-color-danger);
@@ -53,20 +96,20 @@
 
 /* ---------- 图标按钮 ----------
  * AppLayout 顶栏、知识点卡片删除、知识点详情页删除是同一个控件的三处皮肤。
- * 尺寸 24×24 一档：够点，又不至于比旁边的文字抢眼。 */
+ * 尺寸 28×28 一档：够点，又不至于比旁边的文字抢眼。24→28、字号 14→16。 */
 .kb-icon-btn {
   border: none;
   background: transparent;
   color: var(--cc-text-4);
   cursor: pointer;
-  width: 24px;
-  height: 24px;
+  width: calc(28px * var(--ui-scale));
+  height: calc(28px * var(--ui-scale));
   padding: 0;
   border-radius: var(--cc-radius-sm);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: calc(16px * var(--ui-scale));
   flex-shrink: 0;
   transition: var(--cc-transition);
 }
@@ -81,6 +124,33 @@
 .kb-icon-btn:disabled {
   cursor: not-allowed;
   opacity: 0.4;
+}
+
+/* ---------- 文字型次要按钮 ----------
+ * AppTopicDetailView 的「返回」、AI 设置页的「编辑 / 删除」是同一个控件的几种皮肤。
+ * 之前各写各的 border / background / color，到 AI 设置页长出了**浏览器默认按钮的黑框**
+ * ——base.css 的全局 reset 只有 margin / padding / box-sizing，不碰 border 和 background，
+ * 手写 `<button>` 就一定会漏。收敛到一处以后不用再指望记得补。
+ * 需要变体（字号更大 / 主色 / 危险色）就在外面并一个自己的 class 改那一样。 */
+.kb-text-btn {
+  border: none;
+  background: transparent;
+  color: var(--cc-text-3);
+  font-size: calc(13px * var(--ui-scale));
+  line-height: 1.6;
+  padding: calc(4px * var(--ui-scale)) calc(10px * var(--ui-scale));
+  border-radius: var(--cc-radius-sm);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: var(--cc-transition);
+}
+.kb-text-btn:hover {
+  background: var(--cc-surface-2);
+  color: var(--cc-text-1);
+}
+.kb-text-btn--danger:hover {
+  background: var(--el-color-danger-light-9);
+  color: var(--el-color-danger);
 }
 
 /* 拖拽幽灵已回到 AppLayout 里的手写实现（原因见那里的注释）：

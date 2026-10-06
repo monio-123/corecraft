@@ -18,7 +18,7 @@
     <div class="bar">
       <div class="bar__cats">
         <button class="pill" :class="{ 'is-on': categoryFilter === ALL }" @click="setCategoryFilter(ALL)">
-          全部 {{ allTopics.length }}
+          全部 {{ allCount }}
         </button>
         <button
           class="pill"
@@ -37,6 +37,44 @@
         >
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
+
+        <!-- 类型也收进下拉，和标签并排。同一把尺子：90% 的时候想看全部，
+             不该为"偶尔筛一下学习类"在首屏摆一排药丸。
+             类型是单选（一律"什么性质"），标签是多选（"涉及什么"），
+             两个筛选互不干涉，可以叠加。 -->
+        <el-popover
+          v-model:visible="typePanelVisible"
+          :width="200"
+          trigger="click"
+          placement="bottom-end"
+          :teleported="false"
+        >
+          <template #reference>
+            <button class="pill pill--filter" :class="{ 'is-on': typeFilter !== null }">
+              类型
+              <span v-if="typeFilterLabel" class="pill__on">{{ typeFilterLabel }}</span>
+              <el-icon v-else class="pill__caret"><ArrowDown /></el-icon>
+            </button>
+          </template>
+          <div class="tagpanel">
+            <button class="tagpanel__item" :class="{ 'is-on': typeFilter === null }" @click="pickType(null)">
+              全部类型
+            </button>
+            <p v-if="!topicTypes.length" class="tagpanel__empty">字典里还没有类型</p>
+            <div v-else class="tagpanel__list">
+              <button
+                v-for="t in topicTypes"
+                :key="t.id"
+                class="tagpanel__item"
+                :class="{ 'is-on': typeFilter === t.id }"
+                @click="pickType(t.id)"
+              >
+                <span class="tagpanel__name">{{ t.label }}</span>
+                <span class="tagpanel__count">{{ typeCountMap.get(t.id) || 0 }}</span>
+              </button>
+            </div>
+          </div>
+        </el-popover>
 
         <!-- 标签收进下拉：低频操作，不该占首屏 -->
         <el-popover
@@ -94,9 +132,6 @@
     </div>
     <div v-else class="empty">
       <p>{{ emptyText }}</p>
-      <el-button v-if="isFiltered" size="small" text type="primary" @click="clearFilters">
-        清除筛选
-      </el-button>
     </div>
   </div>
 </template>
@@ -109,8 +144,9 @@ import { ElMessage, ElMessageBox, ElPopover } from 'element-plus'
 import { Search, ArrowDown } from '@element-plus/icons-vue'
 import {
   ensureTopicsLoaded, ensureCategoriesLoaded, ensureAllTagsLoaded,
-  getTopics, getUncategorizedCount, getCategory, getCategorySubtreeIds,
-  getAllTags, deleteTopic, encodeTag, deleteConfirmMessage, UNCATEGORIZED
+  getTopics, getCategory, getCategorySubtreeIds,
+  getAllTags, deleteTopic, encodeTag, deleteConfirmMessage, UNCATEGORIZED,
+  getTopicTypes, getTopicTypeLabel, resolveTopicTypeId
 } from './useCorecraftWebStore'
 import CategoryCrumbs from './CategoryCrumbs.vue'
 import TopicCard from './TopicCard.vue'
@@ -121,13 +157,20 @@ const router = useRouter()
 
 const tagPanelVisible = ref(false)
 const tagFilter = ref(null)
-// 标签列表：**直接算，不存快照**。
-// 原来是 `ref([])` + refresh() 里 `tagList.value = [...getAllTags()].sort(...)`，那是一次性拷贝——
-// store 的 renameTag / confirmDeleteTag 刷的是它自己那份 allTags，本地这份是副本不会跟着变，
-// 于是"在标签下拉里改名/删除之后列表不动，必须手动刷新页面"。
-// 知识点列表没这个问题是因为它一直是 computed(() => getTopics())，只有标签这一处漏了。
-const tagList = computed(() => [...getAllTags()].sort((a, b) => b.count - a.count))
 const ALL = 'all'
+
+// 类型筛选。和 tagFilter 一样**只存本地 ref，不进 URL**——
+// 目录筛选要进 URL 是因为侧边栏也在写它；类型只有这一个入口，没有第二个写方。
+// 存 ref 的代价：刷新页面筛选会丢。目录筛选不丢是因为它本来就该能被链接分享。
+const typePanelVisible = ref(false)
+const typeFilter = ref(null)
+const topicTypes = computed(() => getTopicTypes())
+const typeFilterLabel = computed(() => (typeFilter.value ? getTopicTypeLabel(typeFilter.value) : ''))
+
+function pickType(id) {
+  typeFilter.value = id
+  typePanelVisible.value = false
+}
 
 // 目录筛选的真相源是 URL：侧边栏的目录链接和这里的两个药丸都在写它，本地 ref 只是它的镜像。
 // 两个方向的同步缺一不可——
@@ -148,7 +191,6 @@ function setCategoryFilter(key) {
 }
 
 const allTopics = computed(() => getTopics())
-const uncategorizedCount = computed(() => getUncategorizedCount())
 
 // 目录被删掉后 URL 还指着它时 getCategory 拿不到，当成"全部"，不白屏
 const currentCategoryId = computed(() => getCategory(categoryFilter.value)?.id ?? null)
@@ -182,27 +224,88 @@ function matchKeyword(t) {
   return (t.title || '').toLowerCase().includes(q) || (t.content || '').toLowerCase().includes(q)
 }
 
-const shown = computed(() => allTopics.value.filter((t) => matchCategory(t) && matchTag(t) && matchKeyword(t)))
+// 类型筛选：typeId 可能悬空（字典项被软删），所以比之前先收口成真实存在的 id
+function matchType(t) {
+  if (typeFilter.value === null) return true
+  return resolveTopicTypeId(t.typeId) === typeFilter.value
+}
 
-const isFiltered = computed(() =>
-  categoryFilter.value !== ALL || tagFilter.value !== null || Boolean(keyword.value.trim())
+// ==================== 分面计数 ====================
+
+/**
+ * 算某一维度的数字时**排除自己那一维**，只用其它维度已生效的条件去数。
+ *
+ * 原来这四个数字全是全库计数：类型下拉走 `getTopicTypeCountMap()`、标签下拉用后端
+ * 返回的 `refCount`、「全部 N / 待归类 N」两个药丸也是全局的。于是选了「待归类」
+ * 再点类型「笔记」，上面写着有数、点进去空空如也——**数字在骗人，比没有数字更糟**。
+ *
+ * 规则只有一条：**某维度的数字 = 其它维度已生效条件下的条数**。自己那一维必须排除，
+ * 否则已经选了「笔记」之后类型下拉里就只剩「笔记」有数，想切回去都看不见别人的数量。
+ *
+ * 纯 computed，不发请求：复杂度是 `维度数 × 知识点数`，17 条还是几千条都无所谓。
+ */
+function countBy(dimensions, extra) {
+  return allTopics.value.filter(
+    (t) => (extra ? extra(t) : true) && dimensions.every((d) => d(t))
+  ).length
+}
+
+// 原子谓词。算哪个维度的数字，就挑**除它以外**的那几个交给 countBy。
+const mCategory = (t) => matchCategory(t)
+const mType = (t) => matchType(t)
+const mTag = (t) => matchTag(t)
+const mKeyword = (t) => matchKeyword(t)
+
+// 标签清单**直接算，不存快照**。
+// 原来是 `ref([])` + refresh() 里 `tagList.value = [...getAllTags()].sort(...)`，那是一次性拷贝——
+// store 的 renameTag / confirmDeleteTag 刷的是它自己那份 allTags，本地这份是副本不会跟着变，
+// 于是"在标签下拉里改名/删除之后列表不动，必须手动刷新页面"。
+//
+// 清单本身仍来自后端（哪些标签存在只有它知道），但**数字就地算、不看 refCount**——
+// refCount 是全库数，显示在这里就是上面说的那种骗人的数字。
+// 副作用：没有任何知识点引用的标签会显示 0。
+const tagList = computed(() =>
+  getAllTags()
+    .map((tag) => ({
+      ...tag,
+      count: countBy([mCategory, mType, mKeyword], (t) =>
+        (t.tags || []).some((x) => encodeTag(x) === tag.name)
+      )
+    }))
+    .sort((a, b) => b.count - a.count)
+)
+
+// 目录这一维在筛选条上常驻两个值：全部 / 待归类。选中某个具体目录时它们照常显示——
+// 数字答的是"假如点它会得到多少"，这正是换维度该给的提示。
+const allCount = computed(() => countBy([mType, mTag, mKeyword]))
+const uncategorizedCount = computed(() =>
+  countBy([mType, mTag, mKeyword], (t) => t.categoryId == null)
+)
+
+// 类型下拉每项的数字
+const typeCountMap = computed(() => {
+  const counts = new Map()
+  for (const ty of topicTypes.value) {
+    counts.set(ty.id, countBy([mCategory, mTag, mKeyword], (t) =>
+      resolveTopicTypeId(t.typeId) === ty.id
+    ))
+  }
+  return counts
+})
+
+const shown = computed(() =>
+  allTopics.value.filter((t) => matchCategory(t) && matchType(t) && matchTag(t) && matchKeyword(t))
 )
 
 const emptyText = computed(() => {
   if (categoryFilter.value === UNCATEGORIZED) return '没有待归类的知识点'
-  if (currentCategoryId.value) return '这个目录还是空的 —— 把未归类的知识点拖进来'
+  if (currentCategoryId.value) return '这个目录还是空的'
   return keyword.value.trim() ? '没搜到' : '还没有知识点'
 })
 
 function pickTag(name) {
   tagFilter.value = name
   tagPanelVisible.value = false
-}
-
-function clearFilters() {
-  setCategoryFilter(ALL)
-  tagFilter.value = null
-  keyword.value = ''
 }
 
 async function refresh() {
@@ -251,7 +354,7 @@ onMounted(refresh)
 .learn {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: calc(17px * var(--ui-scale));
 }
 
 /* 录入（原 .composer 六条规则）：录入框已统一收到首页，这里跟着删。
@@ -263,37 +366,37 @@ onMounted(refresh)
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: calc(14px * var(--ui-scale));
   flex-wrap: wrap;
 }
 .bar__cats {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: calc(7px * var(--ui-scale));
   flex-wrap: wrap;
 }
 .bar__right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: calc(10px * var(--ui-scale));
   margin-left: auto;
 }
 .bar__search {
-  width: 180px;
+  width: calc(216px * var(--ui-scale));
 }
 
 .pill {
-  font-size: 12px;
-  padding: 4px 10px;
+  font-size: calc(14px * var(--ui-scale));
+  padding: calc(5px * var(--ui-scale)) calc(12px * var(--ui-scale));
   border: 1px solid transparent;
-  border-radius: 14px;
+  border-radius: calc(14px * var(--ui-scale));
   background: #f1f2f4;
   color: #6b7280;
   cursor: pointer;
   transition: all 0.15s;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: calc(5px * var(--ui-scale));
 }
 .pill:hover {
   background: #e8eaed;
@@ -315,21 +418,21 @@ onMounted(refresh)
   border-color: #e2e5e9;
 }
 .pill__on {
-  max-width: 90px;
+  max-width: calc(108px * var(--ui-scale));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .pill__caret {
-  font-size: 11px;
+  font-size: calc(13px * var(--ui-scale));
 }
 
 /* 标签下拉 */
 .tagpanel {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  max-height: 240px;
+  gap: calc(1px * var(--ui-scale));
+  max-height: calc(288px * var(--ui-scale));
   overflow-y: auto;
 }
 /* 一行 = 行容器（现在带标签的行是 div，因为要再塞一个「⋯」按钮）+ 选它的按钮 + 操作按钮。
@@ -337,12 +440,12 @@ onMounted(refresh)
 .tagpanel__item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
+  gap: calc(10px * var(--ui-scale));
+  padding: calc(7px * var(--ui-scale)) calc(10px * var(--ui-scale));
   border: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--ui-scale));
   background: transparent;
-  font-size: 13px;
+  font-size: calc(15px * var(--ui-scale));
   color: #4b5563;
   cursor: pointer;
   text-align: left;
@@ -370,7 +473,7 @@ onMounted(refresh)
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: calc(10px * var(--ui-scale));
   border: none;
   background: transparent;
   padding: 0;
@@ -385,22 +488,30 @@ onMounted(refresh)
   white-space: nowrap;
 }
 .tagpanel__count {
-  font-size: 11px;
+  font-size: calc(13px * var(--ui-scale));
   color: #b6bac1;
   flex-shrink: 0;
 }
 .tagpanel__empty {
   margin: 0;
-  padding: 8px;
-  font-size: 12px;
+  padding: calc(10px * var(--ui-scale));
+  font-size: calc(14px * var(--ui-scale));
   color: #b6bac1;
 }
 
-/* 卡片网格：固定列宽 + 卡片等高 */
+/* 卡片网格：固定列宽 + 卡片等高
+ *
+ * 列数从来没写死，是 `repeat(auto-fill, minmax(N, 1fr))` 由**实际可用宽度**算出来的。
+ * 1920 窗口下：视口 − 侧边栏 264 − 内容区左右 padding 56 = 1600，被
+ * `--cc-content-w: 1280px` 截到 1280（侧边栏收起时同样截到 1280，两态一致）。
+ *
+ * 配合 gap 14px，3 列要求 N 落在 (392, 417] —— 取 400，卡片实际 417px。
+ * 视口再窄就自然掉到 2 列，不加断点。
+ */
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(calc(400px * var(--ui-scale)), 1fr));
+  gap: calc(14px * var(--ui-scale));
 }
 .grid :deep(.topic-card-wrap) {
   margin-bottom: 0;
@@ -411,12 +522,12 @@ onMounted(refresh)
 
 /* ---------- 空状态 ---------- */
 .empty {
-  padding: 48px 0;
+  padding: calc(56px * var(--ui-scale)) 0;
   text-align: center;
 }
 .empty p {
-  margin: 0 0 8px;
-  font-size: 13px;
+  margin: 0;
+  font-size: calc(15px * var(--ui-scale));
   color: #b6bac1;
 }
 </style>

@@ -52,6 +52,7 @@
             <el-icon><Reading /></el-icon>
           </button>
         </el-tooltip>
+        <UiScaleSelect shell="admin" />
         <el-tooltip :content="tabsVisible ? '隐藏标签栏' : '显示标签栏'" placement="bottom">
           <button class="icon-btn" @click="tabsVisible = !tabsVisible">
             <el-icon><component :is="tabsVisible ? ArrowDown : ArrowUp" /></el-icon>
@@ -194,6 +195,8 @@ import { ArrowDown, ArrowUp, Reading } from '@element-plus/icons-vue'
 import { clearAuth, getMenuPaths, getMenuTree } from '../utils/auth'
 import { parseMeta, getIconComponent, isPlaceholderPath, shellOf } from '../utils/menu'
 import { bootstrapSession, hasAppMenus } from '../utils/session'
+import { applyUiScale, clearUiScale, getUiScale } from '../utils/uiScale'
+import UiScaleSelect from './UiScaleSelect.vue'
 import { updateMyPassword, updateMyProfile, uploadMyAvatar } from '../api/user'
 
 const route = useRoute()
@@ -590,6 +593,8 @@ const removeTab = (name) => {
 }
 
 onMounted(async () => {
+  // 本壳的缩放偏好写到 <html> 行内，和知识库那份互不影响（各存各的 localStorage key）
+  applyUiScale(getUiScale('admin'))
   try {
     await loadCurrentContext()
   } catch (e) {
@@ -599,6 +604,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   cleanupDragging()
+  clearUiScale()
 })
 </script>
 
@@ -606,7 +612,8 @@ onBeforeUnmount(() => {
 .app-container {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  /* 100% 而不是 100vh：全高靠 App.vue 那条 html → body → #app 的百分比链，壳取同一档 */
+  height: 100%;
   overflow: hidden;
 }
 
@@ -614,10 +621,10 @@ onBeforeUnmount(() => {
 .header {
   display: flex;
   align-items: center;
-  gap: 20px;
-  height: 56px;
+  gap: calc(20px * var(--ui-scale));
+  height: calc(56px * var(--ui-scale));
   flex-shrink: 0;
-  padding: 0 16px 0 20px;
+  padding: 0 calc(16px * var(--ui-scale)) 0 calc(20px * var(--ui-scale));
   background: var(--cc-surface);
   border-bottom: 1px solid var(--cc-border);
 }
@@ -625,27 +632,27 @@ onBeforeUnmount(() => {
 .brand {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: calc(9px * var(--ui-scale));
   text-decoration: none;
   flex-shrink: 0;
 }
 .brand__logo {
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
+  width: calc(26px * var(--ui-scale));
+  height: calc(26px * var(--ui-scale));
+  border-radius: calc(7px * var(--ui-scale));
   background: var(--cc-logo-gradient);
   color: #fff;
-  font-size: 11px;
+  font-size: calc(11px * var(--ui-scale));
   font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 .brand__name {
-  font-size: 15px;
+  font-size: calc(15px * var(--ui-scale));
   font-weight: 600;
   color: var(--cc-text-1);
-  letter-spacing: 0.3px;
+  letter-spacing: calc(0.3px * var(--ui-scale));
 }
 
 /* 导航：浅色菜单。原来的 background-color/text-color/active-text-color
@@ -664,11 +671,11 @@ onBeforeUnmount(() => {
 
 :deep(.admin-menu.el-menu--horizontal > .el-menu-item),
 :deep(.admin-menu.el-menu--horizontal > .el-sub-menu > .el-sub-menu__title) {
-  height: 56px;
-  line-height: 56px;
+  height: calc(56px * var(--ui-scale));
+  line-height: calc(56px * var(--ui-scale));
   margin: 0;
-  padding: 0 12px;
-  font-size: 14px;
+  padding: 0 calc(12px * var(--ui-scale));
+  font-size: calc(14px * var(--ui-scale));
   color: var(--cc-text-2);
   background: transparent;
   transition: var(--cc-transition);
@@ -693,14 +700,14 @@ onBeforeUnmount(() => {
 
 /* 子菜单浮层：Element Plus 默认白底浮层即可，不要再染深灰 */
 :deep(.admin-menu .el-menu--horizontal .el-menu) {
-  top: 56px;
+  top: calc(56px * var(--ui-scale));
   border-top: none;
   border-radius: var(--cc-radius);
   box-shadow: 0 4px 16px rgba(31, 35, 41, 0.1);
 }
 
 :deep(.admin-menu .el-menu-item) {
-  font-size: 14px;
+  font-size: calc(14px * var(--ui-scale));
   color: var(--cc-text-2);
   transition: var(--cc-transition);
 }
@@ -716,7 +723,7 @@ onBeforeUnmount(() => {
 .user-info {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: calc(4px * var(--ui-scale));
   flex-shrink: 0;
 }
 
@@ -724,8 +731,8 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: calc(30px * var(--ui-scale));
+  height: calc(30px * var(--ui-scale));
   border: none;
   border-radius: var(--cc-radius-sm);
   background: transparent;
@@ -741,9 +748,9 @@ onBeforeUnmount(() => {
 .user-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 8px 4px 4px;
-  border-radius: 16px;
+  gap: calc(8px * var(--ui-scale));
+  padding: calc(4px * var(--ui-scale)) calc(8px * var(--ui-scale)) calc(4px * var(--ui-scale)) calc(4px * var(--ui-scale));
+  border-radius: calc(16px * var(--ui-scale));
   cursor: pointer;
   transition: var(--cc-transition);
 }
@@ -751,11 +758,11 @@ onBeforeUnmount(() => {
   background: var(--cc-surface-2);
 }
 .user-name {
-  font-size: 14px;
+  font-size: calc(14px * var(--ui-scale));
   color: var(--cc-text-2);
 }
 .user-caret {
-  font-size: 12px;
+  font-size: calc(12px * var(--ui-scale));
   color: var(--cc-text-4);
 }
 
@@ -765,9 +772,9 @@ onBeforeUnmount(() => {
 .tabs-row {
   display: flex;
   align-items: stretch;
-  height: 40px;
+  height: calc(40px * var(--ui-scale));
   flex-shrink: 0;
-  padding: 0 20px;
+  padding: 0 calc(20px * var(--ui-scale));
   background: var(--cc-surface);
   border-bottom: 1px solid var(--cc-border);
 }
@@ -791,12 +798,12 @@ onBeforeUnmount(() => {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 40px;
-  padding: 0 14px;
+  gap: calc(6px * var(--ui-scale));
+  height: calc(40px * var(--ui-scale));
+  padding: 0 calc(14px * var(--ui-scale));
   flex-shrink: 0;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: calc(13px * var(--ui-scale));
   color: var(--cc-text-3);
   cursor: pointer;
   user-select: none;
@@ -805,11 +812,11 @@ onBeforeUnmount(() => {
 .page-tab::after {
   content: '';
   position: absolute;
-  left: 14px;
-  right: 14px;
+  left: calc(14px * var(--ui-scale));
+  right: calc(14px * var(--ui-scale));
   bottom: 0;
-  height: 2px;
-  border-radius: 1px;
+  height: calc(2px * var(--ui-scale));
+  border-radius: calc(1px * var(--ui-scale));
   background: transparent;
   transition: background 0.15s;
 }
@@ -845,8 +852,8 @@ onBeforeUnmount(() => {
 }
 
 .page-tab__close {
-  font-size: 12px;
-  padding: 2px;
+  font-size: calc(12px * var(--ui-scale));
+  padding: calc(2px * var(--ui-scale));
   border-radius: 50%;
   color: var(--cc-text-4);
   opacity: 0;
@@ -865,19 +872,19 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   background: var(--cc-bg);
-  padding: 24px;
+  padding: calc(24px * var(--ui-scale));
   overflow-y: auto;
 }
 
 /* 内容宽度上限：原来满宽铺到 2K 屏边。admin 表格页比业务壳宽，但不该无限宽。 */
 .page-wrap {
-  max-width: 1440px;
+  max-width: calc(1440px * var(--ui-scale));
   margin: 0 auto;
 }
 
 .avatar-editor {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: calc(16px * var(--ui-scale));
 }
 </style>

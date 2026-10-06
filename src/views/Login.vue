@@ -90,8 +90,9 @@ const handleLogin = async () => {
 
 <style scoped>
 .login-container {
-  height: 100vh;
-  width: 100vw;
+  /* 100% 而不是 100vh：全高靠 App.vue 那条 html → body → #app 的百分比链 */
+  height: 100%;
+  width: 100%;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -100,11 +101,11 @@ const handleLogin = async () => {
 }
 
 .login-box {
-  width: 1000px;
-  height: 600px;
+  width: calc(1000px * var(--ui-scale));
+  height: calc(600px * var(--ui-scale));
   display: flex;
   background: white;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--ui-scale));
   box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
   overflow: hidden;
 }
@@ -135,7 +136,7 @@ const handleLogin = async () => {
 
 .login-right {
   flex: 1;
-  padding: 40px;
+  padding: calc(40px * var(--ui-scale));
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -143,9 +144,9 @@ const handleLogin = async () => {
 
 h2 {
   text-align: center;
-  margin-bottom: 40px;
+  margin-bottom: calc(40px * var(--ui-scale));
   color: #333;
-  font-size: 28px;
+  font-size: calc(28px * var(--ui-scale));
 }
 
 /* 移动端适配 */
@@ -161,12 +162,12 @@ h2 {
   }
 
   .login-right {
-    padding: 30px 20px;
+    padding: calc(30px * var(--ui-scale)) calc(20px * var(--ui-scale));
   }
 
   h2 {
-    margin-bottom: 30px;
-    font-size: 24px;
+    margin-bottom: calc(30px * var(--ui-scale));
+    font-size: calc(24px * var(--ui-scale));
   }
 }
 
@@ -174,7 +175,7 @@ h2 {
 @media screen and (min-width: 769px) and (max-width: 1024px) {
   .login-box {
     width: 90%;
-    height: 500px;
+    height: calc(500px * var(--ui-scale));
   }
 }
 </style> 

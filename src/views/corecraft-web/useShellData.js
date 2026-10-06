@@ -1,27 +1,40 @@
 import { bootstrapSession } from '../../utils/session'
-import { ensureTopicsLoaded, ensureCategoriesLoaded } from './useCorecraftWebStore'
+import {
+  ensureTopicsLoaded, ensureCategoriesLoaded, ensureTopicTypesLoaded
+} from './useCorecraftWebStore'
+import { ensureAiConfigLoaded } from './useAi'
 
 /**
- * 业务壳启动要的三份数据：会话（菜单 / 资料 / 权限）、知识点、知识目录。
+ * 业务壳启动要的数据：会话（菜单 / 资料 / 权限）、知识点、知识目录、知识点类型。
  *
- * 原来 `AppLayout` 和 `AppHomeView` 的 onMounted 各写了一遍**一模一样**的
- * `Promise.all([bootstrapSession(), ensureTopicsLoaded(), ensureCategoriesLoaded()])`，
- * 同一个顺序，只有拿到结果之后做的事不同（一个存整份快照，一个只取 profile）。
- * 重复即收敛——而且这个重复正好卡在"失败之后没有重试入口"上：
- * 收敛到一处，加重试就只需要改一个地方。
+ * 原来 AppLayout 和 AppHomeView 的 onMounted 各写了一遍**一模一样**的
+ * Promise.all([bootstrapSession(), ensureTopicsLoaded(), ensureCategoriesLoaded()])，
+ * 那是一次性拷贝——store 的 renameTag / confirmDeleteTag 刷的是它自己那份 allTags，
+ * 本地这份是副本不会跟着变，于是"在标签下拉里改名/删除之后列表不动，必须手动刷新页面"。
+ * 知识点列表没这个问题是因为它一直是 computed(() => getTopics())，只有标签这一处漏了。
  *
- * 返回的是会话快照（`{ menuTree, menuPaths, profile }`），调用方各取所需。
- * 不在这里存成共享 state：两个调用点要的东西本来就不一样（壳要整份、首页只要 profile），
- * 硬塞成一份反而多一层间接。
+ * 类型清单也收在这里：首页录入、列表页筛选、详情页改类型三处都要它，
+ * 各写一遍就是第三份重复。字典是全局的，跟着壳启动拉一次就够。
  *
- * 三个 ensure 各自幂等（`bootstrapSession` 有 snapshot 短路、store 三个有 xxxLoaded 标志），
+ * 标签列表是**故意不在这里**的：详情页打开不请求它，懒加载到"点开下拉"才拉
+ * （见 AppTopicDetailView 的 tagListOpen watch）。
+ *
+ * 每一项都幂等（session 有 snapshot 短路、store 三个有 loaded 标志），
  * 所以壳和页面都调它不会打两次接口。
+ *
+ * 返回会话快照（`{ menuTree, menuPaths, profile }`），调用方各取所需：
+ * 壳要整份、首页只要 profile。硬塞成一份共享 state 反而多一层间接。
  */
 export async function loadShellData() {
   const [session] = await Promise.all([
     bootstrapSession(),
     ensureTopicsLoaded(),
-    ensureCategoriesLoaded()
+    ensureCategoriesLoaded(),
+    ensureTopicTypesLoaded(),
+    // AI 配置也在这里拉：界面各处用 aiEnabled 控制 AI 入口显不显示，
+    // 那个判断发生在渲染时——配置要是等进设置页才加载，首页/详情页会先画出一瞬
+    // "没有 AI"的界面再跳变。跟着壳启动一次，状态从第一帧就是对的。
+    ensureAiConfigLoaded()
   ])
   return session
 }

@@ -60,7 +60,9 @@ export function createCategory(data) {
   return request.post('/kp/category', data)
 }
 
-// 重命名目录：后端按 (userId, oldName) 定位，所以 oldName 要传当前真名
+// 重命名目录：按 **id** 定位（{ id, newName }），不是按名字。
+// 名字是可变字段，拿它当键等于"改名那一刻就换了身份证"；允许同名之后更是认不出改的是哪个。
+// 同层重名由 DB 的 uk_user_parent_name 兜底。
 export function renameCategory(data) {
   return request.put('/kp/category/rename', data)
 }
