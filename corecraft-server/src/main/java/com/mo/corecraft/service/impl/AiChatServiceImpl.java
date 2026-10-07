@@ -5,6 +5,8 @@ import com.mo.corecraft.exception.CoreCraftException;
 import com.mo.corecraft.model.entity.AiEndpoint;
 import com.mo.corecraft.model.query.SysDictItemQuery;
 import com.mo.corecraft.model.query.SysDictTypeQuery;
+import com.mo.corecraft.model.req.AiChatReq;
+import com.mo.corecraft.model.resp.SysDictItemResp;
 import com.mo.corecraft.model.resp.AiQuestionResp;
 import com.mo.corecraft.model.resp.KpCategoryResp;
 import com.mo.corecraft.model.resp.KpTopicResp;
@@ -23,8 +25,13 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import com.mo.corecraft.service.AiChatService.AiDelta;
 import com.mo.corecraft.service.AiChatService.AiDeltaSink;
 
@@ -44,17 +51,14 @@ public class AiChatServiceImpl implements AiChatService {
     /** 引导问题所在的字典编码 */
     private static final String QUESTION_DICT = "ai_topic_question";
 
-    /**
-     * 上下文只喂这一条（2026-10-07 定：标题 + 正文）。
-     *
-     * 两条约束写进 system prompt：一是**只根据这条知识回答**，二是**内容里没有的直接说没有**。
-     * 不写第二条，模型会拿训练时的通识来补，答得看着像模像样、实际在编。
-     */
-    private static final String SYSTEM_PROMPT =
-            "你是一个学习助手。用户会就一条知识提问。\n"
-            + "只根据下面这条知识的内容回答，不要引入这条知识之外的信息。\n"
-            + "内容里没有提到的，直接说「这条知识里没有提到」，不要推测、不要补充你记忆里的版本。\n"
-            + "直接给结果：不要复述任务、不要解释你正在做什么、不要写「好的」这类开场白。";
+    /** AI 统一描述所在的字典编码；项的 value 就是场景标识（chat / 将来还有别的） */
+    private static final String SYSTEM_PROMPT_DICT = "ai_system_prompt";
+
+    /** 一次最多带多少轮历史。**正文不占这个名额**——它固定钉在第一条，甩不掉 */
+    private static final int HISTORY_TURNS = 5;
+
+    /** 目录树输出时的深度上限。层级数据坏了（父子成环）时靠它收住 */
+    private static final int MAX_TREE_DEPTH = 10;
 
     private final AiEndpointService aiEndpointService;
     private final KpTopicService kpTopicService;
@@ -66,13 +70,12 @@ public class AiChatServiceImpl implements AiChatService {
 
     @Override
     public List<AiQuestionResp> questions() {
-        var type = sysDictTypeService.selectSysDictType(
-                new SysDictTypeQuery() {{ setCode(QUESTION_DICT); setEnabled(true); }});
-        if (type == null) {
+        Long dictTypeId = dictTypeId(QUESTION_DICT);
+        if (dictTypeId == null) {
             return List.of();
         }
         var itemQuery = new SysDictItemQuery();
-        itemQuery.setDictTypeId(type.getId());
+        itemQuery.setDictTypeId(dictTypeId);
         itemQuery.setEnabled(true);
         return sysDictItemService.selectSysDictItemList(itemQuery).stream().map(item -> {
             var resp = new AiQuestionResp();
@@ -83,11 +86,10 @@ public class AiChatServiceImpl implements AiChatService {
     }
 
     @Override
-    public void stream(Long userId, Long endpointId, Long topicId, String question, String questionKey,
-                       AiDeltaSink deltaSink) throws IOException {
-        AiEndpoint endpoint = aiEndpointService.requireReady(userId, endpointId);
+    public void stream(Long userId, AiChatReq req, AiDeltaSink deltaSink) throws IOException {
+        AiEndpoint endpoint = aiEndpointService.requireReady(userId, req.getEndpointId());
 
-        KpTopicResp topic = kpTopicService.selectTopicById(topicId);
+        KpTopicResp topic = kpTopicService.selectTopicById(req.getTopicId());
         if (topic == null) {
             throw new CoreCraftException("知识点不存在或已删除");
         }
@@ -97,7 +99,7 @@ public class AiChatServiceImpl implements AiChatService {
                 "Content-Type", "application/json"
         );
 
-        List<Map<String, String>> messages = buildMessages(topic, question, questionKey, userId);
+        List<Map<String, String>> messages = buildMessages(req, topic, userId);
 
         // 开流前先把"提交给模型的东西"原样发一次。**发出去的不能比送进去的少**——
         // 界面上要能核对 AI 到底看见了什么，那就得是这个 messages 本身，不是另拼一份。
@@ -132,8 +134,9 @@ public class AiChatServiceImpl implements AiChatService {
         return base.endsWith("/chat/completions") ? base : base + "/chat/completions";
     }
 
-    private List<Map<String, String>> buildMessages(KpTopicResp topic, String question,
-                                                    String questionKey, Long userId) {
+    private List<Map<String, String>> buildMessages(AiChatReq req, KpTopicResp topic, Long userId) {
+        String questionKey = req.getQuestionKey();
+        List<AiChatReq.Turn> history = req.getHistory();
         StringBuilder ctx = new StringBuilder()
                 .append("标题：").append(StringUtils.defaultString(topic.getTitle()))
                 .append("\n\n内容：\n").append(StringUtils.defaultString(topic.getContent()));
@@ -144,12 +147,40 @@ public class AiChatServiceImpl implements AiChatService {
         // 两者一起发，模型会把 label 当成要回应的话头，原样复述一遍当答案
         // （2026-10-07 实测："给这个知识点命名"这个提问，AI 答"给这个知识点命名"）。
         // remark 本身就是完整的任务描述，label 多余。
-        ctx.append("\n\n").append(instruction.isEmpty() ? question.trim() : instruction);
+        String current = instruction.isEmpty() ? req.getQuestion().trim() : instruction;
 
-        return List.of(
-                Map.of("role", "system", "content", SYSTEM_PROMPT),
-                Map.of("role", "user", "content", ctx.toString())
-        );
+        // 协议无状态，所以"模型记得上一句"只能靠前端把历史回传（AiChatReq.history）。
+        // 后端不落库也拿不到，问答记录本来就不存库。
+        //
+        // **正文不参与这个窗口**——它是这轮对话的前提（"用户会就这条知识提问"），
+        // 固定钉在第一条。⚠️ 别图省事把正文也当成历史的第一轮跟着一起截：
+        // 那样一超过窗口，正文就从请求里彻底消失，模型会拿训练时的通识瞎编，
+        // 而界面上看不出任何异常——比"没有历史"隐蔽得多。
+        //
+        // 只取尾部：前面的老轮次对当前问题基本没帮助，但每轮都要重发一遍（上游按
+        // input token 计费）。先剔掉缺问或缺答的轮次——Map.of 不接受 null 值，
+        // 混进来会变成一个看不懂的 NPE。
+        List<AiChatReq.Turn> all = history == null ? List.<AiChatReq.Turn>of() : history;
+        List<AiChatReq.Turn> valid = all.stream()
+                .filter(t -> StringUtils.isNotBlank(t.getQuestion()) && StringUtils.isNotBlank(t.getAnswer()))
+                .toList();
+        List<AiChatReq.Turn> past = valid.size() > HISTORY_TURNS
+                ? valid.subList(valid.size() - HISTORY_TURNS, valid.size())
+                : valid;
+
+        var messages = new ArrayList<Map<String, String>>();
+        messages.add(Map.of("role", "system", "content", systemPrompt(req.getScene())));
+        // 最早那一轮的问题跟正文并进同一条 user：这样第一轮的形态和加历史之前一模一样，
+        // 也没有两条挨着的 user 消息（有些模型对那个处理得不好）。
+        int n = past.size();
+        messages.add(Map.of("role", "user", "content",
+                ctx + "\n\n" + (n == 0 ? current : past.get(0).getQuestion())));
+        for (int i = 1; i < n; i++) {
+            messages.add(Map.of("role", "user", "content", past.get(i).getQuestion()));
+            messages.add(Map.of("role", "assistant", "content", past.get(i).getAnswer()));
+        }
+        messages.add(Map.of("role", "user", "content", current));
+        return messages;
     }
 
     /** messages 转成人能读的样子。JSON 转义过的 \n 在界面上是一行，反倒看不清发了什么 */
@@ -173,7 +204,7 @@ public class AiChatServiceImpl implements AiChatService {
         if (StringUtils.isBlank(questionKey)) {
             return "";
         }
-        var item = findQuestionItem(questionKey);
+        var item = findItem(QUESTION_DICT, questionKey);
         if (item == null) {
             return "";
         }
@@ -201,9 +232,8 @@ public class AiChatServiceImpl implements AiChatService {
             case "categories" -> {
                 var list = kpCategoryService.listCategories(userId);
                 if (list != null && !list.isEmpty()) {
-                    ctx.append("\n\n现有目录清单：\n").append(
-                            list.stream().map(KpCategoryResp::getName).filter(StringUtils::isNotBlank)
-                                    .map(n -> "- " + n).reduce((a, b) -> a + "\n" + b).orElse(""));
+                    ctx.append("\n\n现有目录清单（缩进表示层级，越深离顶层越远）：\n")
+                            .append(categoryTree(list));
                 }
             }
             case "tags" -> {
@@ -222,18 +252,109 @@ public class AiChatServiceImpl implements AiChatService {
         }
     }
 
-    /** 按 value 精确找字典项。前端回传的就是 value 原样，所以精确匹配就够 */
-    private com.mo.corecraft.model.resp.SysDictItemResp findQuestionItem(String value) {
+    /**
+     * 目录清单输出成**带缩进的树**。
+     *
+     * 原来是一行一个平铺名字（`- 数据库` `- 持久化` `- Mybatis` …），模型完全看不出
+     * 它们有父子关系——以为「数据库」和「Mybatis」是并列的。后果实测有两个：
+     * 把一条知识分到了 `Mybatis`（实际在「数据库/持久化」下**第三层**），
+     * 以及把新提议的 `MySQL` 建到了顶层，跟「持久化」「Mybatis」这些明明挂在
+     * 「数据库」下面的不在一层。**缩进就是层级。**
+     *
+     * 父节点不在清单里时**照样打印，但当顶层并留一条日志**：都是自己的数据，
+     * 真出现这种行说明有脏数据，**让它可见比让它凭空消失好**，但也不假装没看见。
+     */
+    private String categoryTree(List<KpCategoryResp> list) {
+        var byId = list.stream()
+                .filter(c -> c.getId() != null)
+                .collect(Collectors.toMap(KpCategoryResp::getId, Function.identity(), (a, b) -> a));
+        var childrenOf = new HashMap<Long, List<KpCategoryResp>>();
+        var roots = new ArrayList<KpCategoryResp>();
+        for (KpCategoryResp c : list) {
+            if (StringUtils.isBlank(c.getName())) {
+                continue;
+            }
+            Long pid = c.getParentId();
+            if (pid == null || pid == 0L || !byId.containsKey(pid)) {
+                if (pid != null && pid != 0L) {
+                    log.warn("[ai] 目录 {} 的父级 {} 不在清单里，按顶层输出", c.getName(), pid);
+                }
+                roots.add(c);
+            } else {
+                childrenOf.computeIfAbsent(pid, k -> new ArrayList<>()).add(c);
+            }
+        }
+        // 按 id 排，输出稳定——不然每次调用的清单顺序都可能不一样，模型没法比对
+        roots.sort(Comparator.comparing(KpCategoryResp::getId));
+        var sb = new StringBuilder();
+        appendTree(sb, roots, childrenOf, 0);
+        return sb.toString();
+    }
+
+    private void appendTree(StringBuilder sb, List<KpCategoryResp> nodes,
+                            Map<Long, List<KpCategoryResp>> childrenOf, int depth) {
+        if (depth > MAX_TREE_DEPTH) {
+            // 层级循环（a 的父是 b、b 的父是 a）时靠它收住，不然直接栈溢出
+            log.warn("[ai] 目录层级超过 {} 层，截断输出", MAX_TREE_DEPTH);
+            return;
+        }
+        for (KpCategoryResp c : nodes) {
+            sb.append("  ".repeat(depth)).append("- ").append(c.getName()).append('\n');
+            var kids = childrenOf.get(c.getId());
+            if (kids != null) {
+                kids.sort(Comparator.comparing(KpCategoryResp::getId));
+                appendTree(sb, kids, childrenOf, depth + 1);
+            }
+        }
+    }
+
+    /**
+     * 这个场景的统一描述，从字典 {@code ai_system_prompt} 里按 value 取 remark。
+     *
+     * **按场景取，而不是取固定一条**：场景是配置。加一个新场景 = 字典加一行
+     * + 前端多传一个 scene，**后端这里一个字都不用改**。
+     * ⚠️ 前提是那个场景用的还是已有那几种上下文形状（就一条知识）。要引入新形状
+     * （零条、多条知识）那还是得发版——字典能免掉的是"改措辞"，不是"写新行为"。
+     *
+     * **读不到就抛，不退回某一段固定的描述**：场景写错时如果悄悄换一段上去，
+     * 症状是"AI 答非所问"——**看起来完全正常**，比报错难查一个数量级。
+     */
+    private String systemPrompt(String scene) {
+        var item = findItem(SYSTEM_PROMPT_DICT, scene);
+        if (item == null || StringUtils.isBlank(item.getRemark())) {
+            throw new CoreCraftException("AI 场景 " + scene + " 没有配置统一描述（字典 " + SYSTEM_PROMPT_DICT + "）");
+        }
+        return item.getRemark();
+    }
+
+    /** 字典类型 id，按 code 精确找。没建 / 停用 / 删了都返回 null */
+    private Long dictTypeId(String code) {
         var type = sysDictTypeService.selectSysDictType(
-                new SysDictTypeQuery() {{ setCode(QUESTION_DICT); setEnabled(true); }});
-        if (type == null) {
+                new SysDictTypeQuery() {{ setCode(code); setEnabled(true); }});
+        return type == null ? null : type.getId();
+    }
+
+    /**
+     * 按 value 精确找字典项，**找不到返回 null**。
+     *
+     * 调用方手里就是 value 原样，所以精确匹配就够。`(dict_type_id, value)` 上有唯一键，
+     * 命中最多一条，所以 list 的第一条就是它。
+     *
+     * **走 list 而不是 get**：get 查不到会 orElseThrow 抛「数据不存在」，
+     * 而这里要的正是 null——调用方分两种情况处理（systemPrompt 当配置错误抛出去、
+     * appendInstruction 当"没有额外描述"退回原问题），拿到一个无信息的通用异常
+     * 就没法区分了。
+     */
+    private SysDictItemResp findItem(String dictCode, String value) {
+        Long dictTypeId = dictTypeId(dictCode);
+        if (dictTypeId == null) {
             return null;
         }
         var q = new SysDictItemQuery();
-        q.setDictTypeId(type.getId());
+        q.setDictTypeId(dictTypeId);
         q.setValue(value);
         q.setEnabled(true);
-        return sysDictItemService.selectSysDictItem(q);
+        return sysDictItemService.selectSysDictItemList(q).stream().findFirst().orElse(null);
     }
 
     /**

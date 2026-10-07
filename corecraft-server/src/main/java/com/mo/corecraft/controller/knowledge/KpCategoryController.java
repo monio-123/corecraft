@@ -1,6 +1,7 @@
 package com.mo.corecraft.controller.knowledge;
 
 import com.mo.corecraft.model.req.KpCategoryCreateReq;
+import com.mo.corecraft.model.req.KpCategoryMoveReq;
 import com.mo.corecraft.model.req.KpCategoryRenameReq;
 import com.mo.corecraft.model.resp.KpCategoryResp;
 import com.mo.corecraft.model.resp.ResultResp;
@@ -36,6 +37,13 @@ public class KpCategoryController {
     public ResultResp<Void> rename(@Valid @RequestBody KpCategoryRenameReq req) {
         Long userId = SecurityUtil.getUser().getSysUserDTO().getId();
         kpCategoryService.renameCategory(req, userId);
+        return ResultResp.success();
+    }
+
+    @PutMapping("/move")
+    public ResultResp<Void> move(@Valid @RequestBody KpCategoryMoveReq req) {
+        Long userId = SecurityUtil.getUser().getSysUserDTO().getId();
+        kpCategoryService.moveCategory(req.getId(), req.getParentId(), userId);
         return ResultResp.success();
     }
 

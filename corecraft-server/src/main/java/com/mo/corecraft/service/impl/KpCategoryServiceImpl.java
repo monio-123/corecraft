@@ -13,7 +13,14 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -47,12 +54,7 @@ public class KpCategoryServiceImpl implements KpCategoryService {
         }
         if (!KpCategory.ROOT_ID.equals(parentId)) {
             // 父目录必须存在且是本人的，否则能把目录挂到别人的树上去
-            KpCategoryQuery pq = new KpCategoryQuery();
-            pq.setId(parentId);
-            pq.setUserId(userId);
-            if (kpCategoryRepository.find(pq, e -> e).isEmpty()) {
-                throw new CoreCraftException(ResultCodeEnum.NOT_FOUND, "父目录不存在");
-            }
+            require(parentId, userId, "父目录不存在");
         }
         KpCategory entity = new KpCategory();
         entity.setUserId(userId);
@@ -66,10 +68,7 @@ public class KpCategoryServiceImpl implements KpCategoryService {
     public void renameCategory(KpCategoryRenameReq req, Long userId) {
         // 身份是 id，不是名字。名字是可变的：拿它当定位键，改名那一刻"它是谁"就变了；
         // 允许同名之后更糟——同一层两个同名目录，按名字根本认不出改的是哪一个。
-        KpCategoryQuery q = new KpCategoryQuery();
-        q.setId(req.getId());
-        q.setUserId(userId);
-        KpCategory category = kpCategoryRepository.get(q, e -> e);
+        KpCategory category = require(req.getId(), userId);
         String newName = req.getNewName().trim();
         if (category.getName().equals(newName)) {
             return;
@@ -90,26 +89,92 @@ public class KpCategoryServiceImpl implements KpCategoryService {
     @Override
     @Transactional
     public void deleteCategory(Long categoryId, Long userId) {
+        KpCategory category = require(categoryId, userId);
+        List<Long> subtree = subtreeIds(userId, category.getId());
+        // 子树里**每一层**的知识点都要回未归类。原来只清直接下级，是因为删除语义是
+        // "子目录上提"、那些下级还活着；现在下级跟着一起删了，只清一层就会让挂在更深
+        // 一处的知识点留下 category_id 指向一个**已经物理删掉**的目录——那些知识在界面上
+        // 查不到、数据却还在。所以一次 IN 把整棵子树清干净。
+        kpCategoryRepository.clearTopicCategory(subtree);
+        kpCategoryRepository.deleteBatch(subtree);
+    }
+
+    @Override
+    @Transactional
+    public void moveCategory(Long categoryId, Long newParentId, Long userId) {
+        KpCategory category = require(categoryId, userId);
+        Long target = newParentId == null ? KpCategory.ROOT_ID : newParentId;
+
+        if (target.equals(category.getParentId())) {
+            return;
+        }
+        if (KpCategory.ROOT_ID.equals(target)) {
+            // 移到顶层没有环的问题，也没有"父目录得存在"的问题
+        } else {
+            require(target, userId);
+            // 移到自己的下级 = 成环，之后这棵树再也遍历不出根（flattenCategoryTree 那类
+            // 遍历会无限下去）。这里挡的是**数据层面**的坏，界面上的禁用只是提前告知。
+            if (subtreeIds(userId, category.getId()).contains(target)) {
+                throw new CoreCraftException("不能移到自己的下级目录下");
+            }
+        }
+        // 撞的是唯一键 (user_id, parent_id, name)。**不替用户改名**——自动加个 "Git2"
+        // 是替他做决定，而且他没要求过。真冲突就报出来，本来就是他能看见、能改的事。
+        if (kpCategoryRepository.findByKey(userId, target, category.getName()).isPresent()) {
+            throw new CoreCraftException("该目录下已有同名目录");
+        }
+        category.setParentId(target);
+        kpCategoryRepository.update(category);
+    }
+
+    /**
+     * 按 id 取一个目录，顺带挡住"操作别人的目录"。取不到就抛，不是返回 null 让调用方自己判。
+     *
+     * **四个入口共用它**（建 / 改名 / 移动 / 删除都要先确认"这个目录存在且是本人的"）。
+     * 之前 `createCategory` 和 `renameCategory` 各自手写了一遍 query，前者写成
+     * `find(...).isEmpty()` 抛异常、后者用 `get` 拿到 null 往下走——**后者一旦目录
+     * 不存在就是 NPE**，不是人话错误。消息可传是因为"父目录不存在"和"目录不存在"
+     * 对用户是两件事。
+     */
+    private KpCategory require(Long categoryId, Long userId) {
+        return require(categoryId, userId, "目录不存在");
+    }
+
+    private KpCategory require(Long categoryId, Long userId, String notFoundMessage) {
         KpCategoryQuery q = new KpCategoryQuery();
         q.setId(categoryId);
         q.setUserId(userId);
-        KpCategory category = kpCategoryRepository.get(q, e -> e);
-        // 知识点不跟着删：把目录下的知识点放回"未归类"，用户随时能重新归类
-        kpCategoryRepository.clearTopicCategory(category.getId());
-        // 子目录上提到被删节点的父级，不连坐删除：分组结构是用户手建的，
-        // 删一个文件夹不该顺手毁掉它里面的分组。留下的子节点若同名会撞唯一键，
-        // 那是用户重名造成的，属于他能看见、能改的显式冲突，不替他默默改名。
-        Long deletedId = category.getId();
-        Long parentId = category.getParentId();
-        for (KpCategory child : kpCategoryRepository.listByUserId(userId)) {
-            // 判据是"父级是**被删的那个**"。写成跟 parentId 比就全找错了：
-            // 那样挑出来的是被删节点的兄弟，上提等于把它们设成原来的父级，纯空转。
-            if (!deletedId.equals(child.getParentId())) {
+        return kpCategoryRepository.find(q, e -> e)
+                .orElseThrow(() -> new CoreCraftException(ResultCodeEnum.NOT_FOUND, notFoundMessage));
+    }
+
+    /**
+     * 这个目录往下**整棵**子树的 id，**含自己**。
+     *
+     * 一次把全表捞出来在内存里走，比递归查库省事：用户的目录是几十级别，
+     * 每层发一次 SELECT 才是真浪费。
+     *
+     * visited 收住**父子成环**的数据（移动功能加上之后，环理论上不再会产生，
+     * 但库里可能已经有脏的）——没它就是死循环。
+     */
+    private List<Long> subtreeIds(Long userId, Long rootId) {
+        List<KpCategory> all = kpCategoryRepository.listByUserId(userId);
+        Map<Long, List<Long>> childrenOf = all.stream()
+                .filter(c -> !KpCategory.ROOT_ID.equals(c.getParentId()))
+                .collect(Collectors.groupingBy(KpCategory::getParentId,
+                        Collectors.mapping(KpCategory::getId, Collectors.toList())));
+        List<Long> out = new ArrayList<>();
+        Deque<Long> stack = new ArrayDeque<>();
+        Set<Long> visited = new HashSet<>();
+        stack.push(rootId);
+        while (!stack.isEmpty()) {
+            Long id = stack.pop();
+            if (!visited.add(id)) {
                 continue;
             }
-            child.setParentId(parentId);
-            kpCategoryRepository.update(child);
+            out.add(id);
+            childrenOf.getOrDefault(id, List.of()).forEach(stack::push);
         }
-        kpCategoryRepository.delete(category.getId());
+        return out;
     }
 }

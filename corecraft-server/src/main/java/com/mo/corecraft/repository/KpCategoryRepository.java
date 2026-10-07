@@ -52,8 +52,13 @@ public class KpCategoryRepository extends AbstractRepository<KpCategory, KpCateg
                 .orderByAsc(KpCategory::getId));
     }
 
-    /** 删目录前先把挂在它下面的知识点放回"未归类" */
-    public void clearTopicCategory(Long categoryId) {
-        mapper.clearTopicCategory(categoryId);
+    /**
+     * 删目录前把挂在**这一批**目录下面的知识点放回"未归类"。
+     * 传整棵子树的 id —— 见 KpCategoryMapper#clearTopicCategory 的注释。
+     */
+    public void clearTopicCategory(List<Long> categoryIds) {
+        if (!categoryIds.isEmpty()) {
+            mapper.clearTopicCategory(categoryIds);
+        }
     }
 }

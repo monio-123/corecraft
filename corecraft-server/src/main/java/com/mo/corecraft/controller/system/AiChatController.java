@@ -70,8 +70,7 @@ public class AiChatController {
 
         executor.execute(() -> {
             try {
-                aiChatService.stream(userId, req.getEndpointId(), req.getTopicId(), req.getQuestion(),
-                req.getQuestionKey(), delta -> {
+                aiChatService.stream(userId, req, delta -> {
                     if (StringUtils.isNotEmpty(delta.prompt())) {
                         send(emitter, Map.of("prompt", delta.prompt()));
                     }
