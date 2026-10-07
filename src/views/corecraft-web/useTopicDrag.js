@@ -1,5 +1,6 @@
 /**
- * 知识点卡片的拖拽归类。PC / 平板 / 手机**三端同一套逻辑**。
+ * 指针拖拽的公共骨架：PC / 平板 / 手机**三端同一套逻辑**。
+ * 卡片拖到目录、目录拖到目录，走的都是它——拖法只在一处。
  *
  * ## 为什么不自己从头写，也不直接用 SortableJS
  *
@@ -30,21 +31,28 @@
  * `-webkit-touch-callout` 管的（都挂在 .card 上），跟拖拽逻辑无关。
  */
 import { onBeforeUnmount } from 'vue'
-import { dnd, dndStart, dndMove, dndDrop, dndReset, excerptOf } from './useCorecraftWebStore'
+import { dnd, dndStart, dndMove, dndDrop, dndReset } from './useCorecraftWebStore'
 
 /** 位移超过这个像素才算起拖（横竖取最大值，跟库一致）。 */
 const TOLERANCE = 8
 
 /**
- * @param {() => object|null} getTopic 按闭包取当前卡片，pointerdown 那一刻才需要
+ * @param {(e: PointerEvent) => object|null} getSource 认出"按下的是哪个拖拽源"。
+ *   传入 pointerdown 事件是为了让**多行共用这一个 handler** 时能认出是哪一行
+ *   （目录树那十几行就靠 event.currentTarget 上挂的 data-cat-id 区分）。
+ *   返回 `{ what, label }`：`what` 是 `{ topicId }` 或 `{ catId }`（二者只传其一，
+ *   交给 dndStart 决定这次拖的是知识点还是目录），`label` 是幽灵上显示的一行字。
  * @returns {{ onPointerDown: (e: PointerEvent) => void }}
  */
-export function useTopicDrag(getTopic) {
+export function useTopicDrag(getSource) {
   let originX = 0
   let originY = 0
   let dragging = false
+  // pointerdown 那一刻解析出来、一直带到起拖。**不能拖起来了才去问"是哪一行"**——
+  // 那时的 event 是 pointermove，currentTarget 已经是 window 了，拿不到行上的 data-cat-id。
+  let source = null
 
-  /** 收尾：归类 / 取消 + 清掉 body 上的禁选类 */
+  /** 收尾：归类 / 移动 / 取消 + 清掉 body 上的禁选类 */
   function finish(committed) {
     if (dragging) {
       if (committed) dndDrop()
@@ -52,6 +60,7 @@ export function useTopicDrag(getTopic) {
     }
     document.body.classList.remove('dnd-active')
     dragging = false
+    source = null
   }
 
   function onMove(e) {
@@ -68,10 +77,9 @@ export function useTopicDrag(getTopic) {
     if (Math.max(dx, dy) < TOLERANCE) return
 
     // 一超阈值立刻起拖——不分鼠标 / 触摸，PC 的手感本来也是"挪动才拖"
+    if (!source) return
     dragging = true
-    const topic = getTopic()
-    if (!topic) { dragging = false; return }
-    dndStart(topic.id, originX, originY, topic.title || excerptOf(topic.content, 18))
+    dndStart(source.what, originX, originY, source.label)
     document.body.classList.add('dnd-active')
     if (e.cancelable) e.preventDefault()
     dndMove(e.clientX, e.clientY)
@@ -101,6 +109,7 @@ export function useTopicDrag(getTopic) {
     // 只认主键 / 单指：右键菜单、多指手势（缩放）不参与拖拽
     if (e.pointerType === 'mouse' && e.button !== 0) return
     if (!e.isPrimary) return
+    source = getSource(e)
     originX = e.clientX
     originY = e.clientY
     window.addEventListener('pointermove', onMove)

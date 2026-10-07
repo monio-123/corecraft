@@ -666,6 +666,16 @@ function submitAsk(questionKey = '') {
   // 用户看到的是"点完卡住不动，然后唰一下全出"——和"后端把整段缓冲住了才给我们"
   // **完全同一种现象**，但根因在前端，跟 SSE 一点关系没有（这个坑真的踩过一轮，
   // 一度以为是 Tomcat 缓冲，方向整个反了）。
+  // 历史：/chat/completions 是**无状态**协议，模型这一轮知道的全部就是这一次请求里的
+  // messages 数组——之前问过的不一起发过去，它就真的不记得（曾经就是这样：同一个抽屉里
+  // 接着追问，AI 却答"我没有上下文记忆"）。后端不落库、也拿不到，所以只能在这儿交上去。
+  //
+  // 只带**已经问完**的（done）：还在流的那一轮还没有答案，发过去等于让模型接着自己续写。
+  // 出错的也不带——那轮的 answer 是报错文案，不是模型说过的话。
+  const history = messages.value
+    .filter((m) => m.done && !m.error && m.answer)
+    .map((m) => ({ question: m.question, answer: m.answer }))
+
   const turn = reactive({
     question,
     prompt: '',
@@ -693,7 +703,10 @@ function submitAsk(questionKey = '') {
   askAbort = new AbortController()
   askAi(question, {
     topicId: topic.value.id,
+    // 就一条知识提问 = 字典 ai_system_prompt 里的 chat 那段。显式写出来，不靠默认值
+    scene: 'chat',
     questionKey,
+    history,
     signal: askAbort.signal,
     onPrompt: (text) => { turn.prompt = text },
     onDelta: (delta) => { turn.answer += delta; turn.received += delta.length; turn.thinking = false },
@@ -829,19 +842,19 @@ onBeforeUnmount(() => {
 .bar {
   display: flex;
   align-items: center;
-  gap: calc(12px * var(--ui-scale));
-  min-height: calc(29px * var(--ui-scale));
-  margin-bottom: calc(14px * var(--ui-scale));
+  gap: var(--sp-10);
+  min-height: 29px;
+  margin-bottom: var(--sp-11);
 }
 .bar__right {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: calc(12px * var(--ui-scale));
+  gap: var(--sp-10);
   flex-shrink: 0;
 }
 .bar__time {
-  font-size: calc(14px * var(--ui-scale));
+  font-size: var(--text-md);
   color: var(--cc-text-4);
   font-variant-numeric: tabular-nums;
 }
@@ -851,9 +864,9 @@ onBeforeUnmount(() => {
 .ghost {
   display: inline-flex;
   align-items: center;
-  gap: calc(4px * var(--ui-scale));
-  font-size: calc(15px * var(--ui-scale));
-  margin-left: calc(-5px * var(--ui-scale));
+  gap: var(--sp-4);
+  font-size: var(--text-base);
+  margin-left: calc(-1 * var(--sp-8));
 }
 .ghost:hover {
   background: var(--cc-surface-2);
@@ -864,13 +877,13 @@ onBeforeUnmount(() => {
 .save-state {
   display: inline-flex;
   align-items: center;
-  gap: calc(6px * var(--ui-scale));
-  font-size: calc(14px * var(--ui-scale));
+  gap: var(--sp-6);
+  font-size: var(--text-md);
   color: var(--cc-text-3);
 }
 .save-state__dot {
-  width: calc(6px * var(--ui-scale));
-  height: calc(6px * var(--ui-scale));
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: currentColor;
 }
@@ -893,7 +906,7 @@ onBeforeUnmount(() => {
    **只动上边距**：下边距 3px 和 margin-bottom 2px 是标题↔正文之间的间距，不碰——
    这次是让标题贴近框顶，不是把标题和正文挤在一起。 */
 .title {
-  font-size: calc(28px * var(--ui-scale));
+  font-size: var(--text-h);
   /* 700 是跟正文里的 H1 对齐的：prosemirror.css 没给 h1 任何规则，
      粗细全是浏览器默认的 bold（=700），颜色则继承 .ProseMirror 的 --cc-text-1，
      跟这里本来就是同一个色。之前写 600，比 H1 轻一档，同一句话并排出现时
@@ -901,30 +914,30 @@ onBeforeUnmount(() => {
      那是排版尺寸，用户只要了粗细和颜色。 */
   font-weight: 700;
   line-height: 1.45;
-  letter-spacing: -calc(0.2px * var(--ui-scale));
+  letter-spacing: -var(--ls-tight);
   color: var(--cc-text-1);
-  padding: calc(4px * var(--ui-scale)) 0 calc(3px * var(--ui-scale));
-  margin: 0 0 calc(2px * var(--ui-scale));
+  padding: var(--sp-4) 0 var(--sp-3);
+  margin: 0 0 var(--sp-2);
 }
 
 /* ---------- 标签行 ---------- */
 .tags {
   display: flex;
   align-items: center;
-  gap: calc(7px * var(--ui-scale));
+  gap: var(--sp-7);
   flex-wrap: wrap;
-  padding-bottom: calc(14px * var(--ui-scale));
-  margin-bottom: calc(18px * var(--ui-scale));
+  padding-bottom: var(--sp-11);
+  margin-bottom: var(--sp-13);
   border-bottom: 1px solid var(--cc-border);
 }
 /* 「回到列表」：空状态里那个导航按钮 */
 .tags__back {
   border: none;
   background: transparent;
-  padding: calc(5px * var(--ui-scale)) calc(10px * var(--ui-scale));
-  border-radius: calc(4px * var(--ui-scale));
+  padding: var(--sp-5) var(--sp-10);
+  border-radius: var(--radius-xs);
   color: var(--cc-text-3);
-  font-size: calc(15px * var(--ui-scale));
+  font-size: var(--text-base);
   cursor: pointer;
   font-family: inherit;
   transition: var(--cc-transition);
@@ -943,18 +956,18 @@ onBeforeUnmount(() => {
 .tags__picker {
   display: inline-flex;
   align-items: center;
-  height: calc(24px * var(--ui-scale));
+  height: 24px;
   flex-shrink: 0;
   border: none;
-  border-radius: calc(4px * var(--ui-scale));
+  border-radius: var(--radius-xs);
   background: var(--cc-surface-2);
   color: var(--cc-text-4);
-  font-size: calc(13px * var(--ui-scale));
+  font-size: var(--text-sm);
   transition: var(--cc-transition);
 }
 .tags__add {
-  gap: calc(4px * var(--ui-scale));
-  padding: calc(1px * var(--ui-scale)) calc(7px * var(--ui-scale));
+  gap: var(--sp-4);
+  padding: var(--sp-1) var(--sp-7);
   cursor: pointer;
   font-family: inherit;
 }
@@ -964,9 +977,9 @@ onBeforeUnmount(() => {
 }
 .tags__picker {
   position: relative;
-  width: calc(204px * var(--ui-scale));
-  gap: calc(3px * var(--ui-scale));
-  padding: 0 calc(4px * var(--ui-scale)) 0 calc(6px * var(--ui-scale));
+  width: 204px;
+  gap: var(--sp-3);
+  padding: 0 var(--sp-4) 0 var(--sp-6);
 }
 /* 框由 .tags__picker 自己画，EP 那圈去掉，否则是双层边。
    代价是默认的聚焦光环也没了，用 :focus-within 补回来。 */
@@ -976,8 +989,8 @@ onBeforeUnmount(() => {
   background: transparent;
 }
 .tags__picker :deep(.el-input__inner) {
-  font-size: calc(13px * var(--ui-scale));
-  height: calc(22px * var(--ui-scale));
+  font-size: var(--text-sm);
+  height: 22px;
 }
 .tags__picker:focus-within {
   background: var(--cc-surface);
@@ -986,12 +999,12 @@ onBeforeUnmount(() => {
 .tags__caret {
   border: none;
   background: transparent;
-  padding: 0 calc(1px * var(--ui-scale));
+  padding: 0 var(--sp-1);
   cursor: pointer;
   color: var(--cc-text-4);
   display: inline-flex;
   align-items: center;
-  font-size: calc(13px * var(--ui-scale));
+  font-size: var(--text-sm);
   flex-shrink: 0;
   transition: var(--cc-transition);
 }
@@ -1006,30 +1019,30 @@ onBeforeUnmount(() => {
    宽度不跟输入框走——170px 装不下「基本数据类型」这种标签名，会被截断。 */
 .tags__list {
   position: absolute;
-  top: calc(100% + calc(4px * var(--ui-scale)));
+  top: calc(100% + var(--sp-4));
   left: 0;
   min-width: 100%;
-  max-width: calc(264px * var(--ui-scale));
-  max-height: calc(288px * var(--ui-scale));
+  max-width: 264px;
+  max-height: 288px;
   overflow-y: auto;
   background: var(--cc-surface);
   border: 1px solid var(--cc-border-strong);
   border-radius: var(--cc-radius-sm);
   box-shadow: 0 8px 28px rgba(31, 35, 41, 0.12);
-  padding: calc(5px * var(--ui-scale));
+  padding: var(--sp-5);
   z-index: 20;
 }
 .tags__list-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: calc(10px * var(--ui-scale));
+  gap: var(--sp-10);
   width: 100%;
   border: none;
   background: transparent;
-  padding: calc(6px * var(--ui-scale)) calc(10px * var(--ui-scale));
+  padding: var(--sp-6) var(--sp-10);
   border-radius: var(--cc-radius-sm);
-  font-size: calc(15px * var(--ui-scale));
+  font-size: var(--text-base);
   color: var(--cc-text-2);
   cursor: pointer;
   text-align: left;
@@ -1046,15 +1059,15 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 .tags__list-count {
-  font-size: calc(13px * var(--ui-scale));
+  font-size: var(--text-sm);
   color: var(--cc-text-4);
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
 }
 .tags__list-empty {
   margin: 0;
-  padding: calc(10px * var(--ui-scale));
-  font-size: calc(14px * var(--ui-scale));
+  padding: var(--sp-10);
+  font-size: var(--text-md);
   color: var(--cc-text-4);
 }
 
@@ -1067,8 +1080,8 @@ onBeforeUnmount(() => {
 .content {
   background: var(--cc-surface);
   border: 1px solid #eef0f3;
-  border-radius: calc(12px * var(--ui-scale));
-  padding: calc(17px * var(--ui-scale)) calc(22px * var(--ui-scale)) calc(22px * var(--ui-scale));
+  border-radius: var(--radius-lg);
+  padding: var(--sp-12) var(--sp-14) var(--sp-14);
 }
 /* 正文的字号 / 行高 / 代码排版不在这里写：.ProseMirror 是 Milkdown 这个第三方函数式
    组件渲染出来的，节点上不带 scoped 的 data-v 属性，从本页 scoped 样式里 :deep 过去
@@ -1086,31 +1099,31 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   flex: none;
-  padding-bottom: calc(10px * var(--ui-scale));
+  padding-bottom: var(--sp-10);
   border-bottom: 1px solid var(--cc-border);
 }
 .ask__title {
-  font-size: calc(15px * var(--ui-scale));
+  font-size: var(--text-base);
   color: var(--cc-text-1);
 }
 .ask__body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: calc(14px * var(--ui-scale)) calc(2px * var(--ui-scale));
+  padding: var(--sp-11) var(--sp-2);
 }
 .turn {
-  margin-bottom: calc(22px * var(--ui-scale));
+  margin-bottom: var(--sp-14);
 }
 /* 组内（提问气泡 ↔ 思考 ↔ 回答）紧，组间松——这个疏密差就是"一轮问答"的视觉分组 */
 .turn > * + * {
-  margin-top: calc(8px * var(--ui-scale));
+  margin-top: var(--sp-8);
 }
 /* 「发送给 AI 的内容」和「思考过程」是同一个控件的两种：都是折起来的一行标题 + 展开的正文，
    共用一套 summary 样式（▸ / ▾），差别只在标题文案和正文的排版。 */
 .think,
 .sent {
-  font-size: calc(12px * var(--ui-scale));
+  font-size: var(--text-xs);
   color: var(--cc-text-3);
 }
 .think summary,
@@ -1133,8 +1146,8 @@ onBeforeUnmount(() => {
 }
 .think__body,
 .sent__body {
-  margin-top: calc(6px * var(--ui-scale));
-  padding-left: calc(10px * var(--ui-scale));
+  margin-top: var(--sp-6);
+  padding-left: var(--sp-10);
   border-left: 2px solid var(--cc-border);
   white-space: pre-wrap;
   word-break: break-word;
@@ -1142,15 +1155,15 @@ onBeforeUnmount(() => {
 }
 .think__waiting,
 .think__count {
-  margin-top: calc(6px * var(--ui-scale));
-  padding-left: calc(10px * var(--ui-scale));
+  margin-top: var(--sp-6);
+  padding-left: var(--sp-10);
   color: var(--cc-text-4);
-  font-size: calc(11.5px * var(--ui-scale));
+  font-size: var(--text-2xs);
 }
 /* 提交内容是**整段 messages**，比思考过程长得多，字号再小一号不然面板撑不住 */
 .sent__body {
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-  font-size: calc(11.5px * var(--ui-scale));
+  font-size: var(--text-2xs);
   color: var(--cc-text-2);
 }
 .bubble {
@@ -1162,50 +1175,50 @@ onBeforeUnmount(() => {
 .bubble.is-user {
   max-width: 78%;
   margin-left: auto;
-  padding: calc(8px * var(--ui-scale)) calc(12px * var(--ui-scale));
-  font-size: calc(13px * var(--ui-scale));
+  padding: var(--sp-8) var(--sp-10);
+  font-size: var(--text-sm);
   line-height: 1.6;
   color: var(--cc-text-1);
   background: var(--cc-surface-2);
-  border-radius: calc(10px * var(--ui-scale)) calc(10px * var(--ui-scale)) calc(2px * var(--ui-scale))
-    calc(10px * var(--ui-scale));
+  border-radius: var(--radius-md) var(--radius-md) var(--sp-2)
+    var(--radius-md);
 }
 .bubble.is-ai {
-  font-size: calc(14px * var(--ui-scale));
+  font-size: var(--text-md);
   color: var(--cc-text-1);
 }
 .bubble.is-error {
   color: var(--cc-danger, #f56c6c);
-  font-size: calc(13px * var(--ui-scale));
+  font-size: var(--text-sm);
 }
 /* 「复制」「用这个」并排一行。两者形态完全一样（文字型次要按钮），差别只在含义，
    所以只在这里给一组尺寸，不给它们各写一套变体 */
 .ask__ops {
   display: flex;
-  gap: calc(2px * var(--ui-scale));
-  margin-top: calc(4px * var(--ui-scale));
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
 }
 .ask__ops .kb-text-btn {
-  padding: 0 calc(6px * var(--ui-scale));
-  font-size: calc(12px * var(--ui-scale));
+  padding: 0 var(--sp-6);
+  font-size: var(--text-xs);
 }
 .ask__guide {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: calc(8px * var(--ui-scale));
-  padding-top: calc(8px * var(--ui-scale));
+  gap: var(--sp-8);
+  padding-top: var(--sp-8);
   /* 常驻在对话上方之后，下面得有一道间距把它和第一轮问答分开。
      `.turn > * + *` 管的是一轮内部和轮与轮之间，不含这个块 */
-  margin-bottom: calc(6px * var(--ui-scale));
+  margin-bottom: var(--sp-6);
 }
 .ask__chip {
-  padding: calc(6px * var(--ui-scale)) calc(12px * var(--ui-scale));
-  font-size: calc(13px * var(--ui-scale));
+  padding: var(--sp-6) var(--sp-10);
+  font-size: var(--text-sm);
   color: var(--cc-text-2);
   background: #fff;
   border: 1px solid var(--cc-border);
-  border-radius: calc(14px * var(--ui-scale));
+  border-radius: var(--radius-xl);
 }
 .ask__chip:hover {
   color: var(--cc-primary);
@@ -1213,7 +1226,7 @@ onBeforeUnmount(() => {
 }
 .ask__foot {
   flex: none;
-  padding-top: calc(12px * var(--ui-scale));
+  padding-top: var(--sp-10);
   border-top: 1px solid var(--cc-border);
 }
 /* 一个胶囊：输入框 + 「用哪个 API」+ 发送/停止 全在右下角一行里。
@@ -1222,12 +1235,12 @@ onBeforeUnmount(() => {
 .ask__composer {
   display: flex;
   align-items: center;
-  gap: calc(6px * var(--ui-scale));
-  padding: calc(4px * var(--ui-scale)) calc(4px * var(--ui-scale)) calc(4px * var(--ui-scale))
-    calc(12px * var(--ui-scale));
+  gap: var(--sp-6);
+  padding: var(--sp-4) var(--sp-4) var(--sp-4)
+    var(--sp-10);
   background: var(--cc-surface-2);
   border: 1px solid transparent;
-  border-radius: calc(20px * var(--ui-scale));
+  border-radius: var(--radius-pill);
   transition: var(--cc-transition);
 }
 .ask__composer:focus-within {
@@ -1237,14 +1250,14 @@ onBeforeUnmount(() => {
 .ask__model {
   display: flex;
   align-items: center;
-  gap: calc(4px * var(--ui-scale));
+  gap: var(--sp-4);
   flex: none;
-  max-width: calc(140px * var(--ui-scale));
-  height: calc(28px * var(--ui-scale));
-  padding: 0 calc(8px * var(--ui-scale));
-  font-size: calc(12.5px * var(--ui-scale));
+  max-width: 140px;
+  height: var(--ctl-sm);
+  padding: 0 var(--sp-8);
+  font-size: var(--text-xs);
   color: var(--cc-text-2);
-  border-radius: calc(12px * var(--ui-scale));
+  border-radius: var(--radius-lg);
   cursor: pointer;
   outline: none;
   white-space: nowrap;
@@ -1257,18 +1270,18 @@ onBeforeUnmount(() => {
   display: inline-block;
   width: 0;
   height: 0;
-  margin-top: calc(3px * var(--ui-scale));
-  border-left: calc(4px * var(--ui-scale)) solid transparent;
-  border-right: calc(4px * var(--ui-scale)) solid transparent;
-  border-top: calc(5px * var(--ui-scale)) solid currentColor;
+  margin-top: var(--sp-3);
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid currentColor;
 }
 .ask__input {
   flex: 1;
   min-width: 0;
-  height: calc(28px * var(--ui-scale));
+  height: var(--ctl-sm);
   /* 左边距由胶囊的 padding 给，这里必须是 0，否则文字和胶囊边缘之间多一层 */
   padding: 0;
-  font-size: calc(13px * var(--ui-scale));
+  font-size: var(--text-sm);
   color: var(--cc-text-1);
   background: transparent;
   border: none;
@@ -1281,10 +1294,10 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: calc(28px * var(--ui-scale));
-  height: calc(28px * var(--ui-scale));
+  width: var(--ctl-sm);
+  height: var(--ctl-sm);
   padding: 0;
-  font-size: calc(15px * var(--ui-scale));
+  font-size: var(--text-base);
   color: #fff;
   background: var(--cc-primary);
   border: none;
@@ -1309,30 +1322,30 @@ onBeforeUnmount(() => {
 
 /* ---------- 关联知识点 ---------- */
 .section {
-  margin-top: calc(28px * var(--ui-scale));
-  padding-top: calc(20px * var(--ui-scale));
+  margin-top: var(--sp-15);
+  padding-top: var(--sp-13);
   border-top: 1px solid var(--cc-border);
 }
 .section__title {
-  margin: 0 0 calc(12px * var(--ui-scale));
-  font-size: calc(15px * var(--ui-scale));
+  margin: 0 0 var(--sp-10);
+  font-size: var(--text-base);
   font-weight: 600;
   color: var(--cc-text-2);
 }
 .related {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: calc(14px * var(--ui-scale));
+  gap: var(--sp-11);
 }
 
 /* ---------- 空 / 加载 ---------- */
 .state {
-  padding: calc(77px * var(--ui-scale)) 0;
+  padding: 77px 0;
   text-align: center;
   color: var(--cc-text-4);
-  font-size: calc(15px * var(--ui-scale));
+  font-size: var(--text-base);
 }
 .state p {
-  margin: 0 0 calc(10px * var(--ui-scale));
+  margin: 0 0 var(--sp-10);
 }
 </style>

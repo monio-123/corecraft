@@ -47,40 +47,40 @@ onMounted(async () => {
 .home {
   display: flex;
   flex-direction: column;
-  gap: calc(32px * var(--ui-scale));
-  max-width: calc(880px * var(--ui-scale));
+  gap: var(--sp-15);
+  max-width: 880px;
 }
 
 .welcome__eyebrow {
-  font-size: calc(12px * var(--ui-scale));
+  font-size: var(--text-xs);
   font-weight: 500;
-  letter-spacing: calc(1px * var(--ui-scale));
+  letter-spacing: var(--ls-wide);
   color: var(--cc-text-3);
 }
 .welcome__title {
-  margin: calc(8px * var(--ui-scale)) 0 0;
-  font-size: calc(26px * var(--ui-scale));
+  margin: var(--sp-8) 0 0;
+  font-size: var(--text-h);
   font-weight: 600;
   color: var(--cc-text-1);
-  letter-spacing: calc(0.2px * var(--ui-scale));
+  letter-spacing: var(--ls-tight);
 }
 .welcome__sub {
-  margin: calc(6px * var(--ui-scale)) 0 0;
-  font-size: calc(14px * var(--ui-scale));
+  margin: var(--sp-6) 0 0;
+  font-size: var(--text-md);
   color: var(--cc-text-2);
 }
 
 .entries {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: calc(12px * var(--ui-scale));
+  gap: var(--sp-10);
 }
 
 .entry {
   display: flex;
   align-items: center;
-  gap: calc(12px * var(--ui-scale));
-  padding: calc(16px * var(--ui-scale));
+  gap: var(--sp-10);
+  padding: var(--sp-12);
   background: var(--cc-surface);
   border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius);
@@ -95,18 +95,18 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: calc(34px * var(--ui-scale));
-  height: calc(34px * var(--ui-scale));
+  width: var(--ctl-md);
+  height: var(--ctl-md);
   flex-shrink: 0;
   border-radius: var(--cc-radius-sm);
   background: var(--cc-primary-soft);
   color: var(--cc-primary);
-  font-size: calc(16px * var(--ui-scale));
+  font-size: var(--text-lg);
 }
 .entry__name {
   flex: 1;
   min-width: 0;
-  font-size: calc(14px * var(--ui-scale));
+  font-size: var(--text-md);
   font-weight: 500;
   color: var(--cc-text-1);
   overflow: hidden;
@@ -125,7 +125,7 @@ onMounted(async () => {
 
 .empty {
   margin: 0;
-  font-size: calc(14px * var(--ui-scale));
+  font-size: var(--text-md);
   color: var(--cc-text-3);
 }
 </style>

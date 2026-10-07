@@ -60,22 +60,26 @@ export function listAiQuestions() {
  * 会进网关访问日志、浏览器历史和 Referer。
  *
  * 回调收到三种事件：
- * - `onPrompt(text)` 提交给模型的完整消息，**开流前发一次**
+ * - `onPrompt(text)` 提交给模型的完整消息，**开流前发一次**。历史在不在里面一眼看得见
  * - `onReasoning(text)` 思考过程增量。**只有思考型模型才给**（deepseek-reasoner / o 系列），
  *   非思考模型（deepseek-flash 这类）一次都不会触发
  * - `onDelta(text)` 正文增量
  *
+ * @param scene 问答场景，决定后端用哪段统一描述（字典 ai_system_prompt）。**必填**——
+ *   场景写错时后端宁可报错，也不肯换一段描述顶上去（那样只是"答非所问"，看着完全正常）
+ * @param history 之前几轮 `[{question, answer}]`。**协议无状态，不回传模型就不记得**——
+ *   后端不落库也拿不到，所以这份历史只能由抽屉交上来
  * @param signal 传 AbortSignal 可以中途取消
  */
 export async function streamChat(
-  { topicId, question, endpointId, questionKey },
+  { topicId, question, endpointId, questionKey, scene, history },
   { onPrompt, onDelta, onReasoning } = {},
   signal
 ) {
   const res = await fetch('/api/ai/chat/stream', {
     method: 'POST',
     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ topicId, question, endpointId, questionKey }),
+    body: JSON.stringify({ topicId, question, endpointId, questionKey, scene, history }),
     signal
   })
   // 这一层只在"还没开始流"时才可能失败（401 / 参数校验 / 后端开流前就抛了异常）。

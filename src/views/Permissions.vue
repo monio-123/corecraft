@@ -253,12 +253,12 @@ onMounted(async () => {
 .content {
   display: grid;
   grid-template-columns: 360px 1fr;
-  gap: calc(16px * var(--ui-scale));
+  gap: var(--sp-12);
 }
 
 .tree-node {
   display: inline-flex;
   align-items: center;
-  gap: calc(8px * var(--ui-scale));
+  gap: var(--sp-8);
 }
 </style>

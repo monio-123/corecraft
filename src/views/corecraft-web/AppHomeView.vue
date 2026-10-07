@@ -43,20 +43,29 @@
       </div>
     </section>
 
-    <!-- 概览 -->
+    <!-- 概览。四张里**只有前两张是入口**，用 RouterLink（不是 div onclick）：
+         语义上就是链接，右键复制链接 / 中键新标签页 / 读屏器念得出来，全是白送的。
+         后两张是纯数字，去处本来就在同一个壳里：
+         「目录」= 侧边栏那棵树（只显示一级，这里给的是全量统计）；
+         「今日新增」= 本屏的「最近记录」面板。再各加一个入口是重复。
+         "能不能点"只靠 hover 的边框变化 + 手型表达，**不加静态装饰**——
+         四个数字并排摆着，给不动的两张也画个箭头只会把真正能点的那两张淹掉。 -->
     <section class="stats">
-      <div class="stat">
+      <RouterLink class="stat stat--link" :to="{ path: '/app/learn' }">
         <div class="stat__num">{{ topicCount }}</div>
         <div class="stat__label">知识点</div>
-      </div>
+      </RouterLink>
       <div class="stat">
         <div class="stat__num">{{ categories.length }}</div>
         <div class="stat__label">目录</div>
       </div>
-      <div class="stat">
+      <RouterLink
+        class="stat stat--link"
+        :to="{ path: '/app/learn', query: { category: UNCATEGORIZED } }"
+      >
         <div class="stat__num">{{ uncategorizedCount }}</div>
         <div class="stat__label">待归类</div>
-      </div>
+      </RouterLink>
       <div class="stat">
         <div class="stat__num">{{ todayCount }}</div>
         <div class="stat__label">今日新增</div>
@@ -108,7 +117,8 @@ import { useImmersive } from './useImmersive'
 import TopicTypeSelect from './TopicTypeSelect.vue'
 import {
   ensureTopicsLoaded, ensureCategoriesLoaded, getTopics, getCategories,
-  getUncategorizedCount, getCategoryName, createTopic, excerptOf, ensureTopicTypesLoaded
+  getUncategorizedCount, getCategoryName, createTopic, excerptOf, ensureTopicTypesLoaded,
+  UNCATEGORIZED
 } from './useCorecraftWebStore'
 
 const router = useRouter()
@@ -182,7 +192,7 @@ onMounted(async () => {
 .home {
   display: flex;
   flex-direction: column;
-  gap: calc(24px * var(--ui-scale));
+  gap: var(--sp-14);
 }
 
 /* 快捷录入：整块可点，视觉上就是"这里能写"。
@@ -193,8 +203,8 @@ onMounted(async () => {
 .quick {
   background: #fff;
   border: 1px solid #eef0f3;
-  border-radius: calc(12px * var(--ui-scale));
-  padding: calc(14px * var(--ui-scale)) calc(17px * var(--ui-scale)) calc(12px * var(--ui-scale));
+  border-radius: var(--radius-lg);
+  padding: var(--sp-11) var(--sp-12) var(--sp-10);
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .quick:focus-within {
@@ -206,7 +216,7 @@ onMounted(async () => {
 .quick__left {
   display: flex;
   align-items: center;
-  gap: calc(5px * var(--ui-scale));
+  gap: var(--sp-5);
 }
 
 /* ---------- 沉浸模式（?full=1）----------
@@ -237,33 +247,45 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: calc(10px * var(--ui-scale));
-  padding-top: calc(10px * var(--ui-scale));
+  margin-top: var(--sp-10);
+  padding-top: var(--sp-10);
   border-top: 1px solid #f4f6f8;
 }
 /* 概览 */
 .stats {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: calc(14px * var(--ui-scale));
+  gap: var(--sp-11);
 }
 .stat {
   background: #fff;
   border: 1px solid #eef0f3;
-  border-radius: calc(12px * var(--ui-scale));
-  padding: calc(19px * var(--ui-scale)) calc(22px * var(--ui-scale));
+  border-radius: var(--radius-lg);
+  padding: var(--sp-13) var(--sp-14);
+}
+/* 可点的那两张。`text-decoration: none` 得自己写：全局 reset 只清了 margin/padding，
+   <a> 的下划线还在（侧边栏 .app-cats__item 当年也是单独补的这条）。
+   边框/阴影的变化和知识点卡片 .card:hover 用同一组色，一套视觉语言。 */
+.stat--link {
+  cursor: pointer;
+  text-decoration: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.stat--link:hover {
+  border-color: #cfe0f7;
+  box-shadow: 0 3px 14px rgba(31, 35, 41, 0.05);
 }
 .stat__num {
-  font-size: calc(31px * var(--ui-scale));
+  font-size: var(--text-stat);
   font-weight: 600;
   color: #1f2329;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
 .stat__label {
-  font-size: calc(14px * var(--ui-scale));
+  font-size: var(--text-md);
   color: #a0a5ad;
-  margin-top: calc(4px * var(--ui-scale));
+  margin-top: var(--sp-4);
 }
 
 /* .panel / .panel__head / .panel__title / .panel__extra / .panel__more 已提到
@@ -273,13 +295,13 @@ onMounted(async () => {
 .review-empty {
   display: flex;
   align-items: center;
-  gap: calc(10px * var(--ui-scale));
-  padding: calc(14px * var(--ui-scale)) 0 calc(19px * var(--ui-scale));
-  font-size: calc(15px * var(--ui-scale));
+  gap: var(--sp-10);
+  padding: var(--sp-11) 0 var(--sp-13);
+  font-size: var(--text-base);
   color: #b6bac1;
 }
 .review-empty__icon {
-  font-size: calc(18px * var(--ui-scale));
+  font-size: var(--text-2xl);
 }
 
 .recent {
@@ -291,8 +313,8 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: calc(14px * var(--ui-scale));
-  padding: calc(12px * var(--ui-scale)) 0;
+  gap: var(--sp-11);
+  padding: var(--sp-10) 0;
   border-bottom: 1px solid #f7f8fa;
   cursor: pointer;
 }
@@ -303,7 +325,7 @@ onMounted(async () => {
   color: #2b7fff;
 }
 .recent__title {
-  font-size: calc(17px * var(--ui-scale));
+  font-size: var(--text-xl);
   color: #1f2329;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -311,14 +333,14 @@ onMounted(async () => {
   transition: color 0.15s;
 }
 .recent__cat {
-  font-size: calc(14px * var(--ui-scale));
+  font-size: var(--text-md);
   color: #b6bac1;
   flex-shrink: 0;
 }
 .recent__empty {
   margin: 0;
-  padding: calc(14px * var(--ui-scale)) 0 calc(22px * var(--ui-scale));
-  font-size: calc(15px * var(--ui-scale));
+  padding: var(--sp-11) 0 var(--sp-14);
+  font-size: var(--text-base);
   color: #b6bac1;
 }
 </style>

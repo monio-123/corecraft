@@ -24,24 +24,17 @@
         @click.stop
       />
       <h3 v-else class="card__title">{{ topic.title }}</h3>
-      <el-dropdown v-if="deletable" trigger="click" @command="onCommand" @click.stop>
-        <button
-          ref="moreBtn"
-          type="button"
-          class="kb-icon-btn card__more"
-          aria-label="更多操作"
-          @click.prevent.stop
-        >
-          <el-icon class="card__more-icon"><MoreFilled /></el-icon>
-        </button>
-        <template #dropdown>
-          <el-dropdown-menu>
-            <el-dropdown-item command="categorize">归类到目录</el-dropdown-item>
-            <el-dropdown-item command="newTab">在新标签页打开</el-dropdown-item>
-            <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
-          </el-dropdown-menu>
-        </template>
-      </el-dropdown>
+      <!-- 下拉壳、竖排 ⋮、hover 前的点击拦截都在 RowMenu 里，和目录行 / 标签行
+           同一份。这里只给"它长在卡片右上角"补规则（card__more）。 -->
+      <RowMenu
+        v-if="deletable"
+        title="更多操作"
+        :items="ITEMS"
+        btn-class="card__more"
+        :btn-ref="setMoreBtn"
+        @command="onCommand"
+        @click.stop
+      />
     </div>
 
     <p v-if="excerpt" class="card__excerpt">{{ excerpt }}</p>
@@ -60,11 +53,11 @@
  * 知识点卡片。整块都是拖拽源——已归类的也能拖，改目录和归类是同一个动作。
  * 以前只有未归类的可拖、已归类的靠卡片上的目录 chip 改，chip 撤掉之后就没有第二条路了。
  */
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { MoreFilled } from '@element-plus/icons-vue'
 import { dnd, dndPick, excerptOf } from './useCorecraftWebStore'
 import { useTopicDrag } from './useTopicDrag'
+import RowMenu from './RowMenu.vue'
 import TopicTitleInput from './TopicTitleInput.vue'
 
 const props = defineProps({
@@ -78,7 +71,10 @@ const props = defineProps({
 const emit = defineEmits(['click', 'delete'])
 
 const router = useRouter()
-const { onPointerDown } = useTopicDrag(() => props.topic)
+const { onPointerDown } = useTopicDrag(() => {
+  const t = props.topic
+  return t ? { what: { topicId: t.id }, label: t.title || excerptOf(t.content, 18) } : null
+})
 
 // 「在新标签页打开」：一次开一个独立页面，于是"同时看好几个知识点"这件事
 // 整个交给浏览器——每个 tab 有自己的 JS 堆，来回切**不会重新加载**，
@@ -87,11 +83,6 @@ const { onPointerDown } = useTopicDrag(() => props.topic)
 // 还得自己做限流和"关掉时正在编辑怎么办"。
 function openInNewTab() {
   // full=1：新标签页一进来就是全屏阅读（壳收起来，见 useImmersive.js）。
-  // 一次开一个独立页面，于是"同时看好几个知识点"这件事整个交给浏览器——
-  // 每个 tab 有自己的 JS 堆，来回切**不会重新加载**，
-  // 各自的光标、滚动位置、未保存的编辑都原样留着，还白送地址栏 / 后退 / Ctrl+1。
-  // 自己再造一套页内 tab 反而更贵：页内 N 个面板是 N 个 ProseMirror 实例常驻，
-  // 还得自己做限流和"关掉时正在编辑怎么办"。
   const href = router.resolve({
     name: 'AppTopicDetail',
     params: { id: props.topic.id },
@@ -102,14 +93,27 @@ function openInNewTab() {
 }
 
 // 「归类到目录」按下去时记一下按钮自己的位置，浮层从这儿弹出来。
-// 用 ref 而不是事件对象：el-dropdown 的 command 回调拿不到触发元素。
-const moreBtn = ref(null)
+// 用按钮的 DOM 而不是事件对象：el-dropdown 的 command 回调拿不到触发元素。
+// 函数式 ref 拿到的是**真实 DOM**，不用再 .$el 拆一层。普通变量即可——
+// 只有点菜单那一刻读一次，不需要进响应式。
+let moreBtn = null
+function setMoreBtn(el) {
+  moreBtn = el
+}
+
+// 和 CategoryRowMenu / TagRowMenu 同一个写法：菜单项写死成常量，
+// 加一项只动这一个数组，加错 command 名会在 onCommand 里对不上而不是"点了没反应"。
+const ITEMS = [
+  { command: 'categorize', label: '归类到目录' },
+  { command: 'newTab', label: '在新标签页打开' },
+  { command: 'delete', label: '删除', divided: true }
+]
 
 function onCommand(cmd) {
   if (cmd === 'categorize') {
     // 触屏归类入口：打开**同一个**落点浮层（PC 拖拽用的那棵），
     // 只是改成点树上一行即归类，不用把卡片拖进去。
-    dndPick(props.topic.id, moreBtn.value?.$el || moreBtn.value)
+    dndPick(props.topic.id, moreBtn)
   } else if (cmd === 'newTab') {
     openInNewTab()
   } else if (cmd === 'delete') {
@@ -132,13 +136,13 @@ const excerpt = computed(() => excerptOf(props.topic.content))
   position: relative;
   background: #fff;
   border: 1px solid #eef0f3;
-  border-radius: calc(12px * var(--ui-scale));
-  padding: calc(17px * var(--ui-scale)) calc(18px * var(--ui-scale)) calc(14px * var(--ui-scale));
+  border-radius: var(--radius-lg);
+  padding: var(--sp-12) var(--sp-13) var(--sp-11);
   cursor: pointer;
   transition: border-color 0.15s, box-shadow 0.15s;
   display: flex;
   flex-direction: column;
-  min-height: calc(142px * var(--ui-scale));
+  min-height: 142px;
   /* 卡片是拖拽源不是阅读区，禁掉文本选择。
      长按菜单是这个交互最大的敌人：Android Chrome 靠 user-select 弹选择手柄，
      iOS 靠 -webkit-touch-callout 弹系统菜单，两条任缺一条都会先被系统接管。
@@ -156,15 +160,14 @@ const excerpt = computed(() => excerptOf(props.topic.content))
 .card.is-dragging {
   opacity: 0.4;
 }
+/* .card__title 撑满整行，菜单要钉在卡片右上角而不是"标题右侧、跟着标题行高浮动"。
+   .card__head 本身定位，按钮那层 .el-dropdown 相对它绝对定位——
+   挂在 button 上无效（el-dropdown 是 EP 生成的 static div，见下面无标题那段）。
+   同一个选择器不拆成两块：position 和 flex 摆在一处，少一次"这段在管什么"的猜。 */
 .card__head {
   display: flex;
   align-items: flex-start;
-  gap: calc(10px * var(--ui-scale));
-}
-/* .card__title 撑满整行，菜单要钉在卡片右上角而不是"标题右侧、跟着标题行高浮动"。
-   .card__head 本身定位，按钮那层 .el-dropdown 相对它绝对定位——
-   挂在 button 上无效（el-dropdown 是 EP 生成的 static div，见下面无标题那段）。 */
-.card__head {
+  gap: var(--sp-10);
   position: relative;
 }
 .card__head > .el-dropdown {
@@ -175,10 +178,10 @@ const excerpt = computed(() => excerptOf(props.topic.content))
 /* 标题：可编辑时是 input、只读时是 h3，两者共用同一套字号字重，看起来才是一个东西。
    min-height 是给 h3 兜底的——input 本身恒为一行高，空标题那边自然就对齐了。 */
 .card__title {
-  padding-right: calc(26px * var(--ui-scale));
+  padding-right: var(--sp-14);
   flex: 1;
   margin: 0;
-  font-size: calc(17px * var(--ui-scale));
+  font-size: var(--text-xl);
   font-weight: 600;
   line-height: 1.5;
   color: #1f2329;
@@ -195,30 +198,35 @@ const excerpt = computed(() => excerptOf(props.topic.content))
   word-break: break-word;
 }
 
-/* 「⋯」菜单按钮。形状 / 配色在全局 .kb-icon-btn，这里只管显隐和竖排点。
-   默认：常显。平板 / 手机没有 hover 指针，"hover 才显" 等于永远不显——
-   而这个菜单里装的是**触屏上唯一能归类的入口**，藏起来等于触屏功能不存在。
+/* 「⋯」按钮的显隐。形状 / 旋转 / opacity / transition 都在 RowMenu 里，
+   这里**只改 `--row-tools` 那个变量**：改变量而不是再声明一条 opacity，
+   两边就不抢同一条规则（抢了就是"谁的规则在后面谁赢"，改样式时静默失效）。
+   默认常显（变量没设时 RowMenu 那边 fallback 到 1）：平板 / 手机没有 hover 指针，
+   "hover 才显" 等于永远不显——而这个菜单里装的是**触屏上唯一能归类的入口**。
    @media (hover: hover) 是浏览器实测出来的输入方式特征，不是拿屏幕宽度猜——
    笔记本带触屏时它仍为 true，窄窗口不会被误判成平板。
    ⚠️ 但它在国内 Android 浏览器上会撒谎（OPPO 自带 / 夸克在真机触屏上照样报 true），
-   所以"手机端视图"不能建立在它上面——见 corecraft-web-context SKILL §5 多端策略。 */
-.card__more {
-  opacity: 1;
-  transition: opacity 0.15s;
-}
+   所以"手机端视图"不能建立在它上面——见 corecraft-web-context SKILL §5 多端策略。
+
+   规则挂在 **.card** 上而不是按钮上：自定义属性沿 DOM 继承，能穿过子组件的
+   scoped 边界；写成 `.card__more` 的话那个按钮在 RowMenu 内部，拿不到本组件的
+   data-v，整条规则静默不生效（build 和编译都不会报）。 */
 @media (hover: hover) {
   /* 只有真的能 hover 的设备才藏 */
-  .card__more {
-    opacity: 0;
+  .card {
+    --row-tools: 0;
   }
-  .card:hover .card__more {
-    opacity: 1;
+  .card:hover {
+    --row-tools: 1;
   }
 }
-/* 竖排 ⋮：EP 自带的 MoreFilled 是横排 ⋯，目录行那边（CategoryRowMenu）也是转 90° 用的，
-   两处保持一致——同一个"这一行的操作"图标该长得一样。 */
-.card__more-icon {
-  transform: rotate(90deg);
+/* 点击区：壳里是 padding 撑出来的小方块（约 20px），这里撑到 28px 那一档。
+   这条**必须**用 :deep()——按钮在 RowMenu 内部，TopicCard 的 scope 到不了它
+   （scoped 只把 data-v 打在子组件的根元素上，根是 .el-dropdown 不是 button）。 */
+.card__head :deep(.card__more) {
+  min-width: var(--ctl-sm);
+  min-height: var(--ctl-sm);
+  justify-content: center;
 }
 /* 无标题的卡片不需要额外处理：上面 .card__head > .el-dropdown 已经把菜单钉在右上角了。
    （之前的 .card.is-untitled .card__more { position:absolute } 定位错了层——挂在 button 上，
@@ -227,8 +235,8 @@ const excerpt = computed(() => excerptOf(props.topic.content))
 
 .card__excerpt {
   flex: 1;
-  margin: calc(6px * var(--ui-scale)) 0 0;
-  font-size: calc(12.5px * var(--ui-scale));
+  margin: var(--sp-6) 0 0;
+  font-size: var(--text-xs);
   line-height: 1.65;
   color: #8a9099;
   display: -webkit-box;
@@ -241,8 +249,8 @@ const excerpt = computed(() => excerptOf(props.topic.content))
 
 .card__tags {
   display: flex;
-  gap: calc(5px * var(--ui-scale));
-  margin-top: calc(10px * var(--ui-scale));
+  gap: var(--sp-5);
+  margin-top: var(--sp-10);
   min-width: 0;
   overflow: hidden;
 }

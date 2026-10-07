@@ -28,6 +28,14 @@
       </div>
 
       <div class="bar__right">
+        <!-- 只在「待归类」这一屏出现，处理的就是屏幕上这批。
+             不做成全局入口是因为它没有"处理所有待归类"的独立语义——**看到什么就处理什么**，
+             按钮上把条数写出来，就不会有人以为它连没显示出来的那些也一起动了。 -->
+        <button v-if="showOrganize" class="pill pill--ai" @click="organizeOpen = true">
+          <el-icon><MagicStick /></el-icon>
+          AI 归类 {{ shown.length }}
+        </button>
+
         <el-input
           v-model="keyword"
           placeholder="搜索标题 / 正文"
@@ -133,6 +141,12 @@
     <div v-else class="empty">
       <p>{{ emptyText }}</p>
     </div>
+
+    <AiOrganizeDialog
+      v-model="organizeOpen"
+      :topics="shown"
+      :categories="organizeCategories"
+    />
   </div>
 </template>
 
@@ -141,16 +155,18 @@ defineOptions({ name: 'CorecraftWebAppLearn' })
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, ElPopover } from 'element-plus'
-import { Search, ArrowDown } from '@element-plus/icons-vue'
+import { Search, ArrowDown, MagicStick } from '@element-plus/icons-vue'
 import {
   ensureTopicsLoaded, ensureCategoriesLoaded, ensureAllTagsLoaded,
-  getTopics, getCategory, getCategorySubtreeIds,
+  getTopics, getCategory, getCategories, getCategorySubtreeIds,
   getAllTags, deleteTopic, encodeTag, deleteConfirmMessage, UNCATEGORIZED,
   getTopicTypes, getTopicTypeLabel, resolveTopicTypeId
 } from './useCorecraftWebStore'
+import { aiEnabled } from './useAi'
 import CategoryCrumbs from './CategoryCrumbs.vue'
 import TopicCard from './TopicCard.vue'
 import TagRowMenu from './TagRowMenu.vue'
+import AiOrganizeDialog from './AiOrganizeDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -297,6 +313,22 @@ const shown = computed(() =>
   allTopics.value.filter((t) => matchCategory(t) && matchType(t) && matchTag(t) && matchKeyword(t))
 )
 
+// ==================== AI 归类 ====================
+
+const organizeOpen = ref(false)
+
+/**
+ * AI 入口一律 `v-if` 不画禁用按钮：关闭的语义是"这个功能对他不存在"，不是"它坏了"。
+ * 另外两个条件：得正在「待归类」这一屏（别的屏上这个按钮没有意义），而且确实有东西可归。
+ */
+const showOrganize = computed(
+  () => aiEnabled.value && categoryFilter.value === UNCATEGORIZED && shown.value.length > 0
+)
+
+// 包一层 computed 才是响应式的：getCategories() 只是读 categories.value，
+// 直接在模板里调拿到的会是一份普通数组快照，弹框里新增目录后这里不跟着变。
+const organizeCategories = computed(() => getCategories())
+
 const emptyText = computed(() => {
   if (categoryFilter.value === UNCATEGORIZED) return '没有待归类的知识点'
   if (currentCategoryId.value) return '这个目录还是空的'
@@ -354,7 +386,7 @@ onMounted(refresh)
 .learn {
   display: flex;
   flex-direction: column;
-  gap: calc(17px * var(--ui-scale));
+  gap: var(--sp-12);
 }
 
 /* 录入（原 .composer 六条规则）：录入框已统一收到首页，这里跟着删。
@@ -366,37 +398,37 @@ onMounted(refresh)
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: calc(14px * var(--ui-scale));
+  gap: var(--sp-11);
   flex-wrap: wrap;
 }
 .bar__cats {
   display: flex;
   align-items: center;
-  gap: calc(7px * var(--ui-scale));
+  gap: var(--sp-7);
   flex-wrap: wrap;
 }
 .bar__right {
   display: flex;
   align-items: center;
-  gap: calc(10px * var(--ui-scale));
+  gap: var(--sp-10);
   margin-left: auto;
 }
 .bar__search {
-  width: calc(216px * var(--ui-scale));
+  width: 216px;
 }
 
 .pill {
-  font-size: calc(14px * var(--ui-scale));
-  padding: calc(5px * var(--ui-scale)) calc(12px * var(--ui-scale));
+  font-size: var(--text-md);
+  padding: var(--sp-5) var(--sp-10);
   border: 1px solid transparent;
-  border-radius: calc(14px * var(--ui-scale));
+  border-radius: var(--radius-xl);
   background: #f1f2f4;
   color: #6b7280;
   cursor: pointer;
   transition: all 0.15s;
   display: inline-flex;
   align-items: center;
-  gap: calc(5px * var(--ui-scale));
+  gap: var(--sp-5);
 }
 .pill:hover {
   background: #e8eaed;
@@ -417,22 +449,33 @@ onMounted(refresh)
   background: transparent;
   border-color: #e2e5e9;
 }
+/* AI 归类：唯一一个"会改数据"的控件，给个主色描边跟纯筛选药丸拉开。
+   不做成实心主色按钮——它旁边就是搜索框和两个筛选下拉，一主一次两个实心太吵。 */
+.pill--ai {
+  background: transparent;
+  border-color: var(--cc-primary);
+  color: var(--cc-primary);
+}
+.pill--ai:hover {
+  background: rgba(43, 127, 255, 0.08);
+  color: var(--cc-primary);
+}
 .pill__on {
-  max-width: calc(108px * var(--ui-scale));
+  max-width: 108px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .pill__caret {
-  font-size: calc(13px * var(--ui-scale));
+  font-size: var(--text-sm);
 }
 
 /* 标签下拉 */
 .tagpanel {
   display: flex;
   flex-direction: column;
-  gap: calc(1px * var(--ui-scale));
-  max-height: calc(288px * var(--ui-scale));
+  gap: var(--sp-1);
+  max-height: 288px;
   overflow-y: auto;
 }
 /* 一行 = 行容器（现在带标签的行是 div，因为要再塞一个「⋯」按钮）+ 选它的按钮 + 操作按钮。
@@ -440,22 +483,22 @@ onMounted(refresh)
 .tagpanel__item {
   display: flex;
   align-items: center;
-  gap: calc(10px * var(--ui-scale));
-  padding: calc(7px * var(--ui-scale)) calc(10px * var(--ui-scale));
+  gap: var(--sp-10);
+  padding: var(--sp-7) var(--sp-10);
   border: none;
-  border-radius: calc(6px * var(--ui-scale));
+  border-radius: var(--radius-sm);
   background: transparent;
-  font-size: calc(15px * var(--ui-scale));
+  font-size: var(--text-base);
   color: #4b5563;
   cursor: pointer;
   text-align: left;
   /* 和侧边栏目录行同一套：行尾「⋯」默认不显形，悬停/聚焦这一行才露出来。
      focus-within 不能省——opacity:0 的按钮照样能被 Tab 选中。 */
-  --row-menu-show: 0;
+  --row-tools: 0;
 }
 .tagpanel__item:hover,
 .tagpanel__item:focus-within {
-  --row-menu-show: 1;
+  --row-tools: 1;
 }
 .tagpanel__item:hover {
   background: #f4f6f8;
@@ -473,7 +516,7 @@ onMounted(refresh)
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: calc(10px * var(--ui-scale));
+  gap: var(--sp-10);
   border: none;
   background: transparent;
   padding: 0;
@@ -488,30 +531,34 @@ onMounted(refresh)
   white-space: nowrap;
 }
 .tagpanel__count {
-  font-size: calc(13px * var(--ui-scale));
+  font-size: var(--text-sm);
   color: #b6bac1;
   flex-shrink: 0;
 }
 .tagpanel__empty {
   margin: 0;
-  padding: calc(10px * var(--ui-scale));
-  font-size: calc(14px * var(--ui-scale));
+  padding: var(--sp-10);
+  font-size: var(--text-md);
   color: #b6bac1;
 }
 
 /* 卡片网格：固定列宽 + 卡片等高
  *
  * 列数从来没写死，是 `repeat(auto-fill, minmax(N, 1fr))` 由**实际可用宽度**算出来的。
- * 1920 窗口下：视口 − 侧边栏 264 − 内容区左右 padding 56 = 1600，被
- * `--cc-content-w: 1280px` 截到 1280（侧边栏收起时同样截到 1280，两态一致）。
+ * 1920 窗口下：视口 − 侧边栏 264 − 内容区左右 padding 56 = 1600，
+ * 实际宽度 = min(1600, --cc-content-w) = min(1600, 1440)。**侧边栏宽度可调之后，
+ * 这个 min 的左项会跟着变**（200→360），所以列数不写死才是对的。
  *
- * 配合 gap 14px，3 列要求 N 落在 (392, 417] —— 取 400，卡片实际 417px。
+ * ⚠️ **列宽下限 --w-grid 不参与任何"疏密"调节**（见 base.css §5.2）：列宽是**内容单位**，
+ * 跟着放大就会在某个值上突然放不下三列 → 3 列掉成 2 列，版式整个变样。
+ * 要调它就是单独改 token 的值，不是把它接进某个滑块。
+ *
  * 视口再窄就自然掉到 2 列，不加断点。
  */
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(calc(400px * var(--ui-scale)), 1fr));
-  gap: calc(14px * var(--ui-scale));
+  grid-template-columns: repeat(auto-fill, minmax(var(--w-grid), 1fr));
+  gap: var(--sp-11);
 }
 .grid :deep(.topic-card-wrap) {
   margin-bottom: 0;
@@ -522,12 +569,12 @@ onMounted(refresh)
 
 /* ---------- 空状态 ---------- */
 .empty {
-  padding: calc(56px * var(--ui-scale)) 0;
+  padding: 56px 0;
   text-align: center;
 }
 .empty p {
   margin: 0;
-  font-size: calc(15px * var(--ui-scale));
+  font-size: var(--text-base);
   color: #b6bac1;
 }
 </style>

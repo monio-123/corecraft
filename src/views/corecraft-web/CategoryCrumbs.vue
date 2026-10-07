@@ -43,20 +43,20 @@ const crumbs = computed(() =>
 .crumbs {
   display: flex;
   align-items: center;
-  gap: calc(3px * var(--ui-scale));
+  gap: var(--sp-3);
   flex-wrap: wrap;
   min-width: 0;
-  font-size: calc(14px * var(--ui-scale));
+  font-size: var(--text-md);
 }
 .crumbs__link {
   border: none;
   background: transparent;
-  padding: calc(3px * var(--ui-scale)) calc(6px * var(--ui-scale));
-  border-radius: calc(4px * var(--ui-scale));
+  padding: var(--sp-3) var(--sp-6);
+  border-radius: var(--radius-xs);
   color: var(--cc-text-3);
-  font-size: calc(14px * var(--ui-scale));
+  font-size: var(--text-md);
   cursor: pointer;
-  max-width: calc(168px * var(--ui-scale));
+  max-width: 168px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

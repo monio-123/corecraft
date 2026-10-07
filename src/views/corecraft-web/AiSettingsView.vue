@@ -174,13 +174,13 @@ function hostOf(url) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: calc(16px * var(--ui-scale));
-  padding: calc(4px * var(--ui-scale)) 0 calc(12px * var(--ui-scale));
+  gap: var(--sp-12);
+  padding: var(--sp-4) 0 var(--sp-10);
   border-bottom: 1px solid var(--cc-border);
-  margin-bottom: calc(16px * var(--ui-scale));
+  margin-bottom: var(--sp-12);
 }
 .switch-row__name {
-  font-size: calc(15px * var(--ui-scale));
+  font-size: var(--text-base);
   color: var(--cc-text-1);
 }
 
@@ -188,14 +188,14 @@ function hostOf(url) {
 .list {
   display: flex;
   flex-direction: column;
-  gap: calc(2px * var(--ui-scale));
-  margin-bottom: calc(12px * var(--ui-scale));
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-10);
 }
 .row {
   display: flex;
   align-items: center;
-  gap: calc(10px * var(--ui-scale));
-  padding: calc(10px * var(--ui-scale)) calc(12px * var(--ui-scale));
+  gap: var(--sp-10);
+  padding: var(--sp-10) var(--sp-10);
   border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-sm);
   cursor: pointer;
@@ -211,9 +211,9 @@ function hostOf(url) {
    二是"点整行选中"本来就不需要一个真正的 input。 */
 .row__mark {
   flex: none;
-  width: calc(13px * var(--ui-scale));
-  height: calc(13px * var(--ui-scale));
-  border: calc(1.5px * var(--ui-scale)) solid var(--cc-border-strong, #c0c4cc);
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid var(--cc-border-strong, #c0c4cc);
   border-radius: 50%;
 }
 .row.is-current .row__mark {
@@ -227,17 +227,17 @@ function hostOf(url) {
 .row__name {
   display: flex;
   align-items: center;
-  gap: calc(6px * var(--ui-scale));
-  font-size: calc(14px * var(--ui-scale));
+  gap: var(--sp-6);
+  font-size: var(--text-md);
   color: var(--cc-text-1);
 }
 .row__badge {
-  padding: 0 calc(6px * var(--ui-scale));
-  font-size: calc(11px * var(--ui-scale));
-  line-height: calc(16px * var(--ui-scale));
+  padding: 0 var(--sp-6);
+  font-size: var(--text-2xs);
+  line-height: 16px;
   color: #fff;
   background: var(--cc-primary);
-  border-radius: calc(3px * var(--ui-scale));
+  border-radius: var(--radius-xs);
 }
 .row__badge.is-warn {
   color: var(--cc-warning);
@@ -245,8 +245,8 @@ function hostOf(url) {
 }
 .row__sub {
   display: block;
-  margin-top: calc(3px * var(--ui-scale));
-  font-size: calc(12px * var(--ui-scale));
+  margin-top: var(--sp-3);
+  font-size: var(--text-xs);
   color: var(--cc-text-3);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -254,12 +254,12 @@ function hostOf(url) {
 }
 .row__ops {
   display: flex;
-  gap: calc(2px * var(--ui-scale));
+  gap: var(--sp-2);
   flex: none;
 }
 .ai__tip {
-  margin-top: calc(4px * var(--ui-scale));
-  font-size: calc(13px * var(--ui-scale));
+  margin-top: var(--sp-4);
+  font-size: var(--text-sm);
   line-height: 1.6;
   color: var(--cc-text-3);
 }

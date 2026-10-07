@@ -2,8 +2,18 @@
   <!-- 收起时侧边栏宽度归零，.app-main 是 flex:1 会自动铺满。
        目录也跟着一起看不见——按约定不额外做目录入口，要切目录就点顶栏这个按钮展开。 -->
   <div class="app-shell" :class="{ 'is-side-collapsed': sideCollapsed }">
-    <!-- 左侧栏：品牌 + 导航 + 目录。沉浸模式下整个不渲染（它就是"壳"的一部分）。 -->
-    <aside v-if="!immersive.on" class="app-side">
+    <!-- 左侧栏：品牌 + 导航 + 目录。沉浸模式下整个不渲染（它就是"壳"的一部分）。
+
+         `@click="closeCascade"` 挂**整条侧边栏**而不是目录行：#111 之后遮罩只盖主区
+         （`left: var(--w-side)`，因为侧边栏还得留着当拖拽落点区），"点侧边栏也收树"
+         这件事就得自己管。挂容器而不是行，是因为点**行之间的空白**同样该收——
+         按行挂只覆盖得到目录名那几行，空白处点了没反应。
+         目录行的点击靠冒泡到这里，本来就不用再挂一遍。
+
+         行上两个控件各自 `stop`，不会误触发：
+         - `›` 展开/收起的是它自己（#108：展开和进入是两件事）
+         - `⋯` 只开菜单、不关树（#108：用户可能只是看了一眼菜单又缩回去） -->
+    <aside v-if="!immersive.on" class="app-side" @click="closeCascade">
       <div class="app-side__brand">
         <div class="app-side__logo">Bro</div>
         <div class="app-side__name">知识库</div>
@@ -25,9 +35,18 @@
       </nav>
 
       <!-- 目录：常驻侧边栏，只放一级。
-           层级不在这里常驻——232px 撑不住缩进，而层级只在两件事上才需要被看见：
-           放东西（拖拽浮出完整树）和进深层（hover 弹级联）。两个入口都是临时的。 -->
-      <div class="app-side__section">
+           层级不在这里常驻——264px 撑不住缩进，而层级只在两件事上才需要被看见：
+           放东西（拖拽浮出完整树）和进深层（点 › 展开整棵子树）。
+
+           这一块有两个落点角色：
+           - **每一行**（data-cat-id）：拖到那一行 = 挪到那个目录下
+           - **整块的空白处**（data-cat-root）：拖上去 = 挪成一级目录
+           两者靠 hitCategory 的判断顺序分开（先找行、再退到块）。 -->
+      <div
+        class="app-side__section"
+        data-cat-root
+        :class="{ 'is-drop': dnd.over === ROOT_CATEGORY && dnd.overOk, 'is-bad': dnd.live && dnd.over === ROOT_CATEGORY && !dnd.overOk }"
+      >
         <div class="app-side__section-title">
           <span>目录</span>
           <el-tooltip content="新建一级目录" placement="right">
@@ -40,16 +59,31 @@
             :key="c.id"
             :to="{ path: '/app/learn', query: { category: c.id } }"
             class="app-cats__item"
-            :class="{ 'is-on': isCurrentRoot(c.id) }"
-            @mouseenter="onCatEnter(c, $event)"
-            @mouseleave="onCatLeave"
+            :class="{
+              'is-on': isCurrentRoot(c.id),
+              'is-drop': dnd.over === c.id && dnd.overOk,
+              'is-bad': dnd.live && dnd.over === c.id && !dnd.overOk
+            }"
+            :data-cat-id="c.id"
+            :data-cat-name="c.name"
+            :draggable="false"
+            @pointerdown="onCatPointerDown"
           >
-            <!-- 行内容和弹层里的行完全一样：名称 · 数字 · ⋯。
-                 之前这里是「有下级给 › / 没下级给 ＋」二选一，结果"给一个已经有子目录的
-                 一级目录再建一个兄弟"这条路整个没了——有 ＋ 的时候弹层里又没有这一级自己。 -->
             <span class="app-cats__name">{{ c.name }}</span>
             <span class="app-cats__count">{{ categoryCounts[c.id] || 0 }}</span>
             <CategoryRowMenu :category="c" @add="openChildCreate" @rename="openRename" />
+            <!-- 展开子树的入口。**没有下级就不给箭头**：弹出来是个空壳，
+                 建子目录靠这一行自己的「⋯」就够了。
+                 `@click.stop.prevent`：外层是 RouterLink，不拦住的话点箭头会顺带
+                 导航进这个目录——展开和进入是两件事，箭头只干前者。 -->
+            <button
+              v-if="hasKids(c.id)"
+              type="button"
+              class="app-cats__expand"
+              :aria-label="`展开 ${c.name} 的下级目录`"
+              :aria-expanded="cascadeFor === c.id"
+              @click.stop.prevent="toggleCascade(c, $event)"
+            ><el-icon><ArrowRight /></el-icon></button>
           </RouterLink>
         </div>
         <p v-else class="app-side__empty">还没有目录</p>
@@ -71,11 +105,10 @@
             </button>
           </el-tooltip>
         </template>
-        <template v-else>
         <!-- 用户菜单：AI 设置 + 退出都收在这里。
              为什么不让「AI 设置」占导航一行：它是极低频操作（一辈子填一次），
              而导航那几行留给每天都点的东西。跟管理后台的用户下拉同一套心智。 -->
-        <el-dropdown trigger="click" @command="handleUserCommand">
+        <el-dropdown v-else class="app-side__user-menu" trigger="click" @command="handleUserCommand">
           <span class="app-side__user-trigger">
             <el-avatar :size="34" :src="currentUser.avatar || undefined" class="user-avatar">
               {{ userAvatarFallback }}
@@ -90,7 +123,17 @@
             </el-dropdown-menu>
           </template>
         </el-dropdown>
-        </template>
+
+        <!-- 侧边栏自己的设置（宽度 / 密度）。**不塞进顶栏**：它管的就是这一块，
+             放在这儿才是"哪儿的问题回哪儿改"。admin 壳压根没有侧边栏，没有对应物。
+             **放在用户菜单之后**：`.app-side__user-trigger` 是 `flex: 1`，撑满剩下的
+             宽度，齿轮自然落到最右边——放它前面就会被顶到左边去。
+
+             它**不装在 v-if / v-else 里**：加载失败时那一条是"重试"不是"用户"，
+             但侧边栏照样在、宽度和密度照样该能调——**没有理由让设置跟着数据一起消失。**
+             也因此不需要外面再套一层 span 专门挂显隐样式：常显，且落在最右，
+             和用户行的主次不打架。 -->
+        <SidePrefsPanel />
       </div>
     </aside>
 
@@ -118,7 +161,6 @@
           >
             <template #prefix><el-icon><Search /></el-icon></template>
           </el-input>
-          <UiScaleSelect shell="app" />
           <el-tooltip v-if="hasAdminShell" content="管理后台" placement="bottom">
             <button class="app-top__icon-btn" aria-label="管理后台" @click="goAdmin">
               <el-icon><Setting /></el-icon>
@@ -138,15 +180,19 @@
       </main>
     </div>
 
-    <!-- 入口一（放）：拖起卡片时浮出完整目录树当落点，跟着起拖位置不动、拖完即消失。
+    <!-- 入口一（放）：拖起**知识点卡片**时浮出完整目录树当落点，跟着起拖位置不动、拖完即消失。
          位置在这里算（指针右下，贴到视口边缘时翻到另一侧），样式在 CategoryTree。
+
+         **拖目录时不弹这个浮层**（catId != null 那半边）：那时用户正按着 nav 树里的一行，
+         要放的地方就在那棵树和侧边栏目录区上。再弹一棵过来，同一个指针下有两个"树"在抢
+         落点，指针压在上面那棵上时 elementFromPoint 命中的还是它——看着没反应。
 
          拖拽幽灵也在这里渲染（不挂到 body、不克隆、不依赖任何第三方库）：
          之前交给 SortableJS 的 fallback，它的 _appendGhost() 会给克隆体写**行内**
          width/height（= 源卡片尺寸）并在每次移动时重写，CSS 改不动，要改就得每帧
          跟库对着干。而我们要的幽灵是"一行标题"，跟库的模型本来就对不上。 -->
     <CategoryTree
-      v-if="dnd.live"
+      v-if="dnd.live && dnd.catId == null"
       mode="drop"
       :items="rootCategories"
       :style="dropTreeStyle"
@@ -161,11 +207,15 @@
     <!-- 触屏点选模式：点浮层外面 = 取消。PC 拖拽没有这一层（松手就自动收了），
          但触屏是"点了⋯弹出来一个浮层"，跟点 popover 的心智一样，
          必须能点外面关掉，否则用户不知道怎么退出去。 -->
-    <div v-if="dnd.live && dnd.picking" class="pick-scrim" @click="dndReset" />
+    <div v-if="dnd.live && dnd.picking" class="scrim pick-scrim" @click="dndReset" />
 
-    <!-- 入口二（进）：侧边栏一级目录 hover 停够一会儿，一次铺开它整棵子树。
-         不用一层一层再 hover 展开——层级在"要挑一个深层目录"时才需要被完整看见，
-         一次给全比让人自己逐层点开省事。 -->
+    <!-- 入口二（进）：点一级目录行尾的 › 展开它整棵子树。
+         不用一层一层再点开——层级在"要挑一个深层目录"时才需要被完整看见，
+         一次给全比让人自己逐层点开省事。
+         遮罩 z 39 压在弹层（40）之下、**只盖主区不盖侧边栏**（见 .cascade-scrim）：
+         点主区 = 关；侧边栏那边由 `<aside class="app-side">` 自己的
+         @click="closeCascade" 管，它同时还得留着当拖拽落点区，不能被遮罩吃掉。 -->
+    <div v-if="cascadeFor != null" class="scrim cascade-scrim" @click="closeCascade" />
     <CategoryTree
       v-if="cascadeFor != null"
       :key="cascadeFor"
@@ -175,8 +225,6 @@
       @pick="goCategory"
       @add="openChildCreate"
       @rename="openRename"
-      @enter="onCascadeEnter"
-      @close="closeCascade"
     />
 
     <!-- 「给目录起个名」只有一个弹窗：新建一级 / 新建子级 / 改名都是它，
@@ -199,12 +247,13 @@ import { Search, Setting, Expand, Fold, Refresh, ArrowDown } from '@element-plus
 import { clearAuth } from '../../utils/auth'
 import { flattenShellNav, getIconComponent } from '../../utils/menu'
 import { hasAdminMenus } from '../../utils/session'
-import { applyUiScale, clearUiScale, getUiScale } from '../../utils/uiScale'
+import { applyUiPrefs, clearUiPrefs } from '../../utils/uiPrefs'
 import { resetAiConfig } from '../../views/corecraft-web/useAi'
-import UiScaleSelect from '../UiScaleSelect.vue'
+import SidePrefsPanel from './SidePrefsPanel.vue'
 import CategoryNameDialog from '../../views/corecraft-web/CategoryNameDialog.vue'
 import CategoryRowMenu from '../../views/corecraft-web/CategoryRowMenu.vue'
 import CategoryTree from '../../views/corecraft-web/CategoryTree.vue'
+import { useTopicDrag } from '../../views/corecraft-web/useTopicDrag'
 import { loadShellData } from '../../views/corecraft-web/useShellData'
 import { useImmersive } from '../../views/corecraft-web/useImmersive'
 import {
@@ -234,11 +283,27 @@ function toggleSide() {
   localStorage.setItem(SIDE_COLLAPSED_KEY, sideCollapsed.value ? '1' : '0')
 }
 
-// hover 级联的触发状态
+// 目录树弹层的开合状态。展开靠点行尾的 ›（见 toggleCascade），关靠点遮罩 / Esc 之外的
+// 那几条业务路径（进目录 / 新建子级 / 改名都会顺手关掉）。
 const cascadeFor = ref(null)
 const cascadeTop = ref(0)
-let hoverTimer = null
-let closeTimer = null
+
+/**
+ * 侧边栏每个一级目录**也是拖拽源**：把它拖到弹层里的某一行 = 挪到那个目录下，
+ * 拖到目录区空白处 = 挪成一级。
+ *
+ * **模板里那三个 data-* / draggable="false" / @pointerdown 都缺一不可**：
+ * - 行上挂 `data-cat-id` / `data-cat-name` 是为了共用一个 handler 就能认出是哪一行
+ * - **`draggable="false"` 是关键**：这些行是 `RouterLink`（`<a href>`），**`<a>` 默认
+ *   `draggable=true`**，一按就启动浏览器原生拖拽——拖起来是个带 URL 的灰色 tooltip，
+ *   pointerdown 收不到、我们这套完全不触发。2026-10-07 实机就撞了这个：
+ *   "脱不进去"，实际从头到尾是浏览器在拖链接。
+ */
+const { onPointerDown: onCatPointerDown } = useTopicDrag((e) => {
+  const id = Number(e.currentTarget?.dataset?.catId)
+  if (!id) return null
+  return { what: { catId: id }, label: e.currentTarget.dataset.catName || '' }
+})
 
 // 「给目录起个名」弹窗的全部参数。三个入口（建一级 / 建子级 / 改名）共用这一个状态，
 // 拆成三个 ref 就要各自记一份 visible，改一个入口的判断就得同步另外两个。
@@ -321,29 +386,18 @@ function goAdmin() {
   router.push('/')
 }
 
-// hover 停 300ms 才弹级联：太短的话鼠标只是路过就闪出一片菜单。
-// 拖拽期间一律不弹——拖卡片时鼠标会经过侧边栏，弹级联会和拖拽浮树打架。
-// 没有下级的目录不弹：弹出来是个空壳。建子目录不靠它——每一行的 ⋯ 菜单里就有，
-// 空目录照样能长出下级。
-function onCatEnter(c, e) {
-  if (dnd.live || !hasKids(c.id)) return
-  clearTimeout(hoverTimer)
-  clearTimeout(closeTimer)
-  const top = e.currentTarget.getBoundingClientRect().top
-  hoverTimer = setTimeout(() => {
-    cascadeFor.value = c.id
-    cascadeTop.value = top
-  }, 300)
-}
-
-function onCatLeave() {
-  scheduleCloseCascade()
-}
-
-// 鼠标进到弹出的级联里：取消"马上要关"。侧边栏那一行和菜单之间隔着一道缝，
-// 鼠标走过去必然先触发一次 leave，没有这个口子就是"一碰就散"。
-function onCascadeEnter() {
-  clearTimeout(closeTimer)
+// hover 停 300ms 才弹级联的整套定时器（hoverTimer / closeTimer / onCatEnter /
+// onCatLeave / onCascadeEnter / scheduleCloseCascade）在 2026-10-07 全部删掉了：
+// 展开改成**点 › 打开、点遮罩关闭**，鼠标移开不再收走弹层。下面只留开合本身。
+//
+// 没有下级的目录不给箭头（模板里 `v-if="hasKids(c.id)"`），所以这里不用再判一次。
+function toggleCascade(c, e) {
+  if (cascadeFor.value === c.id) {
+    closeCascade()
+    return
+  }
+  cascadeFor.value = c.id
+  cascadeTop.value = e.currentTarget.getBoundingClientRect().top
 }
 
 // 整条级联只有一个开关，要关它的理由全汇到这一处。
@@ -351,15 +405,7 @@ function onCascadeEnter() {
 // hoverTimer——打开和关闭是两条互不相干的路径，中间没人管，于是弹出来就再也
 // 关不掉，只能靠点导航或刷新。
 function closeCascade() {
-  clearTimeout(hoverTimer)
-  clearTimeout(closeTimer)
   cascadeFor.value = null
-}
-
-// 离开侧边栏那一行不等于不要了：鼠标常常只是斜着划向菜单。留一点缓冲再关。
-function scheduleCloseCascade() {
-  clearTimeout(closeTimer)
-  closeTimer = setTimeout(closeCascade, 220)
 }
 
 function goCategory(c) {
@@ -417,25 +463,26 @@ async function handleLogout() {
 // 落点浮层的位置：**锚在起拖那一刻**（dnd.ax / dnd.ay），整个拖拽过程不动。
 // 贴到视口右/下边缘就翻到另一侧，免得浮层一半露在屏幕外。
 //
-// 树的宽高是 CSS 里 `calc(264px * var(--ui-scale))` 算出来的，所以这里**读同一个变量**
+// 树的宽高是 CSS 里 `264px` 算出来的，所以这里**读同一个变量**
 // 而不是写死常数——对不上的后果不是"浮层小一点"，是**翻边判断算错**：本来该翻到左边，
 // 翻完反而露出一半在屏幕外，而且用户看不出是哪一步错了。
 //
 // 读 getComputedStyle 而不是用 ref：dnd.ax 每次起拖都会变，这个 computed 天然会重算，
 // 用户改完档位再拖也是对的，不需要额外维护一份响应式的缩放比。
 //
-// 注意 dnd.ax / dnd.ay 和 window.innerWidth **不用乘缩放比**：它们是视口坐标，
+// 注意 dnd.ax / dnd.ay 和 window.innerWidth **不用乘任何缩放比**：它们是视口坐标，
 // 而这个定位写在缩放区之外（弹层 teleport 到 body），两边本来就同一空间。
-// 用 CSS zoom 的时候这里必须除，那是 zoom 破坏坐标不变式才需要的补丁。
-const TREE_W = 264
-const TREE_H = 312
-const DROP_GAP = 19
+// 以前这里读 `--ui-scale` 再乘一遍，那个乘数 2026-10-07 已经删掉了（见 utils/uiPrefs.js
+// 开头：它乘的是 66 个不相干的数，说不清是什么比例、也调不动单独某一类）。
+//
+// 浮层的实际尺寸**读 token 而不是抄常数**——抄一份的话 CSS 改一边 JS 不同步，
+// 症状是"该翻到左边却翻到右边、还露一半在屏幕外"。token 在 base.css 的 --w-drop / --h-drop。
 const dropTreeStyle = computed(() => {
-  const s =
-    Number(getComputedStyle(document.documentElement).getPropertyValue('--ui-scale')) || 1
-  const w = Math.round(TREE_W * s)
-  const h = Math.round(TREE_H * s)
-  const gap = Math.round(DROP_GAP * s)
+  const cs = getComputedStyle(document.documentElement)
+  const px = (name, fb) => Math.round(parseFloat(cs.getPropertyValue(name)) || fb)
+  const w = px('--w-drop', 264)
+  const h = px('--h-drop', 312)
+  const gap = px('--sp-9', 10) + 9
   const flipX = dnd.ax + gap + w > window.innerWidth
   const flipY = dnd.ay + gap + h > window.innerHeight
   return {
@@ -449,16 +496,17 @@ const dropTreeStyle = computed(() => {
 // 侧边栏、药丸都不再当落点：侧边栏的目录项是导航，「待归类」药丸是纯筛选。
 
 onMounted(async () => {
-  // 本壳的缩放偏好写到 <html> 行内；teleport 到 body 的浮层也继承得到。
-  // 摘类交给 clearUiScale —— 切到管理后台时它会写自己的值覆盖上来。
-  applyUiScale(getUiScale('app'))
+  // 侧边栏偏好（宽度 / 密度）写到 <html> 行内；teleport 到 body 的浮层也继承得到。
+  // 读不到偏好就什么都不写，base.css 的 :root 说了算。
+  // 卸载时 clearUiPrefs 摘掉——admin 壳压根没有侧边栏，留着是死重量。
+  applyUiPrefs()
   // 菜单/资料和业务数据并行拉：菜单决定左侧导航，数据决定目录树。
   // 三个 ensure 收敛在 loadShellData 一处（原来这里和 AppHomeView 各写了一遍）。
   await loadShell()
 })
 
 onBeforeUnmount(() => {
-  clearUiScale()
+  clearUiPrefs()
 })
 </script>
 
@@ -470,14 +518,17 @@ onBeforeUnmount(() => {
   position: fixed;
   z-index: 60;
   pointer-events: none;
-  transform: translate(-50%, -50%) rotate(2deg);
-  max-width: calc(240px * var(--ui-scale));
-  padding: calc(8px * var(--ui-scale)) calc(17px * var(--ui-scale));
-  border-radius: calc(8px * var(--ui-scale));
+  /* 往下偏一点，别正压在指针下的那一行上——正压着的话"正在放哪"和"这是哪一行"
+     两个字面糊在一起（2026-10-07 实机截图就是这个样子）。
+     pointer-events: none 保证它遮不住命中检测，所以这里只管好不好看。 */
+  transform: translate(10px, 14px) rotate(2deg);
+  max-width: 240px;
+  padding: var(--sp-8) var(--sp-12);
+  border-radius: var(--radius);
   border: 1px solid var(--cc-primary);
   background: var(--cc-surface);
   box-shadow: 0 8px 24px rgb(31 35 41 / 18%);
-  font-size: calc(15px * var(--ui-scale));
+  font-size: var(--text-base);
   line-height: 1.5;
   color: var(--cc-text-1);
   white-space: nowrap;
@@ -485,12 +536,29 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   opacity: 0.95;
 }
-/* 触屏点选模式的遮罩：透明，只为接住"点外面取消"。
-   z-index 19 —— 刚好在落点树（20）之下，所以树上的行照常可点。 */
-.pick-scrim {
+/* 两处"点外面关掉"的透明遮罩，用途一样、只有层级不同，收成一个基类 + 两个 z-index。
+   - .pick-scrim  z 19，压在归类落点树（20）之下，树上的行照常可点
+   - .cascade-scrim z 39，压在目录树弹层（40）之下，弹层里的行照常可点
+   两处都是"透明只为接住点击"，所以不画任何背景。
+   position/inset 只能写在基类上：漏挂 `scrim` 的话元素退化成 .app-shell 里
+   一个宽度 0 的 flex item，点击永远打不中，而且 build / 编译都不会报。 */
+.scrim {
   position: fixed;
   inset: 0;
+}
+.pick-scrim {
   z-index: 19;
+}
+.cascade-scrim {
+  z-index: 39;
+  /* **只盖主区，不盖侧边栏**。侧边栏不是"弹层外面"：它是弹层的锚点所在，
+     也是「把弹层里的子目录拖到一级目录上」唯一的落点区。
+     盖住它的后果不是"多点不到"而是**拖拽整个失效**——落点靠
+     document.elementFromPoint + closest('[data-cat-id]') 算（store 的 hitCategory），
+     指针落在遮罩上时两个 closest 都落空 → over = null → 不高亮、松手无事。
+     左边距用同一个变量，不能各写各的：body 上有 zoom(--cc-scale)，
+     两个地方读同一个 token，改一边另一边自动跟。 */
+  left: var(--w-side);
 }
 .app-shell {
   display: flex;
@@ -503,13 +571,13 @@ onBeforeUnmount(() => {
 
 /* ---------- 左侧栏 ---------- */
 .app-side {
-  width: calc(264px * var(--ui-scale));
+  width: var(--w-side);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   background: var(--cc-surface);
   border-right: 1px solid var(--cc-border);
-  padding: calc(22px * var(--ui-scale)) calc(14px * var(--ui-scale)) calc(14px * var(--ui-scale));
+  padding: var(--sp-14) var(--sp-11) var(--sp-11);
   /* 收起时宽度归零，必须裁掉内容，否则子元素会溢出到主区上面。
      收起用宽度过渡而不是 v-if：目录树和 hover 级联都有各自的展开/关缓冲，
      节点直接被销毁会让这些状态跟着重来一次。 */
@@ -526,41 +594,41 @@ onBeforeUnmount(() => {
 .app-side__brand {
   display: flex;
   align-items: center;
-  gap: calc(11px * var(--ui-scale));
-  padding: 0 calc(8px * var(--ui-scale)) calc(20px * var(--ui-scale));
+  gap: var(--sp-10);
+  padding: 0 var(--sp-8) var(--sp-13);
 }
 .app-side__logo {
-  width: calc(34px * var(--ui-scale));
-  height: calc(34px * var(--ui-scale));
-  border-radius: calc(8px * var(--ui-scale));
+  width: var(--ctl-md);
+  height: var(--ctl-md);
+  border-radius: var(--radius);
   background: var(--cc-logo-gradient);
   color: #fff;
-  font-size: calc(14px * var(--ui-scale));
+  font-size: var(--text-md);
   font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 .app-side__name {
-  font-size: calc(18px * var(--ui-scale));
+  font-size: var(--text-2xl);
   font-weight: 600;
   color: var(--cc-text-1);
-  letter-spacing: calc(0.3px * var(--ui-scale));
+  letter-spacing: var(--ls-tight);
 }
 
 .app-nav {
   display: flex;
   flex-direction: column;
-  gap: calc(2px * var(--ui-scale));
+  gap: var(--sp-2);
 }
 .app-nav__item {
   display: flex;
   align-items: center;
-  gap: calc(10px * var(--ui-scale));
-  padding: calc(10px * var(--ui-scale)) calc(12px * var(--ui-scale));
-  border-radius: calc(7px * var(--ui-scale));
+  gap: var(--side-gap);
+  padding: var(--side-py) var(--side-px);
+  border-radius: var(--radius);
   color: var(--cc-text-2);
-  font-size: calc(17px * var(--ui-scale));
+  font-size: var(--text-xl);
   text-decoration: none;
   transition: var(--cc-transition);
 }
@@ -574,21 +642,33 @@ onBeforeUnmount(() => {
   font-weight: 500;
 }
 .app-nav__icon {
-  font-size: calc(18px * var(--ui-scale));
+  font-size: var(--text-2xl);
 }
 
 .app-side__section {
-  margin-top: calc(24px * var(--ui-scale));
+  margin-top: var(--sp-14);
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+/* 拖着一个目录时，这一整块是"移成一级目录"的落点。
+   和树上那两套（蓝=能放 / 红=不能放）用同一组色，别搞出第二套视觉语言。 */
+.app-side__section.is-drop {
+  outline: 2px solid var(--cc-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+.app-side__section.is-bad {
+  outline: 2px solid #d4302b;
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
 }
 .app-side__section-title {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 calc(10px * var(--ui-scale)) calc(6px * var(--ui-scale));
-  font-size: calc(14px * var(--ui-scale));
+  padding: 0 var(--side-px) var(--side-py);
+  font-size: var(--text-md);
   color: var(--cc-text-3);
   font-weight: 500;
 }
@@ -597,10 +677,10 @@ onBeforeUnmount(() => {
   background: transparent;
   color: var(--cc-text-3);
   cursor: pointer;
-  font-size: calc(18px * var(--ui-scale));
+  font-size: var(--text-2xl);
   line-height: 1;
-  padding: 0 calc(4px * var(--ui-scale));
-  border-radius: calc(4px * var(--ui-scale));
+  padding: 0 var(--sp-4);
+  border-radius: var(--radius-xs);
 }
 .app-side__add:hover {
   color: var(--cc-primary);
@@ -609,7 +689,7 @@ onBeforeUnmount(() => {
 .app-cats {
   display: flex;
   flex-direction: column;
-  gap: calc(1px * var(--ui-scale));
+  gap: var(--side-list-gap);
   overflow-y: auto;
   max-height: 40vh;
 }
@@ -617,21 +697,21 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: calc(7px * var(--ui-scale));
-  padding: calc(7px * var(--ui-scale)) calc(12px * var(--ui-scale));
-  border-radius: calc(6px * var(--ui-scale));
+  gap: var(--side-gap);
+  padding: var(--side-py) var(--side-px);
+  border-radius: var(--radius-sm);
   color: var(--cc-text-2);
-  font-size: calc(15px * var(--ui-scale));
+  font-size: var(--text-base);
   text-decoration: none;
   /* 行尾的「⋯」默认不显形，悬停/键盘聚焦这一行时才露出来。
      一排行里全是点会像一堆图标噪点，而且点它的人只有少数几个。
      focus-within 一起带上：opacity:0 的按钮仍然能被 Tab 选中，
      只挂 :hover 的话键盘用户会 Tab 到一个看不见的按钮上。 */
-  --row-menu-show: 0;
+  --row-tools: 0;
 }
 .app-cats__item:hover,
 .app-cats__item:focus-within {
-  --row-menu-show: 1;
+  --row-tools: 1;
 }
 .app-cats__item:hover {
   background: var(--cc-surface-2);
@@ -640,6 +720,18 @@ onBeforeUnmount(() => {
 .app-cats__item.is-on {
   background: var(--cc-primary-soft);
   color: var(--cc-primary);
+  font-weight: 500;
+}
+/* 拖拽时这一行是落点。跟树上的行同一组色（蓝=能放 / 红=不能放），
+   不另起一套视觉语言。压在 :hover 之后：hover 是常态、落点是一次性事件，
+   一次性的要压过常态，否则拖到哪行都看着像"只是悬停着"。 */
+.app-cats__item.is-drop {
+  background: var(--cc-primary);
+  color: #fff;
+}
+.app-cats__item.is-bad {
+  background: #fdecea;
+  color: #d4302b;
 }
 /* 名字吃掉全部剩余宽度，数字和图标才贴到同一条右边上。
    不给名字 flex 的话，space-between 会把余量均分给三个子元素——
@@ -651,18 +743,43 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 右对齐 + 最小宽度：一位数和两位数右边沿对齐，图标那一列也不会左右跳 */
+/* 右对齐 + 最小宽度：一位数和两位数右边沿对齐，图标那一列也不会左右跳。
+   数量跟「⋯」和展开箭头共用行上的 --row-tools，悬停/聚焦这一行才露出来。
+   一行平时只剩目录名，扫视的时候干净，动手的时候工具都在。 */
 .app-cats__count {
-  font-size: calc(13px * var(--ui-scale));
+  font-size: var(--text-sm);
   color: var(--cc-text-4);
   flex-shrink: 0;
-  min-width: calc(17px * var(--ui-scale));
+  min-width: 17px;
   text-align: right;
+  opacity: var(--row-tools, 1);
+  transition: opacity 0.15s;
+}
+.app-cats__expand {
+  display: inline-flex;
+  align-items: center;
+  /* border/background 这两条和同文件的 .app-side__add（＋）、RowMenu 的
+     .row-menu__btn（⋯）是**同一组**：全局 reset 只清了 margin/padding，
+     没清 border（base.css 的 `* { margin: 0; padding: 0 }`）。漏了的话
+     `<button>` 的默认边框就露成一个黑框——2026-10-07 实机截图就是这个。 */
+  border: none;
+  background: transparent;
+  padding: var(--sp-2);
+  margin-left: calc(-1 * var(--sp-4));
+  border-radius: var(--radius-xs);
+  color: var(--cc-text-4);
+  cursor: pointer;
+  opacity: var(--row-tools, 1);
+  transition: opacity 0.15s;
+}
+.app-cats__expand:hover {
+  background: var(--cc-surface-2);
+  color: var(--cc-text-1);
 }
 .app-side__empty {
-  padding: calc(5px * var(--ui-scale)) calc(12px * var(--ui-scale));
+  padding: var(--sp-5) var(--sp-10);
   margin: 0;
-  font-size: calc(14px * var(--ui-scale));
+  font-size: var(--text-md);
   color: var(--cc-text-4);
 }
 
@@ -673,13 +790,29 @@ onBeforeUnmount(() => {
 .app-side__user {
   display: flex;
   align-items: center;
-  gap: calc(10px * var(--ui-scale));
-  padding: calc(12px * var(--ui-scale)) calc(10px * var(--ui-scale)) calc(5px * var(--ui-scale));
+  gap: var(--sp-6);
+  padding: var(--sp-10) var(--sp-10) var(--sp-5);
   border-top: 1px solid var(--cc-surface-2);
+}
+/* 用户菜单在底栏里要**撑满**，齿轮才能被顶到最右。
+ *
+ * ⚠️ **撑的是 wrapper，不是触发器。** `ElDropdown` 的根是它自己包的一层
+ * `<div class="el-dropdown">`（node_modules/element-plus/.../dropdown2.mjs 的
+ * `createElementBlock("div", { class: [ns.b(), ...] })`），触发器在那一层**里面**。
+ * 所以给 `.app-side__user-trigger` 写 `flex: 1` 只会在 wrapper 内部把尖角推到
+ * 名字右边，**footer 层面那个 flex item 仍按内容收窄**，齿轮照样贴着尖角
+ * （2026-10-07 实机截图）。
+ *
+ * ElDropdown 没声明 `class` prop，但它只有一个根元素，Vue 的 fallthrough attrs
+ * 会把 class 合并到根 div 上——所以这个 class 确实落在 wrapper 上。
+ * `min-width: 0` 别省：不然长用户名的 min-content 会把这一格顶开、名字不省略号。 */
+.app-side__user-menu {
+  flex: 1;
+  min-width: 0;
 }
 .app-side__username {
   flex: 1;
-  font-size: calc(15px * var(--ui-scale));
+  font-size: var(--text-base);
   color: var(--cc-text-2);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -689,29 +822,32 @@ onBeforeUnmount(() => {
    用户点一下重试的状态，不该和"未设置昵称"那种中性缺省长得一样。 */
 .app-side__failed {
   flex: 1;
-  font-size: calc(15px * var(--ui-scale));
+  font-size: var(--text-base);
   color: var(--cc-danger);
 }
 /* 用户菜单的触发区：头像 + 名字 + 尖角，整块可点。
    以前这一格是「头像 + 名字 + 一个独立的退出图标」，现在退出收进下拉了，
-   触发区整体变成菜单入口，所以要自己给 cursor 和 hover 反馈。 */
+   触发区整体变成菜单入口，所以要自己给 cursor 和 hover 反馈。
+
+   **没有 `flex: 1`**：撑满 footer 那一格的是外层 wrapper（见上面 .app-side__user-menu），
+   这里是块容器里的普通子元素，`display: flex` 本身就让它填满宽度。
+   名字那一格（.app-side__username）才有 `flex: 1`，作用是把尖角推到最右。 */
 .app-side__user-trigger {
-  flex: 1;
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: calc(10px * var(--ui-scale));
+  gap: var(--sp-10);
   cursor: pointer;
   border-radius: var(--cc-radius-sm);
-  padding: calc(3px * var(--ui-scale));
-  margin: calc(-3px * var(--ui-scale));
+  padding: var(--sp-3);
+  margin: calc(-1 * var(--sp-6));
   transition: var(--cc-transition);
 }
 .app-side__user-trigger:hover {
   background: var(--cc-surface-2);
 }
 .app-side__user-caret {
-  font-size: calc(12px * var(--ui-scale));
+  font-size: var(--text-xs);
   color: var(--cc-text-4);
   flex-shrink: 0;
 }
@@ -725,24 +861,24 @@ onBeforeUnmount(() => {
 }
 
 .app-top {
-  height: calc(64px * var(--ui-scale));
+  height: 64px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: calc(18px * var(--ui-scale));
-  padding: 0 calc(24px * var(--ui-scale));
+  gap: var(--sp-13);
+  padding: 0 var(--sp-14);
   background: rgba(255, 255, 255, 0.85);
   border-bottom: 1px solid var(--cc-border);
 }
 .app-top__left {
   display: flex;
   align-items: center;
-  gap: calc(10px * var(--ui-scale));
+  gap: var(--sp-10);
   min-width: 0;
 }
 .app-top__crumb {
-  font-size: calc(18px * var(--ui-scale));
+  font-size: var(--text-2xl);
   font-weight: 600;
   color: var(--cc-text-1);
   /* 标题就一两个词，绝不该折行。左边被挤窄时应该先让搜索框收（下面给了 min-width），
@@ -752,16 +888,16 @@ onBeforeUnmount(() => {
 .app-top__actions {
   display: flex;
   align-items: center;
-  gap: calc(12px * var(--ui-scale));
+  gap: var(--sp-10);
 }
 .app-search {
-  width: calc(260px * var(--ui-scale));
+  width: 260px;
   /* 视口不够宽时先收搜索框，别把标题挤折行（el-input 默认不缩，得显式给 min-width） */
-  min-width: calc(110px * var(--ui-scale));
+  min-width: 110px;
   flex-shrink: 1;
 }
 .app-search :deep(.el-input__wrapper) {
-  border-radius: calc(16px * var(--ui-scale));
+  border-radius: var(--radius-xl);
   box-shadow: none;
   background: var(--cc-surface-2);
 }
@@ -770,8 +906,8 @@ onBeforeUnmount(() => {
   background: transparent;
   color: var(--cc-icon);
   cursor: pointer;
-  padding: calc(7px * var(--ui-scale));
-  font-size: calc(18px * var(--ui-scale));
+  padding: var(--sp-7);
+  font-size: var(--text-2xl);
   border-radius: var(--cc-radius-sm);
   display: flex;
 }
@@ -789,7 +925,15 @@ onBeforeUnmount(() => {
 .app-content {
   flex: 1;
   overflow-y: auto;
-  padding: calc(32px * var(--ui-scale)) calc(28px * var(--ui-scale)) calc(72px * var(--ui-scale));
+  /* 滚动条常驻留槽。**这不是美化，是修一个横跳**：内容是 `margin: 0 auto` 居中的，
+     而滚动条长在本元素里 —— 它一出现，容器内容宽度就少一条，**居中的起点跟着变**。
+     1920 / scale 1.3 下实测：内容被 max-width 截到 1664（宽度不变），
+     左起点从 (1864-1664)/2 = 100 跳到 (1849-1664)/2 ≈ 92，**整块内容横移 8px**。
+     触发条件只是"这一屏放不放得下"——「全部 33」和「待归类 3」卡片数差很多，
+     切一下筛选滚动条就时有时无，看着像筛选条自己动了一下。
+     留槽之后有没有滚动条都一样宽，起点也就固定了。 */
+  scrollbar-gutter: stable;
+  padding: var(--sp-15) var(--sp-15) 72px;
 }
 .app-content > * {
   margin: 0 auto;

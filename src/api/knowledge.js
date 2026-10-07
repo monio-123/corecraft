@@ -67,7 +67,14 @@ export function renameCategory(data) {
   return request.put('/kp/category/rename', data)
 }
 
-// 删除目录：其下知识点回到"未归类"（知识点本身不删）
+// 移动目录到新父级：{ id, parentId }，parentId 传 null / 0 = 移到顶层。
+// 落库只是改这一个字段——下级目录和知识点都靠引用，自动跟随，不用搬数据。
+// 成环（移到自己的下级）和目标下重名由后端挡，前端的置灰只是提前告知。
+export function moveCategory(data) {
+  return request.put('/kp/category/move', data)
+}
+
+// 删除目录：**整棵子树一并删**；子树里每一层的知识点都回到"未归类"（知识点本身不删）
 export function deleteCategory(id) {
   return request.delete(`/kp/category/${id}`)
 }

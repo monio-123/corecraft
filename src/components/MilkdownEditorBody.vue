@@ -352,16 +352,16 @@ function onTableDialogClose() {
 .md-toolbar {
   display: flex;
   align-items: center;
-  gap: calc(2px * var(--ui-scale));
+  gap: var(--sp-2);
   flex-wrap: wrap;
-  padding-bottom: calc(6px * var(--ui-scale));
+  padding-bottom: var(--sp-6);
   border-bottom: 1px solid var(--cc-border);
 }
 .md-toolbar .el-button {
-  height: calc(26px * var(--ui-scale));
+  height: 26px;
   margin: 0;
-  padding: 0 calc(7px * var(--ui-scale));
-  font-size: calc(13px * var(--ui-scale));
+  padding: 0 var(--sp-7);
+  font-size: var(--text-sm);
   color: var(--cc-text-2);
   border-radius: var(--cc-radius-sm);
 }
@@ -379,7 +379,7 @@ function onTableDialogClose() {
        变成唯一的导航手段，翻找任一段都要滚很久。
      这三个值随手记和知识点详情页共用一份，不按实例区分：详情页读长笔记时靠
      "跟着内容长"顶起来，旧的 270px 封顶反而是它嫌小的原因。 */
-  min-height: calc(135px * var(--ui-scale));
+  min-height: 135px;
   max-height: 80vh;
   overflow-y: auto;
   outline: none;       /* 去掉浏览器对 contenteditable 默认画的 focus outline（黑色长方形边框） */
@@ -389,7 +389,7 @@ function onTableDialogClose() {
   /* 字号 / 行高：原来**根本没设**，contenteditable 继承浏览器默认 16px。
      知识点的正文比它在列表卡片里的摘要（12.5px）还大一档，同一条知识在两个页面
      看着像两种东西，一行放不下几个字。 */
-  font-size: calc(14px * var(--ui-scale));
+  font-size: var(--text-md);
   line-height: 1.75;
   color: var(--cc-text-1);
   word-break: break-word;
@@ -451,29 +451,29 @@ function onTableDialogClose() {
    prosemirror 官方样式表只管排版不管字体，默认还是正文的无衬线。 */
 .milkdown-editor-body .ProseMirror code {
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-  font-size: calc(13px * var(--ui-scale));
+  font-size: var(--text-sm);
   background: var(--cc-surface-2);
   color: #c7254e;
-  padding: calc(1px * var(--ui-scale)) calc(5px * var(--ui-scale));
-  border-radius: calc(4px * var(--ui-scale));
+  padding: var(--sp-1) var(--sp-5);
+  border-radius: var(--radius-xs);
 }
 .milkdown-editor-body .ProseMirror pre {
   background: var(--cc-surface-2);
-  border-radius: calc(8px * var(--ui-scale));
-  padding: calc(12px * var(--ui-scale)) calc(14px * var(--ui-scale));
+  border-radius: var(--radius);
+  padding: var(--sp-10) var(--sp-11);
   overflow-x: auto;
-  margin: calc(10px * var(--ui-scale)) 0;
+  margin: var(--sp-10) 0;
 }
 .milkdown-editor-body .ProseMirror pre code {
   background: transparent;
   color: var(--cc-text-1);
   padding: 0;
-  font-size: calc(13px * var(--ui-scale));
+  font-size: var(--text-sm);
   line-height: 1.7;
 }
 .milkdown-editor-body .ProseMirror blockquote {
-  margin: calc(10px * var(--ui-scale)) 0;
-  padding: calc(2px * var(--ui-scale)) 0 calc(2px * var(--ui-scale)) calc(12px * var(--ui-scale));
+  margin: var(--sp-10) 0;
+  padding: var(--sp-2) 0 var(--sp-2) var(--sp-10);
   border-left: 2px solid var(--cc-border-strong);
   color: var(--cc-text-2);
 }
@@ -494,17 +494,17 @@ function onTableDialogClose() {
 .table-dialog {
   display: flex;
   flex-direction: column;
-  gap: calc(12px * var(--ui-scale));
-  padding: calc(4px * var(--ui-scale)) 0;
+  gap: var(--sp-10);
+  padding: var(--sp-4) 0;
 }
 .table-dialog__row {
   display: flex;
   align-items: center;
-  gap: calc(12px * var(--ui-scale));
+  gap: var(--sp-10);
 }
 .table-dialog__label {
-  width: calc(50px * var(--ui-scale));
-  font-size: calc(14px * var(--ui-scale));
+  width: 50px;
+  font-size: var(--text-md);
   color: #606266;
 }
 
@@ -512,17 +512,17 @@ function onTableDialogClose() {
 .ctx-menu {
   position: fixed;
   z-index: 9999;
-  min-width: calc(140px * var(--ui-scale));
+  min-width: 140px;
   background: #fff;
   border: 1px solid #ebeef5;
-  border-radius: calc(4px * var(--ui-scale));
+  border-radius: var(--radius-xs);
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
-  padding: calc(4px * var(--ui-scale)) 0;
-  font-size: calc(14px * var(--ui-scale));
+  padding: var(--sp-4) 0;
+  font-size: var(--text-md);
   color: #303133;
 }
 .ctx-menu__item {
-  padding: calc(8px * var(--ui-scale)) calc(16px * var(--ui-scale));
+  padding: var(--sp-8) var(--sp-12);
   cursor: pointer;
   white-space: nowrap;
   user-select: none;
@@ -534,8 +534,8 @@ function onTableDialogClose() {
 }
 .ctx-menu__item--sep {
   padding: 0;
-  margin: calc(4px * var(--ui-scale)) 0;
-  height: calc(1px * var(--ui-scale));
+  margin: var(--sp-4) 0;
+  height: 1px;
   background: #f0f2f5;
   cursor: default;
 }
@@ -551,15 +551,15 @@ function onTableDialogClose() {
   border-collapse: collapse;
   table-layout: fixed;
   width: 100%;
-  margin: calc(8px * var(--ui-scale)) 0;
+  margin: var(--sp-8) 0;
   overflow: hidden;
 }
 .milkdown-editor-body .ProseMirror th,
 .milkdown-editor-body .ProseMirror td {
   border: 1px solid #dcdfe6;
-  padding: calc(6px * var(--ui-scale)) calc(10px * var(--ui-scale));
+  padding: var(--sp-6) var(--sp-10);
   vertical-align: top;
-  min-width: calc(80px * var(--ui-scale));
+  min-width: 80px;
   position: relative;
 }
 .milkdown-editor-body .ProseMirror th {

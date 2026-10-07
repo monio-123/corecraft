@@ -257,18 +257,18 @@ onMounted(async () => {
 .permission-panel {
   border: 1px solid var(--cc-border-strong);
   border-radius: var(--cc-radius);
-  padding: calc(16px * var(--ui-scale));
-  min-height: calc(360px * var(--ui-scale));
+  padding: var(--sp-12);
+  min-height: 360px;
   overflow: auto;
 }
 
 .permission-node {
   display: inline-flex;
   align-items: center;
-  gap: calc(8px * var(--ui-scale));
+  gap: var(--sp-8);
 }
 
 .permission-node__tag {
-  margin-left: calc(6px * var(--ui-scale));
+  margin-left: var(--sp-6);
 }
 </style>

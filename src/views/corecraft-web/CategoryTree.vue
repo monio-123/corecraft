@@ -3,8 +3,6 @@
     class="ct"
     :class="`ct--${mode}`"
     :style="mode === 'nav' ? { top: anchorTop + 'px' } : null"
-    @mouseenter="onEnter"
-    @mouseleave="onLeave"
   >
     <p v-if="mode === 'drop'" class="ct__hint">
       {{ dnd.picking ? '点哪个目录' : '放到哪个目录' }}
@@ -18,10 +16,15 @@
       v-for="r in rows"
       :key="r.c.id"
       class="ct__node"
-      :class="{ 'is-drop': dnd.over === r.c.id }"
+      :class="{
+        'is-drop': dnd.over === r.c.id && dnd.overOk,
+        'is-bad': dnd.live && !dnd.overOk && dnd.over === r.c.id
+      }"
       :style="{ paddingLeft: 8 + r.depth * 14 + 'px' }"
       :data-cat-id="r.c.id"
+      :data-cat-name="r.c.name"
       @click="onPick(r.c)"
+      @pointerdown="onPointerDown"
     >
       <span class="ct__name">{{ r.c.name }}</span>
       <span class="ct__count">{{ counts[r.c.id] || 0 }}</span>
@@ -32,8 +35,6 @@
         :category="r.c"
         @add="emit('add', $event)"
         @rename="emit('rename', $event)"
-        @removed="emit('close')"
-        @menu="onMenu"
       />
     </div>
 
@@ -43,22 +44,23 @@
 
 <script setup>
 /**
- * 一棵目录树，两个用法：
+ * 一棵目录树，三个用法：
  *
  * - `mode="nav"`  侧边栏一级目录 hover 出来的弹层。铺开整棵子树，点行进入该目录，
- *                 行尾 ＋/－ 建和删子目录。移开鼠标即消失。
- * - `mode="drop"` 拖起未归类卡片时浮在内容区右侧的落点。行是可投放区，数字给出
+ *                 行尾 ＋/－ 建和删子目录，**按住行可以拖到别的目录下去**。移开鼠标即消失。
+ * - `mode="drop"` 拖起卡片/目录时浮在内容区右侧的落点。行是可投放区，数字给出
  *                 "这个目录下有多少条"，帮用户判断往哪放。
  *
- * 两种用法曾经是两个组件（原 CategoryCascade 递归级联 + CategoryDropTree），
+ * 三种用法曾经是两个组件（原 CategoryCascade 递归级联 + CategoryDropTree），
  * 但改成"一次铺开整棵子树的前序列表"之后两者长得一模一样了，所以合成一个。
- * 差异只有三处：贴哪、行的行为是什么、数字给不给——都由 mode 分支，没有别的分叉。
+ * 差异只有几处：贴哪、行的行为是什么、数字给不给——都由 mode 分支，没有别的分叉。
  *
  * 行是 store 摊平好的**前序**列表，不是这里递归出来的：递归写在模板里就只能
  * "本层列完再列子层"，父节点会被同层的兄弟拦腰截断，缩进表达不出父子关系。
  */
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import CategoryRowMenu from './CategoryRowMenu.vue'
+import { useTopicDrag } from './useTopicDrag'
 import {
   dnd, dndPickTo, flattenCategoryTree, getCategoryCountMap
 } from './useCorecraftWebStore'
@@ -71,13 +73,27 @@ const props = defineProps({
   anchorTop: { type: Number, default: 0 }
 })
 
-const emit = defineEmits(['pick', 'add', 'rename', 'enter', 'close'])
+// 2026-10-07 展开改成"点 › 打开、点遮罩关闭"之后，`enter` / `close` 事件就不再有人发、
+// 也没人接了，一并去掉。现在这棵树对外面只说三句话：选中一行（pick）、
+// 有人要新增子目录（add）、有人要改名（rename）——**开合不再归它管**。
+const emit = defineEmits(['pick', 'add', 'rename'])
 
 const rows = computed(() => flattenCategoryTree(props.items))
 const counts = computed(() => getCategoryCountMap())
 
-// 某一行上的「⋯」菜单是不是开着
-const menuOpen = ref(false)
+/**
+ * nav 模式下每行都是拖拽源：把某个目录拖到另一行下面 = 换父级。
+ * drop 模式不行——那时候用户正拖着别的东西，这棵树是落点不是源。
+ *
+ * **拖的是哪一行，从 event 的 currentTarget 上读**（和命中检测读 data-cat-id 同一套思路）：
+ * 18 行共用一个 handler，靠行上挂数据区分是哪一行，不用给每行绑一个闭包。
+ */
+const { onPointerDown } = useTopicDrag((e) => {
+  if (props.mode !== 'nav') return null
+  const id = Number(e.currentTarget?.dataset?.catId)
+  if (!id) return null
+  return { what: { catId: id }, label: e.currentTarget.dataset.catName || '' }
+})
 
 function onPick(c) {
   // 触屏的"点选归类"：点哪行就归到哪，归完浮层自动关
@@ -91,44 +107,37 @@ function onPick(c) {
 // 落点命中不走 dragover/drop（HTML5 DnD 那套），由 store 的 hitCategory() 用
 // elementFromPoint 算，行上只剩 data-cat-id 这个标记（见模板）。
 // 本组件 drop 模式下没有事件处理，也不需要。
-
-// 只有 nav 模式需要向外挂开合：落点浮层是跟着 dnd.live 生死走的，没有开合这回事。
-// 而在拖拽过程中发 close 会顺手 cancel 掉侧边栏那 300ms 的开菜单定时器。
-function onEnter() {
-  if (props.mode === 'nav') emit('enter')
-}
-
-function onLeave() {
-  // 菜单开着的时候不收这棵树。菜单 teleport 到 body，鼠标从行移到菜单的路上必然
-  // 触发一次 mouseleave，220ms 缓冲一到树就被收走，菜单连同它的事件处理一起没了——
-  // 表现就是"点开 ⋯ 能看见，点「重命名」没反应"。菜单本身就是当前在用的界面，
-  // 它关了树再收。
-  if (props.mode === 'nav' && !menuOpen.value) emit('close')
-}
-
-function onMenu(v) {
-  menuOpen.value = v
-  // 菜单关掉 = 用户已经用完了（点了某项、或点了空白、Esc）。没有命令跟着来的时候
-  // 就把树一起收走，免得"点空白关菜单"留下一个赖着不走的弹层。
-  if (!v) emit('close')
-}
+//
+// nav 模式下这棵树是**点开就一直开着**的：AppLayout 用遮罩关，不再靠鼠标移开收走，
+// 行上的「⋯」也只管自己的菜单。2026-10-07 把随之空掉的 menuOpen / onMenu 一起删了：
+// 那条链子从 RowMenu 一路传下来，终端是一个只写不读的 ref，没有任何消费者。
 </script>
 
 <style scoped>
 .ct {
   background: #fff;
   border: 1px solid #e3e6eb;
-  border-radius: calc(10px * var(--ui-scale));
+  border-radius: var(--radius-md);
   box-shadow: 0 8px 28px rgba(31, 35, 41, 0.12);
-  padding: calc(7px * var(--ui-scale));
+  padding: var(--sp-7);
   max-height: 60vh;
   overflow-y: auto;
 }
-/* 贴侧边栏右缘，右移 6px 让它和触发行"接上"，留空隙就是死区 */
+/* 贴侧边栏右缘。**left 必须 ≥ 侧边栏宽度**（现在 264px，这里 270px 留 6px 缝）。
+   原来写 220px 是按更早的侧边栏宽度算的，后来侧边栏变宽了、这里没跟着改，
+   结果弹层**盖住侧边栏目录行的右半边**。2026-10-07 实机撞出来：
+   "往第一层某个目录中拖动不行，蓝框闪一下就没"——指针落在被盖住的那半边上，
+   `elementFromPoint` 命中的是弹层那个**没有 data-cat-id 的空容器**，
+   `closest` 找不到 → over = null → 落点高亮灭了，而且松手什么也不发生。
+   现在侧边栏行本身就是落点，重叠从"接得上"变成"挡落点"，必须让开。 */
 .ct--nav {
   position: fixed;
-  left: calc(220px * var(--ui-scale));
-  min-width: calc(180px * var(--ui-scale));
+  /* 贴着侧边栏右边沿：**跟 --w-side 走，不写死**。
+     侧边栏宽度已经可调（面板里能拖），这里写死 270 的话，改完宽度弹层就和
+     侧边栏脱开一条缝——而 #106 刚把 220→270 修好的那个"弹层盖住侧边栏落点"
+     问题会从另一个方向回来。多出来的 6px 是刻意留的缝。 */
+  left: calc(var(--w-side) + 6px);
+  min-width: 180px;
   z-index: 40;
 }
 /* 落点浮层：位置由 AppLayout 按指针坐标算好传进来（:style），这里只管外观。
@@ -136,26 +145,36 @@ function onMenu(v) {
    跟着指针走之后 "指针右下" 是默认位，靠近右/下边缘时由 AppLayout 翻到另一侧。 */
 .ct--drop {
   position: fixed;
-  width: calc(264px * var(--ui-scale));
-  max-height: calc(312px * var(--ui-scale));
+  /* 宽高取 token：AppLayout 的 dropTreeStyle 靠 getComputedStyle 读同两个值算
+     "贴到边时该往哪边翻"，抄一份常数的话两边一改就不同步。 */
+  width: var(--w-drop);
+  max-height: var(--h-drop);
   overflow-y: auto;
   z-index: 20;
 }
 .ct__hint {
-  margin: calc(2px * var(--ui-scale)) 0 calc(6px * var(--ui-scale));
-  padding: 0 calc(8px * var(--ui-scale));
-  font-size: calc(13px * var(--ui-scale));
+  margin: var(--sp-2) 0 var(--sp-6);
+  padding: 0 var(--sp-8);
+  font-size: var(--text-sm);
   color: #b6bac1;
 }
 .ct__node {
   display: flex;
   align-items: center;
-  gap: calc(7px * var(--ui-scale));
-  padding: calc(6px * var(--ui-scale)) calc(10px * var(--ui-scale));
-  border-radius: calc(5px * var(--ui-scale));
-  font-size: calc(12.5px * var(--ui-scale));
+  gap: var(--sp-7);
+  padding: var(--sp-6) var(--sp-10);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
   color: #1f2329;
   cursor: pointer;
+  /* 行是拖拽源（nav 模式），禁掉文本选择。**跟 .card 上那三条是同一组，缺一条就露馅**：
+     少了 user-select，按下拖动时浏览器当场开始选文字，树里几行目录名会被染成蓝块
+     （2026-10-07 实机）。少了 -webkit-touch-callout，iOS 长按还会先弹系统「复制/查找」
+     菜单，拖拽根本起不来。
+     **touch-action 不在这里设**：树本身要能滚，写死等于把滚动禁了。 */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 .ct--drop .ct__node {
   cursor: copy;
@@ -171,6 +190,16 @@ function onMenu(v) {
 .ct__node.is-drop .ct__count {
   color: rgba(255, 255, 255, 0.8);
 }
+/* 命中的位置**不能放**（成环 / 目标下重名）。用红而不是置灰：
+   置灰在树里混在正常行里几乎看不出来，红的才"这里被划掉了"。
+   能不能放由 store 的 checkDrop 算好放在 dnd.overOk，模板只读结果。 */
+.ct__node.is-bad {
+  background: #fdecea;
+  color: #d4302b;
+}
+.ct__node.is-bad .ct__count {
+  color: rgba(212, 48, 43, 0.7);
+}
 .ct__name {
   flex: 1;
   min-width: 0;
@@ -179,14 +208,14 @@ function onMenu(v) {
   white-space: nowrap;
 }
 .ct__count {
-  font-size: calc(13px * var(--ui-scale));
+  font-size: var(--text-sm);
   color: #b6bac1;
   flex-shrink: 0;
 }
 .ct__empty {
   margin: 0;
-  padding: calc(7px * var(--ui-scale)) calc(10px * var(--ui-scale));
-  font-size: calc(14px * var(--ui-scale));
+  padding: var(--sp-7) var(--sp-10);
+  font-size: var(--text-md);
   color: #b6bac1;
 }
 </style>

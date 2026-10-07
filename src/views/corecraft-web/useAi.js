@@ -136,8 +136,17 @@ export const currentEndpoint = computed(
  * @param onReasoning 每收到一段思考过程调用一次（**非思考模型不会触发**）
  * @param signal  传 AbortSignal 可以中途取消
  * @param questionKey 引导问题的字典 value（`key:contexts`）；用户自己敲的题不传
+ * @param scene 问答场景，取字典 ai_system_prompt 的 value。**调用方必须显式给**，
+ *   不在这里兜默认值——兜出来的场景一旦和实际用途对不上，症状是"AI 答非所问"，
+ *   看着完全正常，排查起来比报错费劲得多
+ * @param history 之前几轮 `[{question, answer}]`。**协议无状态，不带过去模型就不记得**
+ *   （曾经就是这样：抽屉里明明是同一个对话，AI 却答"我没有上下文记忆"）。
+ *   带多少轮由后端 `HISTORY_TURNS` 决定，这儿只管把已完成的轮次交上去
  */
-export async function ask(question, { topicId, onPrompt, onDelta, onReasoning, signal, questionKey } = {}) {
+export async function ask(
+  question,
+  { topicId, scene, history, onPrompt, onDelta, onReasoning, signal, questionKey } = {}
+) {
   if (!aiEnabled.value) {
     throw new Error('AI 开关没打开，去「侧边栏头像 → AI 设置」里启用')
   }
@@ -145,7 +154,7 @@ export async function ask(question, { topicId, onPrompt, onDelta, onReasoning, s
     throw new Error('还没选好 API，去「侧边栏头像 → AI 设置」里添加一个并选中')
   }
   return streamChat(
-    { topicId, question, endpointId: currentEndpoint.value.id, questionKey },
+    { topicId, question, endpointId: currentEndpoint.value.id, questionKey, scene, history: history || [] },
     { onPrompt, onDelta, onReasoning },
     signal
   )

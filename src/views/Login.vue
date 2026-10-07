@@ -101,11 +101,11 @@ const handleLogin = async () => {
 }
 
 .login-box {
-  width: calc(1000px * var(--ui-scale));
-  height: calc(600px * var(--ui-scale));
+  width: 1000px;
+  height: 600px;
   display: flex;
   background: white;
-  border-radius: calc(8px * var(--ui-scale));
+  border-radius: var(--radius);
   box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
   overflow: hidden;
 }
@@ -136,7 +136,7 @@ const handleLogin = async () => {
 
 .login-right {
   flex: 1;
-  padding: calc(40px * var(--ui-scale));
+  padding: var(--sp-16);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -144,9 +144,9 @@ const handleLogin = async () => {
 
 h2 {
   text-align: center;
-  margin-bottom: calc(40px * var(--ui-scale));
+  margin-bottom: var(--sp-16);
   color: #333;
-  font-size: calc(28px * var(--ui-scale));
+  font-size: var(--text-h);
 }
 
 /* 移动端适配 */
@@ -162,12 +162,12 @@ h2 {
   }
 
   .login-right {
-    padding: calc(30px * var(--ui-scale)) calc(20px * var(--ui-scale));
+    padding: var(--sp-15) var(--sp-13);
   }
 
   h2 {
-    margin-bottom: calc(30px * var(--ui-scale));
-    font-size: calc(24px * var(--ui-scale));
+    margin-bottom: var(--sp-15);
+    font-size: var(--text-h);
   }
 }
 
@@ -175,7 +175,7 @@ h2 {
 @media screen and (min-width: 769px) and (max-width: 1024px) {
   .login-box {
     width: 90%;
-    height: calc(500px * var(--ui-scale));
+    height: 500px;
   }
 }
 </style> 

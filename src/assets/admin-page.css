@@ -19,7 +19,7 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: calc(16px * var(--ui-scale));
+  gap: var(--sp-12);
 }
 
 /* 页头：标题在左、主操作在右 */
@@ -27,20 +27,20 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: calc(12px * var(--ui-scale));
+  gap: var(--sp-10);
 }
 
 .page .page-head__title {
-  font-size: calc(18px * var(--ui-scale));
+  font-size: var(--text-2xl);
   font-weight: 600;
   color: var(--cc-text-1);
-  letter-spacing: calc(0.2px * var(--ui-scale));
+  letter-spacing: var(--ls-tight);
 }
 
 .page .page-head__actions {
   display: flex;
   align-items: center;
-  gap: calc(10px * var(--ui-scale));
+  gap: var(--sp-10);
 }
 
 /* 面板：双栏布局里的每一格（树 / 详情 / 列表）。
@@ -49,13 +49,13 @@
   background: var(--cc-surface);
   border: 1px solid var(--cc-border-strong);
   border-radius: var(--cc-radius);
-  padding: calc(16px * var(--ui-scale));
-  min-height: calc(520px * var(--ui-scale));
+  padding: var(--sp-12);
+  min-height: 520px;
   overflow: auto;
 }
 
 .page .panel__title {
-  font-size: calc(15px * var(--ui-scale));
+  font-size: var(--text-base);
   font-weight: 600;
   color: var(--cc-text-1);
 }
@@ -65,14 +65,14 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: calc(12px * var(--ui-scale));
-  margin-bottom: calc(14px * var(--ui-scale));
+  gap: var(--sp-10);
+  margin-bottom: var(--sp-11);
 }
 
 .page .panel-head__actions {
   display: flex;
   align-items: center;
-  gap: calc(8px * var(--ui-scale));
+  gap: var(--sp-8);
 }
 
 /* 操作区：一行文字链接，右对齐，间距均匀。
@@ -82,7 +82,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: calc(2px * var(--ui-scale));
+  gap: var(--sp-2);
 }
 .page .ops .el-button + .el-button {
   margin-left: 0;
@@ -92,10 +92,10 @@
    故意不加 .page 前缀：弹窗里的同类说明被 teleport 到 body，已经不在 .page 之内，
    加前缀会让弹窗内那一份彻底没有样式（面板内的还在，看起来"半边生效"）。 */
 .hint {
-  font-size: calc(12px * var(--ui-scale));
+  font-size: var(--text-xs);
   color: var(--cc-text-3);
   line-height: 1.6;
-  margin-top: calc(6px * var(--ui-scale));
+  margin-top: var(--sp-6);
 }
 
 /* ============================================================
@@ -112,7 +112,7 @@
   --el-table-header-text-color: var(--cc-text-3);
   --el-table-header-bg-color: transparent;
   --el-table-row-hover-bg-color: var(--cc-surface-2);
-  font-size: calc(14px * var(--ui-scale));
+  font-size: var(--text-md);
   border-radius: var(--cc-radius);
   overflow: hidden;
 }
@@ -127,13 +127,13 @@
 .page .el-table thead th.el-table__cell {
   background: transparent;
   font-weight: 500;
-  font-size: calc(13px * var(--ui-scale));
-  height: calc(44px * var(--ui-scale));
+  font-size: var(--text-sm);
+  height: 44px;
 }
 
 /* 数据行：给足呼吸高度 */
 .page .el-table tbody td.el-table__cell {
-  height: calc(50px * var(--ui-scale));
+  height: 50px;
 }
 
 /* 单元格一律单行。EP 默认 word-break: break-all，会把"系统管理员"、
@@ -205,10 +205,10 @@
 /* 树节点里的类型标签：再降一档，12px 就够，它是结构信息不是状态信息 */
 .page .tree-node__tag,
 .page .permission-node__tag {
-  font-size: calc(12px * var(--ui-scale));
-  padding: 0 calc(6px * var(--ui-scale));
-  height: calc(20px * var(--ui-scale));
-  line-height: calc(20px * var(--ui-scale));
+  font-size: var(--text-xs);
+  padding: 0 var(--sp-6);
+  height: 20px;
+  line-height: 20px;
 }
 
 /* ============================================================
@@ -219,7 +219,7 @@
  * 表格空态（el-table__empty-block）内部也是 el-empty，一并生效。
  * ============================================================ */
 .page .el-empty {
-  padding: calc(32px * var(--ui-scale)) 0;
+  padding: var(--sp-15) 0;
 }
 .page .el-empty__image {
   display: none;
@@ -227,5 +227,5 @@
 .page .el-empty__description,
 .page .el-table__empty-text {
   color: var(--cc-text-3);
-  font-size: calc(13px * var(--ui-scale));
+  font-size: var(--text-sm);
 }

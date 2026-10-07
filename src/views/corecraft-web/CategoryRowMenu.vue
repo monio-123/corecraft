@@ -1,5 +1,5 @@
 <template>
-  <RowMenu title="目录操作" :items="ITEMS" @command="onCommand" @menu="(v) => emit('menu', v)" />
+  <RowMenu title="目录操作" :items="ITEMS" @command="onCommand" />
 </template>
 
 <script setup>
@@ -18,7 +18,7 @@ import { confirmDeleteCategory } from './useCorecraftWebStore'
 const props = defineProps({
   category: { type: Object, required: true }
 })
-const emit = defineEmits(['add', 'rename', 'removed', 'menu'])
+const emit = defineEmits(['add', 'rename', 'removed'])
 
 // 菜单项写死成常量而不是在 onCommand 里比字符串：加一项只要动这一个数组，
 // 加错 command 名会在模板里就暴露（选项和分支对不上），不会变成"点了没反应"。

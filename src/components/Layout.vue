@@ -52,7 +52,6 @@
             <el-icon><Reading /></el-icon>
           </button>
         </el-tooltip>
-        <UiScaleSelect shell="admin" />
         <el-tooltip :content="tabsVisible ? '隐藏标签栏' : '显示标签栏'" placement="bottom">
           <button class="icon-btn" @click="tabsVisible = !tabsVisible">
             <el-icon><component :is="tabsVisible ? ArrowDown : ArrowUp" /></el-icon>
@@ -195,8 +194,6 @@ import { ArrowDown, ArrowUp, Reading } from '@element-plus/icons-vue'
 import { clearAuth, getMenuPaths, getMenuTree } from '../utils/auth'
 import { parseMeta, getIconComponent, isPlaceholderPath, shellOf } from '../utils/menu'
 import { bootstrapSession, hasAppMenus } from '../utils/session'
-import { applyUiScale, clearUiScale, getUiScale } from '../utils/uiScale'
-import UiScaleSelect from './UiScaleSelect.vue'
 import { updateMyPassword, updateMyProfile, uploadMyAvatar } from '../api/user'
 
 const route = useRoute()
@@ -593,8 +590,8 @@ const removeTab = (name) => {
 }
 
 onMounted(async () => {
-  // 本壳的缩放偏好写到 <html> 行内，和知识库那份互不影响（各存各的 localStorage key）
-  applyUiScale(getUiScale('admin'))
+  // admin 壳**没有任何界面偏好开关**（2026-10-07 那个百分比 chip 整个删掉了），
+  // 所以启动时什么都不用写：base.css 的 :root 就是这个壳的全部外观。
   try {
     await loadCurrentContext()
   } catch (e) {
@@ -604,7 +601,6 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   cleanupDragging()
-  clearUiScale()
 })
 </script>
 
@@ -621,10 +617,10 @@ onBeforeUnmount(() => {
 .header {
   display: flex;
   align-items: center;
-  gap: calc(20px * var(--ui-scale));
-  height: calc(56px * var(--ui-scale));
+  gap: var(--sp-13);
+  height: 56px;
   flex-shrink: 0;
-  padding: 0 calc(16px * var(--ui-scale)) 0 calc(20px * var(--ui-scale));
+  padding: 0 var(--sp-12) 0 var(--sp-13);
   background: var(--cc-surface);
   border-bottom: 1px solid var(--cc-border);
 }
@@ -632,27 +628,27 @@ onBeforeUnmount(() => {
 .brand {
   display: flex;
   align-items: center;
-  gap: calc(9px * var(--ui-scale));
+  gap: var(--sp-9);
   text-decoration: none;
   flex-shrink: 0;
 }
 .brand__logo {
-  width: calc(26px * var(--ui-scale));
-  height: calc(26px * var(--ui-scale));
-  border-radius: calc(7px * var(--ui-scale));
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius);
   background: var(--cc-logo-gradient);
   color: #fff;
-  font-size: calc(11px * var(--ui-scale));
+  font-size: var(--text-2xs);
   font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 .brand__name {
-  font-size: calc(15px * var(--ui-scale));
+  font-size: var(--text-base);
   font-weight: 600;
   color: var(--cc-text-1);
-  letter-spacing: calc(0.3px * var(--ui-scale));
+  letter-spacing: var(--ls-tight);
 }
 
 /* 导航：浅色菜单。原来的 background-color/text-color/active-text-color
@@ -671,11 +667,11 @@ onBeforeUnmount(() => {
 
 :deep(.admin-menu.el-menu--horizontal > .el-menu-item),
 :deep(.admin-menu.el-menu--horizontal > .el-sub-menu > .el-sub-menu__title) {
-  height: calc(56px * var(--ui-scale));
-  line-height: calc(56px * var(--ui-scale));
+  height: 56px;
+  line-height: 56px;
   margin: 0;
-  padding: 0 calc(12px * var(--ui-scale));
-  font-size: calc(14px * var(--ui-scale));
+  padding: 0 var(--sp-10);
+  font-size: var(--text-md);
   color: var(--cc-text-2);
   background: transparent;
   transition: var(--cc-transition);
@@ -700,14 +696,14 @@ onBeforeUnmount(() => {
 
 /* 子菜单浮层：Element Plus 默认白底浮层即可，不要再染深灰 */
 :deep(.admin-menu .el-menu--horizontal .el-menu) {
-  top: calc(56px * var(--ui-scale));
+  top: 56px;
   border-top: none;
   border-radius: var(--cc-radius);
   box-shadow: 0 4px 16px rgba(31, 35, 41, 0.1);
 }
 
 :deep(.admin-menu .el-menu-item) {
-  font-size: calc(14px * var(--ui-scale));
+  font-size: var(--text-md);
   color: var(--cc-text-2);
   transition: var(--cc-transition);
 }
@@ -723,7 +719,7 @@ onBeforeUnmount(() => {
 .user-info {
   display: flex;
   align-items: center;
-  gap: calc(4px * var(--ui-scale));
+  gap: var(--sp-4);
   flex-shrink: 0;
 }
 
@@ -731,8 +727,8 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: calc(30px * var(--ui-scale));
-  height: calc(30px * var(--ui-scale));
+  width: 30px;
+  height: 30px;
   border: none;
   border-radius: var(--cc-radius-sm);
   background: transparent;
@@ -748,9 +744,9 @@ onBeforeUnmount(() => {
 .user-trigger {
   display: inline-flex;
   align-items: center;
-  gap: calc(8px * var(--ui-scale));
-  padding: calc(4px * var(--ui-scale)) calc(8px * var(--ui-scale)) calc(4px * var(--ui-scale)) calc(4px * var(--ui-scale));
-  border-radius: calc(16px * var(--ui-scale));
+  gap: var(--sp-8);
+  padding: var(--sp-4) var(--sp-8) var(--sp-4) var(--sp-4);
+  border-radius: var(--radius-xl);
   cursor: pointer;
   transition: var(--cc-transition);
 }
@@ -758,11 +754,11 @@ onBeforeUnmount(() => {
   background: var(--cc-surface-2);
 }
 .user-name {
-  font-size: calc(14px * var(--ui-scale));
+  font-size: var(--text-md);
   color: var(--cc-text-2);
 }
 .user-caret {
-  font-size: calc(12px * var(--ui-scale));
+  font-size: var(--text-xs);
   color: var(--cc-text-4);
 }
 
@@ -772,9 +768,9 @@ onBeforeUnmount(() => {
 .tabs-row {
   display: flex;
   align-items: stretch;
-  height: calc(40px * var(--ui-scale));
+  height: var(--ctl-lg);
   flex-shrink: 0;
-  padding: 0 calc(20px * var(--ui-scale));
+  padding: 0 var(--sp-13);
   background: var(--cc-surface);
   border-bottom: 1px solid var(--cc-border);
 }
@@ -798,12 +794,12 @@ onBeforeUnmount(() => {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: calc(6px * var(--ui-scale));
-  height: calc(40px * var(--ui-scale));
-  padding: 0 calc(14px * var(--ui-scale));
+  gap: var(--sp-6);
+  height: var(--ctl-lg);
+  padding: 0 var(--sp-11);
   flex-shrink: 0;
   white-space: nowrap;
-  font-size: calc(13px * var(--ui-scale));
+  font-size: var(--text-sm);
   color: var(--cc-text-3);
   cursor: pointer;
   user-select: none;
@@ -812,11 +808,11 @@ onBeforeUnmount(() => {
 .page-tab::after {
   content: '';
   position: absolute;
-  left: calc(14px * var(--ui-scale));
-  right: calc(14px * var(--ui-scale));
+  left: var(--sp-11);
+  right: var(--sp-11);
   bottom: 0;
-  height: calc(2px * var(--ui-scale));
-  border-radius: calc(1px * var(--ui-scale));
+  height: 2px;
+  border-radius: var(--radius-xs);
   background: transparent;
   transition: background 0.15s;
 }
@@ -852,8 +848,8 @@ onBeforeUnmount(() => {
 }
 
 .page-tab__close {
-  font-size: calc(12px * var(--ui-scale));
-  padding: calc(2px * var(--ui-scale));
+  font-size: var(--text-xs);
+  padding: var(--sp-2);
   border-radius: 50%;
   color: var(--cc-text-4);
   opacity: 0;
@@ -872,19 +868,26 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   background: var(--cc-bg);
-  padding: calc(24px * var(--ui-scale));
+  padding: var(--sp-14);
   overflow-y: auto;
+  /* 和业务壳 .app-content 同一个毛病、同一个修法：下面的 .page-wrap 是
+     `margin: 0 auto` 居中的，滚动条却长在**本元素**里——它一出现容器就窄一条，
+     居中起点跟着横跳（切筛选 / 翻页时整块内容平移几像素）。
+     留槽之后有没有滚动条都一样宽。 */
+  scrollbar-gutter: stable;
 }
 
-/* 内容宽度上限：原来满宽铺到 2K 屏边。admin 表格页比业务壳宽，但不该无限宽。 */
+/* 内容宽度上限：原来满宽铺到 2K 屏边。admin 表格页比业务壳宽，但不该无限宽。
+   写死 1440，不跟业务壳的 --w-content 绑在一起：两个壳的内容宽度是各自定的，
+   只是碰巧现在同值（业务壳 1440 / admin 1440），绑在一起以后改一边就会连累另一边。 */
 .page-wrap {
-  max-width: calc(1440px * var(--ui-scale));
+  max-width: 1440px;
   margin: 0 auto;
 }
 
 .avatar-editor {
   display: flex;
   align-items: center;
-  gap: calc(16px * var(--ui-scale));
+  gap: var(--sp-12);
 }
 </style>

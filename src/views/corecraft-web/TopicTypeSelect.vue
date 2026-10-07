@@ -79,14 +79,14 @@ function pick(id) {
 .tt {
   display: inline-flex;
   align-items: center;
-  gap: calc(5px * var(--ui-scale));
-  height: calc(24px * var(--ui-scale));
-  padding: 0 calc(9px * var(--ui-scale));
+  gap: var(--sp-5);
+  height: 24px;
+  padding: 0 var(--sp-9);
   border: none;
-  border-radius: calc(4px * var(--ui-scale));
+  border-radius: var(--radius-xs);
   background: var(--cc-primary-soft);
   color: var(--cc-primary);
-  font-size: calc(13px * var(--ui-scale));
+  font-size: var(--text-sm);
   line-height: 1.6;
   cursor: pointer;
   white-space: nowrap;
@@ -97,24 +97,24 @@ function pick(id) {
   background: #e3efff;
 }
 .tt__icon {
-  font-size: calc(13px * var(--ui-scale));
+  font-size: var(--text-sm);
 }
 .tt__caret {
-  font-size: calc(11px * var(--ui-scale));
+  font-size: var(--text-2xs);
   opacity: 0.6;
 }
 .ttp {
   display: flex;
   flex-direction: column;
-  gap: calc(1px * var(--ui-scale));
+  gap: var(--sp-1);
 }
 .ttp__item {
   border: none;
   background: transparent;
   text-align: left;
-  padding: calc(7px * var(--ui-scale)) calc(10px * var(--ui-scale));
+  padding: var(--sp-7) var(--sp-10);
   border-radius: var(--cc-radius-sm);
-  font-size: calc(15px * var(--ui-scale));
+  font-size: var(--text-base);
   color: var(--cc-text-2);
   cursor: pointer;
 }
@@ -129,8 +129,8 @@ function pick(id) {
 }
 .ttp__empty {
   margin: 0;
-  padding: calc(7px * var(--ui-scale)) calc(10px * var(--ui-scale));
-  font-size: calc(13px * var(--ui-scale));
+  padding: var(--sp-7) var(--sp-10);
+  font-size: var(--text-sm);
   color: var(--cc-text-4);
   line-height: 1.6;
 }

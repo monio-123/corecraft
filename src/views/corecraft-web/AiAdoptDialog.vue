@@ -11,16 +11,17 @@
       <el-input v-model="draftTitle" placeholder="给它起个名字" />
     </template>
 
-    <!-- 目录。**匹配不上也给下拉**：AI 推荐的那个名字用户目录里没有，
-         但他自己能挑一个，比整条回答都不能采纳强 -->
+    <!-- 目录。树形下拉 + 顶上那个「+ 新建 数据库 / MySQL」——
+         做成一个选项而不是额外一个按钮：选它 = 建，不选它 = 改选已有的或不动。
+         闸门在用户手上，模型炸不出目录。层级由树的缩进表达，label 不重复路径。 -->
     <template v-else-if="field === 'categoryId'">
       <p class="adopt__now">现在：{{ currentCategoryName }}</p>
-      <p v-if="parsed?.unmatched" class="adopt__warn">
-        AI 推荐「{{ parsed.unmatched }}」，现有目录里没有这个名字。下面自己挑一个。
-      </p>
-      <el-select v-model="draftCategoryId" placeholder="选择目录" style="width: 100%">
-        <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
-      </el-select>
+      <CategoryTreeSelect
+        v-model="draftCategoryId"
+        :categories="categories"
+        :new-category="parsed?.newCategory || null"
+        placeholder="选择目录"
+      />
     </template>
 
     <!-- 标签。**写进去的是全部标签，不是只有 AI 推荐的**：
@@ -100,8 +101,11 @@
  * 顺带允许改（标签能去掉、目录能换、标题能重打），最后一步的确认权在人。
  */
 import { ref, computed, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 import { Close } from '@element-plus/icons-vue'
-import { adoptFieldOf, parseAdopt } from './aiAdopt'
+import { adoptFieldOf, parseAdopt, NEW_CATEGORY } from './aiAdopt'
+import CategoryTreeSelect from './CategoryTreeSelect.vue'
+import { createCategory } from './useCorecraftWebStore'
 
 const props = defineProps({
   modelValue: Boolean,
@@ -178,14 +182,38 @@ function addTag() {
  * 每个分支各自产出一个对象，不要写成 `{title: ..., categoryId: ...}[field]`——
  * 那样 title 分支取出来的是**字符串**，后面 `patch.title` 就是 undefined，
  * JSON.stringify 会把整个键丢掉，后端收到 null，于是"什么也没改"，
- * 而接口照样 200、"已采纳"照弹。字符串是 truthy，`if (!patch)` 那道防线拦不住。 */
-function confirm() {
+ * 而接口照样 200、"已采纳"照弹。字符串是 truthy，`if (!patch)` 那道防线拦不住。
+ *
+ * 目录分支**可能先建目录**：选了「+ 新建「X」」就 createCategory 拿 id。
+ * 一次点击 = 一次确认，模型自己炸不出目录。重名会由后端抛，走 axios 拦截器统一提示。
+ */
+async function confirm() {
   const p = parsed.value
   let patch = null
-  if (field.value === 'title') patch = { title: draftTitle.value.trim() }
-  else if (field.value === 'categoryId') patch = { categoryId: draftCategoryId.value }
-  else if (field.value === 'tags') patch = { tags: [...draftTags.value] }
-  else if (field.value === 'quizQuestions') patch = { quizQuestions: p.quizQuestions }
+  if (field.value === 'title') {
+    patch = { title: draftTitle.value.trim() }
+  } else if (field.value === 'categoryId') {
+    if (draftCategoryId.value === NEW_CATEGORY) {
+      const nc = p?.newCategory
+      if (!nc) return
+      // 建完拿 id：createCategory 直接返回新建的那个（回查在 store 里做了）
+      const created = await createCategory(nc.name, nc.parentId ?? undefined)
+      if (created?.id == null) {
+        // 建成功了却查不到 = 列表没同步。这时候**不能发 patch**：
+        // categoryId 传 undefined 会被 updateTopic 回填成 null，
+        // 等于"把这条知识移回未归类"——一个用户根本没要求的改动
+        ElMessage.error('目录建了但没查到，这条知识先不归类')
+        return
+      }
+      patch = { categoryId: created.id }
+    } else {
+      patch = { categoryId: draftCategoryId.value }
+    }
+  } else if (field.value === 'tags') {
+    patch = { tags: [...draftTags.value] }
+  } else if (field.value === 'quizQuestions') {
+    patch = { quizQuestions: p.quizQuestions }
+  }
   if (!patch) return
   // 只发出去，成功提示由写入方在 await 之后再弹。失败提示走 axios 拦截器（它已经做了去重），
   // 在这里先弹"已采纳"会变成先报喜再报错。
@@ -197,29 +225,29 @@ function confirm() {
 <style scoped>
 .adopt__now,
 .adopt__hint {
-  margin-bottom: calc(8px * var(--ui-scale));
+  margin-bottom: var(--sp-8);
   color: var(--cc-text-3);
-  font-size: calc(12.5px * var(--ui-scale));
+  font-size: var(--text-xs);
 }
 .adopt__warn {
-  margin-bottom: calc(8px * var(--ui-scale));
+  margin-bottom: var(--sp-8);
   color: var(--el-color-warning);
-  font-size: calc(12.5px * var(--ui-scale));
+  font-size: var(--text-xs);
   line-height: 1.6;
 }
 .adopt__tags {
   display: flex;
   flex-wrap: wrap;
-  gap: calc(6px * var(--ui-scale));
-  margin-bottom: calc(10px * var(--ui-scale));
+  gap: var(--sp-6);
+  margin-bottom: var(--sp-10);
 }
 .adopt__quiz {
-  max-height: calc(300px * var(--ui-scale));
+  max-height: 300px;
   overflow-y: auto;
 }
 .adopt__quiz-block {
-  margin-bottom: calc(10px * var(--ui-scale));
-  font-size: calc(12.5px * var(--ui-scale));
+  margin-bottom: var(--sp-10);
+  font-size: var(--text-xs);
   line-height: 1.7;
 }
 .adopt__quiz-stem {
@@ -228,7 +256,7 @@ function confirm() {
 }
 .adopt__quiz-option {
   display: block;
-  padding-left: calc(14px * var(--ui-scale));
+  padding-left: var(--sp-11);
   color: var(--cc-text-3);
 }
 .adopt__quiz-option.is-answer {
@@ -236,13 +264,13 @@ function confirm() {
   font-weight: 600;
 }
 .adopt__raw {
-  max-height: calc(300px * var(--ui-scale));
+  max-height: 300px;
   overflow: auto;
-  padding: calc(10px * var(--ui-scale));
+  padding: var(--sp-10);
   border-radius: var(--cc-radius);
   background: var(--cc-surface-2);
   color: var(--cc-text-2);
-  font-size: calc(12px * var(--ui-scale));
+  font-size: var(--text-xs);
   white-space: pre-wrap;
   word-break: break-word;
 }

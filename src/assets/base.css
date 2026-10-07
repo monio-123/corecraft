@@ -42,27 +42,131 @@
   /* 品牌徽标渐变 */
   --cc-logo-gradient: linear-gradient(135deg, #409eff, #66b1ff);
 
-  /* ---- 界面缩放：唯一的旋钮 ----------------------------------------
+  /* ---- 界面偏好：没有全局旋钮（2026-10-07 删掉 --ui-scale）----------------
    *
-   * 全站所有尺寸都写成 `calc(Npx * var(--ui-scale))`，所以改这一个数就整体缩放。
-   * **为什么不用 CSS `zoom`**：zoom 是在**渲染那一刻**乘，会把 JS 写进行内样式的像素值
-   * （`style="left: 800px"`）也一起乘一遍，于是「JS 量到的坐标」和「浏览器画出来的位置」
-   * 对不上 —— 拖拽幽灵飘到光标旁边、`elementFromPoint` 命中的不是你看到的那行，
-   * Element Plus 的浮层（floating-ui 算完写回 translate）同样飘。而这两个系统
-   * （自建拖拽 + EP 浮层定位）都靠「JS 坐标 = 视口坐标」这条不变式。
+   * **这里原来有一个 `--ui-scale` 乘数 + 顶栏一个百分比 chip，2026-10-07 全部删掉。**
+   * 留着它有两个问题，都不是"不够好看"能概括的：
    *
-   * `calc()` 是在**声明那一刻**乘：样式表里的值放大，JS 写的行内值原样不动，
-   * 两个坐标空间始终一致。**行内样式不包 calc，这是这套方案能成立的前提。**
+   * ① **说不清它是什么的比例。** 那个数乘的是 66 个毫不相干的数值
+   *    （2px 边框、4px 间距、1440px 内容宽一起乘 1.3），没人能解释 130% 代表什么。
+   * ② **粒度对不上。** 想调某一类做不到——动 4px 会连带把 1440px 和 2px 一起动。
+   *    用户原话："**只能统一调无法精确调，某个地方我很满意但是另外的地方不满意**"。
    *
-   * 1 = 基准尺寸（2026-10-06 整体上调后的样子）。调它就是整体缩放。
-   * 两个壳各取各的值：知识库写在 body.is-app-scale，管理后台自己再声明，互不影响。
+   * **现在没有全局档位了。** 要调就按**维度**一个一个来，走 token：
+   * 组件里写 `var(--token)`，面板改的是 token 的**具体值**。
+   * 已经做好的第一组是**侧边栏**（宽度 + 密度，见 --side-* 和 utils/uiPrefs.js），
+   * 其余组按同样的方式一个个加。
+   *
+   * **字号不在其中**：它由**浏览器 Ctrl +/−** 管，默认就是最好看的。
+   * 应用再套一层是同一件事做两遍，还打架（「我们的字变了、EP 的框没变」）。
+   *
+   * ⚠️ **别用 CSS `zoom` 顶替这个空缺**。zoom 是在**渲染那一刻**乘，会把 JS 写进行内
+   * 样式的像素值（`style="left: 800px"`）也一起乘一遍，于是「JS 量到的坐标」和
+   * 「浏览器画出来的位置」对不上——拖拽幽灵飘到光标旁边、`elementFromPoint` 命中的
+   * 不是你看到的那行、Element Plus 的浮层（floating-ui 算完写回 translate）同样飘。
+   * 而自建拖拽和 EP 浮层定位都靠「JS 坐标 = 视口坐标」这条不变式。**这条别动。**
    * ---------------------------------------------------------------- */
-  --ui-scale: 1;
 
   /* 尺度 */
-  --cc-radius: calc(10px * var(--ui-scale));
-  --cc-radius-sm: calc(8px * var(--ui-scale));
+  --cc-radius: var(--radius-md);
+  --cc-radius-sm: var(--radius);
   --cc-transition: background 0.15s, color 0.15s;
+
+  /* ---- 尺寸阶梯：全站唯一的尺寸权威（2026-10-07 建）--------------------
+   *
+   * **组件里不再写数字，也不再写 `calc(Npx * var(--ui-scale))`。**
+   * 改之前：427 处 `calc(… × …)` 摊着 **66 个不同数值** + 128 处写死字号（16 个值）。
+   * 那是"一个无差别的乘数乘在 66 个毫不相干的数字上"——说不出 130% 代表什么，
+   * 也改不动单独某一类。
+   *
+   * 现在：按**维度**分成六族。判据是"同类的东西一起调"：
+   *   --text-*   字号        —— 横跨全站，是"读起来多大"
+   *   --sp-*     间距        —— padding / margin / gap
+   *   --radius-* 圆角
+   *   --ctl-*    控件盒      —— 图标按钮 / 头像 / 工具条
+   *   --w-*      栏宽        —— 结构量，**锁死不缩放**
+   *   --lh-* / --ls-*  行高 / 字距
+   *
+   * 台阶值**刻意取当前代码里的高频值**（2/4/6/8/10/12/14/16/20/24/32/40），
+   * 所以换完之后**绝大多数地方一个像素都没动**——只把约 20 处冷门值并进了最近的台阶。
+   * 想再收窄台阶时**一条条改、看着改**，而不是一次性赌一把。
+   * ---------------------------------------------------------------- */
+  /* 字号：11 档。原来散着 16 个值，其中 11.5 / 12.5 是"想凑整数差一点"的手写值，
+     那就是没有台阶的直接证据。 */
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-base: 15px;
+  --text-lg: 16px;
+  --text-xl: 17px;
+  --text-2xl: 18px;
+  --text-h: 24px;
+  --text-stat: 31px;
+  --text-hero: 72px;
+
+  /* 间距：16 档。1/2/3 单独留着——它们是"描边级"的紧贴，并成 4 会让一堆小控件变肥。 */
+  --sp-1: 1px;
+  --sp-2: 2px;
+  --sp-3: 3px;
+  --sp-4: 4px;
+  --sp-5: 5px;
+  --sp-6: 6px;
+  --sp-7: 7px;
+  --sp-8: 8px;
+  --sp-9: 10px;
+  --sp-10: 12px;
+  --sp-11: 14px;
+  --sp-12: 16px;
+  --sp-13: 20px;
+  --sp-14: 24px;
+  --sp-15: 32px;
+  --sp-16: 40px;
+
+  /* 圆角：7 档 */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 20px;
+
+  /* 控件盒：图标按钮 / 头像 / 工具条。**是"点得中"的尺寸**，跟着档位走有意义 */
+  --ctl-sm: 28px;
+  --ctl-md: 34px;
+  --ctl-lg: 40px;
+
+  /* 栏宽：结构量。--w-side 会被面板改（侧边栏宽度），--w-grid 是网格列宽下限——
+     **列宽不能变成可调项**：它是内容单位，放大到某个点会突然放不下三列、3 列掉 2 列，
+     版式整个变样（用户反馈过"调大了侧边栏把正文挤没了"）。 */
+  --w-side: 264px;
+  --w-grid: 400px;
+  --w-content: 1440px;
+
+  /* 拖拽落点浮层（CategoryTree 的 mode="drop"）的尺寸。
+     **JS 也要读它**：`dropTreeStyle` 靠它算"贴到视口边缘时该往哪边翻"，
+     读的是 getComputedStyle 而不是抄一份常数——抄一份的话两边一改就不同步，
+     症状是"浮层翻到了该翻的反面、还露一半在屏幕外"。 */
+  --w-drop: 264px;
+  --h-drop: 312px;
+
+  /* 侧边栏密度：三档（紧凑 / 适中 / 松散）。
+     **切档时覆盖的是下面这 4 个具体值，不是一个乘数** —— 乘数会把所有东西重新绑死，
+     正是 #116 拆掉的那件事。哪一档对应哪组值，见 utils/uiPrefs.js 的 SIDE_DENSITY。
+     这四样就是"松紧"本身：行高由 --side-py 决定，行内元素靠 --side-gap 分开，
+     相邻两行靠 --side-list-gap。左右内距 --side-px 顺带一起动（行是横的，
+     上下松了左右不跟会显得歪）。 */
+  --side-px: var(--sp-10);
+  --side-py: var(--sp-7);
+  --side-gap: var(--sp-7);
+  --side-list-gap: var(--sp-1);
+
+  /* 字距：发丝级的两档（0.2 / 0.3px），归到间距里会被当成"松紧"调。
+     ⚠️ **没有 --lh-* 行高档**：行高在代码里写的是**绝对 px**（16 / 20 / 24），
+     不是比例，换成比例 token 是行为变更不是重构。没换之前别加。 */
+  --ls-tight: 0.2px;
+  --ls-wide: 1px;
 
   /* 「一句话交互」弹窗的宽度。EP 的 MessageBox 默认 420px，比窄 dialog 还宽一圈，
      而"新建 / 重命名 / 删除"是同一个操作簇、挨着出现在屏幕上，宽度必须一致
@@ -70,15 +174,20 @@
      只能收敛成一个 token：dialog 的宽度是 width prop 渲染出来的内联 style，
      CSS 变量盖不住；MessageBox 的宽度是 --el-messagebox-width。
      两边各自引用同一个值，才不会改一边漏一边。 */
-  --cc-dialog-w-sm: calc(440px * var(--ui-scale));
+  --cc-dialog-w-sm: 440px;
 
   /* 内容区两档宽度。业务壳的"视觉签名"是"内容居中、两侧留白"，不是"内容撑满"——
      这正是它和 admin 壳满宽表格流的区别。留白留多少分两档：
-     列表 / 首页是卡片流，1280 能多排一列，喂得饱；
-     详情页是长文，1280 一行能塞 80+ 个汉字，超出舒适行宽，退回 920。
-     壳取默认档，详情页自己覆盖，所以值只在这里定一次。 */
-  --cc-content-w: calc(1280px * var(--ui-scale));
-  --cc-content-w-reading: calc(920px * var(--ui-scale));
+     - **列表 / 首页是卡片流**（--cc-content-w）：写死 1440。1280 是按"能多排一列"定的，
+       实际在 1920 上留白太多（两侧各 164px），内容飘在中间、既不撑满也不贴边。
+     - **详情页是长文**（--cc-content-w-reading）：920。它的值是**从字号算出来的**
+       （920 ÷ 16 ≈ 一行 60 个汉字），字号由浏览器 Ctrl +/− 管；**宽度跟着字号走才是
+       舒适行宽**，单独拉宽只会一行塞更多字、更难读。
+     壳取默认档，详情页自己覆盖，所以值只在这里定一次。
+     以后要调内容宽度，按 #5.2 的路子**单独加一组**（改 --w-content 的值即可），
+     不要退回"乘一个全局档位"。 */
+  --cc-content-w: var(--w-content);
+  --cc-content-w-reading: 920px;
 }
 
 *,
@@ -218,7 +327,7 @@ body {
   /* 跟 .card 的 12px 对齐 */
   --el-dialog-border-radius: 12px;
   /* 标题跟 .card__title / 面包屑同一档，不要 EP 的 large 再叠一层粗细差 */
-  --el-dialog-title-font-size: 18px;
+  --el-dialog-title-font-size: var(--text-2xl);
   --el-dialog-padding-primary: 22px;
   --el-dialog-box-shadow: 0 10px 36px rgb(31 35 41 / 10%);
 }
@@ -228,12 +337,12 @@ body {
 /* EP 的关闭按钮是 48×48 顶死右上角，比标题还抢眼；收到 28×28 退到边上，
    hover 给个浅灰底，跟侧边栏行 hover 是同一套反馈。 */
 .el-dialog__headerbtn {
-  top: calc(10px * var(--ui-scale));
-  right: calc(10px * var(--ui-scale));
-  width: calc(34px * var(--ui-scale));
-  height: calc(40px * var(--ui-scale));
-  font-size: calc(16px * var(--ui-scale));
-  border-radius: calc(6px * var(--ui-scale));
+  top: var(--sp-10);
+  right: var(--sp-10);
+  width: var(--ctl-md);
+  height: var(--ctl-lg);
+  font-size: var(--text-lg);
+  border-radius: var(--radius-sm);
 }
 .el-dialog__headerbtn .el-dialog__close {
   color: var(--cc-text-3);
@@ -248,7 +357,7 @@ body {
 .el-message-box {
   /* EP 默认 4px，比 dialog 还锐，和 12px 的卡片差了一倍还多 */
   --el-messagebox-border-radius: 12px;
-  --el-messagebox-font-size: 18px;
+  --el-messagebox-font-size: var(--text-2xl);
   /* 跟 --el-dialog-padding-primary 一样，两个框的左右留白才对得上 */
   --el-messagebox-padding-primary: 22px;
   --el-messagebox-box-shadow: 0 10px 36px rgb(31 35 41 / 10%);
@@ -265,13 +374,13 @@ body {
    虚高（实测 216px，而 dialog 只有 162px）。逐段收到跟 dialog 同一档，
    改完约 170px，两者才是一个级别。 */
 .el-message-box__header {
-  padding-bottom: calc(4px * var(--ui-scale));
+  padding-bottom: var(--sp-4);
 }
 .el-message-box__content {
-  padding: calc(12px * var(--ui-scale)) 0 calc(8px * var(--ui-scale));
+  padding: var(--sp-10) 0 var(--sp-8);
 }
 .el-message-box__btns {
-  padding-top: calc(8px * var(--ui-scale));
+  padding-top: var(--sp-8);
 }
 .el-message-box__title {
   font-weight: 600;
@@ -284,9 +393,9 @@ body {
    浅色界面上显脏。非 primary / 非 danger 的一律按次要处理。 */
 .el-dialog__footer .el-button,
 .el-message-box__btns .el-button {
-  height: calc(40px * var(--ui-scale));
-  padding: 0 calc(20px * var(--ui-scale));
-  border-radius: calc(8px * var(--ui-scale));
+  height: var(--ctl-lg);
+  padding: 0 var(--sp-13);
+  border-radius: var(--radius);
   font-weight: 500;
 }
 .el-dialog__footer .el-button:not(.el-button--primary):not(.el-button--danger),
@@ -327,7 +436,7 @@ body {
   box-shadow: 0 6px 20px rgb(31 35 41 / 8%);
 }
 .el-dropdown-menu {
-  padding: calc(4px * var(--ui-scale));
+  padding: var(--sp-4);
   border-radius: var(--cc-radius);
   /* EP 把这两个定义在 .el-dropdown__popper 上。在后代同名重定义对整棵子树生效，
      比重写 :hover 规则干净。 */
@@ -338,14 +447,14 @@ body {
   /* 字号 / 行高 / 内边距 EP 全是硬编码的，没有对应变量，只能写选择器。
      字号跟侧边栏目录行对齐（.app-cats__item 同为 15px）—— 同一个"菜单里挑一项"
      在两处的字高必须一样，否则点开菜单会觉得界面换了一套字号。 */
-  font-size: calc(15px * var(--ui-scale));
-  line-height: calc(24px * var(--ui-scale));
-  padding: calc(6px * var(--ui-scale)) calc(12px * var(--ui-scale));
+  font-size: var(--text-base);
+  line-height: 24px;
+  padding: var(--sp-6) var(--sp-10);
   border-radius: var(--cc-radius-sm);
   color: var(--cc-text-2);
 }
 .el-dropdown-menu__item--divided {
   /* 三项的菜单，分隔线只留够"这是另一组"的分量，别撑高度 */
-  margin: calc(4px * var(--ui-scale)) 0;
+  margin: var(--sp-4) 0;
   border-top-color: var(--cc-border);
 }

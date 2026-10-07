@@ -4,7 +4,7 @@ import {
   getTopicList, getTopicById, getTagList, getCategoryList,
   createTopic as apiCreateTopic, updateTopic as apiUpdateTopic, deleteTopic as apiDeleteTopic,
   createCategory as apiCreateCategory, renameCategory as apiRenameCategory,
-  deleteCategory as apiDeleteCategory,
+  moveCategory as apiMoveCategory, deleteCategory as apiDeleteCategory,
   renameTag as apiRenameTag, deleteTag as apiDeleteTag
 } from '../../api/knowledge'
 import { getDictTypeList, getDictItemList } from '../../api/dict'
@@ -77,11 +77,6 @@ export function encodeTag(tag) {
 function decodeTag(raw) {
   const value = String(raw || '').trim()
   return { name: value }
-}
-
-export function formatTagLabel(tag) {
-  if (!tag) return ''
-  return tag.name || ''
 }
 
 function decodeQuizQuestion(raw) {
@@ -490,34 +485,85 @@ export async function categorizeTopic(topic, categoryId) {
  *
  * 原来靠 dataTransfer 传 topicId，现在直接放 topicId —— 省掉一次序列化，
  * 也让命中检测（elementFromPoint）能独立于拖拽协议存在。
+ *
+ * 拖的东西有两种（2026-10-07）：**知识点**挪到目录下、**目录**挪到别的目录下。
+ * `topicId` 和 `catId` 二选一，同时非空是状态坏了。
  */
 export const dnd = reactive({
   live: false,      // 浮层可见（PC 拖拽中 / 触屏点了「⋯」）
   picking: false,   // 触屏的"点选归类"模式：点树上一行即归类，不拖东西进去
-  topicId: null,    // 正在归类哪条
-  over: null,       // 当前命中的目录
+  topicId: null,    // 正在归类哪条知识
+  catId: null,      // 正在移动哪个目录
+  over: null,       // 当前命中的目标：目录 id，或 ROOT_CATEGORY（= 移到顶层）
+  overOk: false,    // 命中的目标能不能放（成环 / 重名时置灰）
   x: 0, y: 0,       // 指针当前位置（幽灵跟这个走）
   ax: 0, ay: 0,     // 浮层锚点：起拖那一刻记下来，拖拽期间不再变
   label: ''         // 幽灵上显示的一行文字
 })
 
-/** 命中检测：指针下最近的、带 data-cat-id 的目录行（CategoryTree drop 模式渲染的）。
+/**
+ * 命中检测。**先找具体的目录行，再退到侧边栏整块**：
+ * 指针落在侧边栏某个一级目录那一行上 → 那个目录 id（拖过去 = 挪到它下面）；
+ * 落在侧边栏目录区的空白处（标题、间隙）→ ROOT_CATEGORY（挪成一级）。
+ *
+ * **顺序不能反**：`.app-cats__item` 是 `.app-side__section` 的后代，
+ * `closest('[data-cat-root]')` 从那一行往上找**也会命中**那个整块。
+ * 先判 data-cat-id 才有"拖到 JAVA 上 = 进 JAVA"这个说法。
+ *
+ * 侧边栏行当落点不是可选项，是**必须**：弹层铺的是 `childrenOf(那个目录)`、
+ * 不含它自己，所以「把 Hashmap 拖回 JAVA」和「把知识点放进一个没有下级的目录」
+ * 这两件事在只有弹层落点时**都无处可放**（后者更糟：没有下级时弹层压根不弹）。
  *
  * 拿不到坐标（0,0）时返回 null 而不是去命中 (0,0) 处的元素——
- * 视口原点通常没有目录行，但真命中了就是一次"凭空归类"，比不命中更坏。
+ * 视口原点通常没有落点，但真命中了就是一次"凭空归类"，比不命中更坏。
  */
 function hitCategory(x, y) {
   if (!x && !y) return null
   const el = document.elementFromPoint(x, y)
   const node = el?.closest?.('[data-cat-id]')
-  return node ? Number(node.dataset.catId) : null
+  if (node) return Number(node.dataset.catId)
+  return el?.closest?.('[data-cat-root]') ? ROOT_CATEGORY : null
 }
 
-export function dndStart(topicId, x, y, label = '') {
+/**
+ * 这个目标能不能放。**判断在这里做一次、结果放进 `dnd.overOk`**，
+ * 界面直接读那个布尔去置灰，不要在模板里每行重算一遍。
+ *
+ * 拖知识点时没有限制（任何目录都能放）。拖目录时挡两种：
+ * 1. **成环** —— 放到自己或自己的后代下，之后这棵树再也遍历不出根
+ * 2. **重名** —— 撞 DB 的 uk_user_parent_name
+ *
+ * 这两条后端也会再挡一次（HTTP 入口是外部输入边界）。前端置灰只是提前告知，
+ * 真正的保证在后端。
+ */
+function checkDrop(over) {
+  if (over == null) return false
+  if (dnd.catId == null) return dnd.topicId != null
+  if (over === dnd.catId) return false
+  if (over !== ROOT_CATEGORY && getCategorySubtreeIds(dnd.catId).has(over)) return false
+  const cat = getCategory(dnd.catId)
+  if (!cat) return false
+  return !categories.value.some(
+    (c) => c.id !== cat.id &&
+      (c.parentId || ROOT_CATEGORY) === (over || ROOT_CATEGORY) &&
+      c.name === cat.name
+  )
+}
+
+/**
+ * 开一次拖拽/点选，把状态一次性摆好。
+ *
+ * `dndStart`（拖）和 `dndPick`（触屏点选）之前各写一遍这十个字段——加一个字段
+ * 要记得改两处，漏一处就是"某种打开方式下幽灵还留着上一次的文字"这种症状。
+ * 参数化的只有两个：**拖什么**、**是不是点选模式**，其余完全一样。
+ */
+function openDnd(what, x, y, label, picking) {
   dnd.live = true
-  dnd.picking = false
-  dnd.topicId = topicId
+  dnd.picking = picking
+  dnd.topicId = what.topicId ?? null
+  dnd.catId = what.catId ?? null
   dnd.over = null
+  dnd.overOk = false
   dnd.x = x
   dnd.y = y
   dnd.label = label
@@ -528,10 +574,15 @@ export function dndStart(topicId, x, y, label = '') {
   dnd.ay = y
 }
 
+export function dndStart(what, x, y, label = '') {
+  openDnd(what, x, y, label, false)
+}
+
 export function dndMove(x, y) {
   dnd.x = x
   dnd.y = y
   dnd.over = hitCategory(x, y)
+  dnd.overOk = checkDrop(dnd.over)
 }
 
 /**
@@ -543,14 +594,9 @@ export function dndPick(topicId, anchorEl) {
   const r = anchorEl?.getBoundingClientRect()
   const x = r ? r.left + r.width / 2 : window.innerWidth / 2
   const y = r ? r.bottom : window.innerHeight / 3
-  dnd.live = true
-  dnd.picking = true
-  dnd.topicId = topicId
-  dnd.over = null
-  dnd.x = x
-  dnd.y = y
-  dnd.ax = x
-  dnd.ay = y
+  // 点选模式没有"拖"的东西，所以 label 传空：幽灵在 picking 时本来就不渲染
+  // （AppLayout 的 v-if 带 !dnd.picking），留着上一次的文字只会让人以为还能拖。
+  openDnd({ topicId }, x, y, '', true)
 }
 
 /** 触屏点选：直接归类，不拖东西进去。浮层关掉。 */
@@ -561,11 +607,32 @@ export async function dndPickTo(categoryId) {
   if (topic) await categorizeTopic(topic, categoryId)
 }
 
-/** 放下：命中了才归类，没命中就是取消（拖到空白处松手不该有副作用）。 */
+/**
+ * 移动目录。**只是改一个 parent_id**——下级目录靠 parent_id 引用、知识点靠
+ * category_id 引用，所以整棵树跟着动是自动的，不用搬任何数据。
+ *
+ * 成环和重名的提示由后端给（那里才是真保证），这里只负责把错误显示出来。
+ * 命名跟同文件的 renameCategory / deleteCategory 一齐：api 那份是 import 时的别名
+ * （apiMoveCategory），这三个才是对外的 store 能力。
+ */
+export async function moveCategory(categoryId, parentId) {
+  try {
+    await apiMoveCategory({ id: categoryId, parentId: parentId || null })
+    await ensureCategoriesLoaded(true)
+  } catch (e) {
+    ElMessage.error(e?.message || '移动失败')
+  }
+}
+
+/** 放下：命中了、而且那是个合法落点，才真的动手。没命中/非法 = 取消。 */
 export async function dndDrop() {
-  const { topicId, over } = dnd
+  const { topicId, catId, over, overOk } = dnd
   dndReset()
-  if (topicId == null || over == null) return
+  if (over == null || !overOk) return
+  if (catId != null) {
+    await moveCategory(catId, over)
+    return
+  }
   const topic = getTopics().find((t) => t.id === topicId)
   if (topic) await categorizeTopic(topic, over)
 }
@@ -574,7 +641,9 @@ export function dndReset() {
   dnd.live = false
   dnd.picking = false
   dnd.topicId = null
+  dnd.catId = null
   dnd.over = null
+  dnd.overOk = false
 }
 
 export function getCategoryName(categoryId) {
@@ -614,9 +683,23 @@ export function getUncategorizedCount() {
   return n
 }
 
+/**
+ * 新建目录，**返回刚建好的那一个**（拿不到时返回 null）。
+ *
+ * 后端建目录只返回「成功」，不给 id；而唯一键是 (user_id, parent_id, name)，
+ * **同名目录可以存在于不同父下**（`操作系统/内存` 和 `计算机网络/内存` 是两个），
+ * 所以回查必须**名字 + 父级一起比**，只按名字找会拿到另一个。
+ *
+ * 这个回查放在这里而不是让每个调用方自己写，是因为它**每次新建都得做一遍**，
+ * 不做的话调用方就必然各写一份（#98：两个采纳弹框里一模一样地写了两遍）。
+ * 源头给全，调用方一行拿到。
+ */
 export async function createCategory(name, parentId = ROOT_CATEGORY) {
   await apiCreateCategory({ name, parentId })
   await ensureCategoriesLoaded(true)
+  return getCategories().find(
+    (c) => c.name === name && (c.parentId || ROOT_CATEGORY) === (parentId || ROOT_CATEGORY)
+  ) || null
 }
 
 /** 重命名。按 id 定位，不按名字——名字是可变字段，拿它当键认不准改的是哪一个 */
@@ -637,11 +720,20 @@ export async function deleteCategory(id) {
  * 返回是否真的执行了：调用方据此决定要不要把整条树收走（删的可能正是它锚定的那个节点）。
  */
 export async function confirmDeleteCategory(c) {
+  // 确认框得说清**会删掉什么**。级联删除不可逆，只说"知识点回到未归类"等于让人瞎点。
+  const subtree = getCategorySubtreeIds(c.id)
+  const kidCount = subtree.size - 1
+  const topicCount = getTopics().filter((t) => t.categoryId != null && subtree.has(t.categoryId)).length
+  const lines = [`确定删除「${c.name}」？`]
+  if (kidCount > 0) {
+    lines.push(`${kidCount} 个下级目录会一起删除。`)
+  }
+  if (topicCount > 0) {
+    lines.push(`${topicCount} 条知识点回到未归类。`)
+  }
   try {
     await ElMessageBox.confirm(
-      // 只留用户真正需要预判的两件事：知识点去哪、下级目录去哪。
-      // 「不会被删」是对"回到未归类"的重复解释，删掉
-      `「${c.name}」里的知识点回到未归类，下级目录挂到它的上级。确定删除？`,
+      lines.join('\n'),
       '删除目录',
       { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
     )

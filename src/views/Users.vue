@@ -98,7 +98,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { assignUserRole, createUser, deleteUser, getUserPage, updateUser } from '../api/sysUser'
 import { getRoleList } from '../api/role'
-import { hasToken, hasPermission } from '../utils/auth'
+import { hasPermission } from '../utils/auth'
 
 const usersList = ref([])
 const loading = ref(false)
