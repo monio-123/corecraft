@@ -5,6 +5,8 @@ import com.mo.corecraft.exception.CoreCraftException;
 import com.mo.corecraft.model.entity.KpCategory;
 import com.mo.corecraft.model.query.KpCategoryQuery;
 import com.mo.corecraft.model.req.KpCategoryCreateReq;
+import com.mo.corecraft.model.req.KpCategoryImportNode;
+import com.mo.corecraft.model.req.KpCategoryImportReq;
 import com.mo.corecraft.model.req.KpCategoryRenameReq;
 import com.mo.corecraft.model.resp.KpCategoryResp;
 import com.mo.corecraft.repository.KpCategoryRepository;
@@ -16,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -26,31 +29,119 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class KpCategoryServiceImpl implements KpCategoryService {
 
+    /**
+     * 导入的目录树最深几层。
+     *
+     * <p>**和前端那处是同一条约定**（前端的预览也会拦）—— 改一处要改另一处。
+     * 为什么限着：目录树最深 4 层是这套体系一直的用法（`语言/java/基础/序列化`），
+     * 再深的树侧边栏和面包屑都撑不住。
+     */
+    private static final int MAX_IMPORT_DEPTH = 4;
+
+    /** 一次最多导多少个目录。防的是"贴了一整本书进来"那种量。 */
+    private static final int MAX_IMPORT_NODES = 300;
+
     private final KpCategoryRepository kpCategoryRepository;
 
     @Override
     public List<KpCategoryResp> listCategories(Long userId) {
-        return kpCategoryRepository.listByUserId(userId).stream().map(c -> {
-            KpCategoryResp r = new KpCategoryResp();
-            r.setId(c.getId());
-            r.setName(c.getName());
-            // getParentId() 已把历史 NULL 归一成 0，前端只面对一种"顶层"表示
-            r.setParentId(c.getParentId());
-            return r;
-        }).toList();
+        return kpCategoryRepository.listByUserId(userId).stream()
+                .map(c -> toResp(c.getId(), c.getName(), c.getParentId()))
+                .toList();
+    }
+
+    /**
+     * 目录 → 响应。**映射只存这一份**（列表和导入原来各手写一遍同样的三个 setter）。
+     *
+     * <p>⚠️ {@code parentId} 传的是**实体的 getParentId()**（已把历史 NULL 归一成 0），
+     * 不是裸字段 ⇒ 前端只面对一种"顶层"表示。
+     */
+    private KpCategoryResp toResp(Long id, String name, Long parentId) {
+        KpCategoryResp r = new KpCategoryResp();
+        r.setId(id);
+        r.setName(name);
+        r.setParentId(parentId);
+        return r;
     }
 
     @Override
     @Transactional
     public void createCategory(KpCategoryCreateReq req, Long userId) {
-        String name = req.getName().trim();
+        createOne(req.getName(), req.getParentId(), userId, false);
+    }
+
+    @Override
+    @Transactional
+    public List<KpCategoryResp> importTree(KpCategoryImportReq req, Long userId) {
+        Long mountId = req.getParentId() == null ? KpCategory.ROOT_ID : req.getParentId();
+        int total = countNodes(req.getNodes());
+        if (total > MAX_IMPORT_NODES) {
+            throw new CoreCraftException(ResultCodeEnum.FAIL,
+                    "一次最多创建 " + MAX_IMPORT_NODES + " 个目录，这批有 " + total + " 个");
+        }
+        // 挂载点自己占几层（顶层目录 = 1）。挂到第三层下面 = 新目录是第四层。
+        int baseDepth = depthOf(mountId, userId);
+        // 建好的目录（含合并复用的已有目录）—— 调用方靠 id 把知识点挂上去。
+        List<KpCategoryResp> built = new ArrayList<>();
+        for (KpCategoryImportNode node : req.getNodes()) {
+            importNode(node, mountId, baseDepth + 1, userId, built);
+        }
+        return built;
+    }
+
+    /**
+     * 某个目录在整棵体系里占几层：**顶层目录 = 1**，挂在它下面 = 2。
+     *
+     * <p>**层数是绝对的**（从根算），不是这批树里的相对层数 ——
+     * 侧边栏和面包屑撑不住的是绝对层数，相对层数算不出"挂到第三层下面"是不是超了。
+     *
+     * <p>顺带做了归属校验：不在本人目录树里的 id 一律当"不存在"，
+     * 否则能把目录挂到别人的树上去。查一次全量目录就够了（一次导入只算一次）。
+     */
+    private int depthOf(Long categoryId, Long userId) {
+        if (categoryId == null || KpCategory.ROOT_ID.equals(categoryId)) {
+            return 0;
+        }
+        Map<Long, Long> parentOf = new HashMap<>();
+        for (KpCategory c : kpCategoryRepository.listByUserId(userId)) {
+            parentOf.put(c.getId(), c.getParentId());
+        }
+        if (!parentOf.containsKey(categoryId)) {
+            throw new CoreCraftException(ResultCodeEnum.FAIL, "挂载目录不存在");
+        }
+        int depth = 0;
+        Long cur = categoryId;
+        // 上溯到根。上限 MAX_IMPORT_DEPTH + 1 层：再深就已经超了，
+        // 多算一层是为了让 importNode 把"超层"这条错误报出来。
+        while (cur != null && !KpCategory.ROOT_ID.equals(cur) && depth <= MAX_IMPORT_DEPTH) {
+            depth++;
+            cur = parentOf.get(cur);
+        }
+        return depth;
+    }
+
+    /**
+     * 建一个目录，返回它的 id。**单个新建和批量导入共用这一处** ——
+     * 同层重名、父目录归属、名字 trim 这些规则只有一份，改的时候不会只改一半。
+     *
+     * @param mergeIfExists 同层已经有同名目录时：true = 沿用已有的那个（导入用），
+     *                      false = 报错（手工建用）
+     */
+    private Long createOne(String rawName, Long rawParentId, Long userId, boolean mergeIfExists) {
+        String name = rawName.trim();
         // parentId 必须**先归一再查重**：查重用的是唯一键那三列，
         // 拿没归一的 parentId 去查会漏——库里历史数据有 parent_id 为 NULL 的。
-        Long parentId = req.getParentId() == null ? KpCategory.ROOT_ID : req.getParentId();
+        Long parentId = rawParentId == null ? KpCategory.ROOT_ID : rawParentId;
         // 唯一键是 (user_id, parent_id, name)，所以只有**同一层**才不许重名。
         // 不同父目录下的同名目录（操作系统/内存 和 计算机网络/内存）是允许的。
-        if (kpCategoryRepository.findByKey(userId, parentId, name).isPresent()) {
-            throw new CoreCraftException(ResultCodeEnum.FAIL, "同一层下已有同名目录");
+        var existing = kpCategoryRepository.findByKey(userId, parentId, name);
+        if (existing.isPresent()) {
+            if (!mergeIfExists) {
+                throw new CoreCraftException(ResultCodeEnum.FAIL, "同一层下已有同名目录");
+            }
+            // 导入：**沿用已有的那个**，把下级挂进去。
+            // 导入是"补全"——用户本来就有一棵树，贴进来的是同一套体系的另一版，撞名是常事。
+            return existing.get().getId();
         }
         if (!KpCategory.ROOT_ID.equals(parentId)) {
             // 父目录必须存在且是本人的，否则能把目录挂到别人的树上去
@@ -61,6 +152,42 @@ public class KpCategoryServiceImpl implements KpCategoryService {
         entity.setName(name);
         entity.setParentId(parentId);
         kpCategoryRepository.insert(entity);
+        return entity.getId();
+    }
+
+    /** 导入树里一共有多少个节点（用来卡上限） */
+    private int countNodes(List<KpCategoryImportNode> nodes) {
+        if (nodes == null) {
+            return 0;
+        }
+        int n = 0;
+        for (KpCategoryImportNode node : nodes) {
+            n += 1 + countNodes(node.getChildren());
+        }
+        return n;
+    }
+
+    /**
+     * 递归建：先建自己拿到 id，再建下级（挂在这个 id 底下）。
+     *
+     * <p>每建一个就记进 {@code built}：调用方要拿 id 把知识点挂到具体目录下。
+     * **合并复用的已有目录也记**（它的 id 就是知识点要挂的地方）。
+     */
+    private void importNode(KpCategoryImportNode node, Long parentId, int depth, Long userId,
+                            List<KpCategoryResp> built) {
+        if (depth > MAX_IMPORT_DEPTH) {
+            throw new CoreCraftException(ResultCodeEnum.FAIL,
+                    "目录最多 " + MAX_IMPORT_DEPTH + " 层，「" + node.getName() + "」已经超了");
+        }
+        Long id = createOne(node.getName(), parentId, userId, true);
+        KpCategoryResp row = toResp(id, node.getName().trim(), parentId);
+        built.add(row);
+        if (node.getChildren() == null) {
+            return;
+        }
+        for (KpCategoryImportNode child : node.getChildren()) {
+            importNode(child, id, depth + 1, userId, built);
+        }
     }
 
     @Override

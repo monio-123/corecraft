@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mo.corecraft.config.cache.CacheKeys;
 import com.mo.corecraft.config.cache.CacheManagerFacade;
-import com.mo.corecraft.config.storage.LocalStorageProperties;
 import com.mo.corecraft.config.security.resource.SecurityUser;
 import com.mo.corecraft.model.entity.SysUser;
 import com.mo.corecraft.model.query.SysUserQuery;
@@ -18,6 +17,7 @@ import com.mo.corecraft.repository.SysRoleRepository;
 import com.mo.corecraft.repository.SysUserRepository;
 import com.mo.corecraft.repository.SysUserRoleRepository;
 import com.mo.corecraft.service.SysUserService;
+import com.mo.corecraft.storage.FileStorage;
 import com.mo.corecraft.utils.BeanUtils;
 import com.mo.corecraft.utils.SecurityUtil;
 import lombok.RequiredArgsConstructor;
@@ -26,15 +26,17 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.List;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 public class SysUserServiceImpl implements SysUserService{
+
+    /**
+     * 可访问地址前缀。`server.servlet.context-path` 是 `/api`，而 `FileStorage`
+     * 只返回不含 host 的相对路径 —— **前缀在这一层补**，换存储实现时它不用变。
+     */
+    private static final String API_PREFIX = "/api/files/";
 
     private final SysUserRepository sysUserRepository;
 
@@ -44,7 +46,7 @@ public class SysUserServiceImpl implements SysUserService{
 
     private final PasswordEncoder passwordEncoder;
 
-    private final LocalStorageProperties localStorageProperties;
+    private final FileStorage fileStorage;
 
     @Override
     public SysUserResp selectSysUser(SysUserQuery query) {
@@ -92,7 +94,7 @@ public class SysUserServiceImpl implements SysUserService{
     @Override
     public SysUserProfileResp currentUserProfile() {
         SecurityUser user = requireCurrentUser();
-        SysUser entity = sysUserRepository.entityById(user.getSysUserDTO().getId());
+        SysUser entity = sysUserRepository.entityById(user.getUserId());
         SysUserProfileResp resp = BeanUtils.createFrom(entity, SysUserProfileResp.class);
         resp.setRoles(SecurityUtil.getRoles().stream().toList());
         resp.setPermissions(SecurityUtil.getPermissions());
@@ -102,7 +104,7 @@ public class SysUserServiceImpl implements SysUserService{
     @Override
     public void updateCurrentUserProfile(SysUserProfileUpdateReq req) {
         SecurityUser user = requireCurrentUser();
-        sysUserRepository.update(user.getSysUserDTO().getId(), req, (r, e) -> {
+        sysUserRepository.update(user.getUserId(), req, (r, e) -> {
             if (r.getNickname() != null) {
                 e.setNickname(r.getNickname());
             }
@@ -127,7 +129,7 @@ public class SysUserServiceImpl implements SysUserService{
             throw new RuntimeException("新密码和确认密码不一致");
         }
         SecurityUser user = requireCurrentUser();
-        SysUser entity = sysUserRepository.entityById(user.getSysUserDTO().getId());
+        SysUser entity = sysUserRepository.entityById(user.getUserId());
         if (entity == null || !passwordEncoder.matches(oldPassword, entity.getPassword())) {
             throw new RuntimeException("旧密码错误");
         }
@@ -135,29 +137,27 @@ public class SysUserServiceImpl implements SysUserService{
         sysUserRepository.update(entity);
     }
 
+    /**
+     * 头像走统一的 {@link FileStorage}，和正文图片同一套落盘逻辑。
+     *
+     * <p>原来这里自己拼文件名、自己 {@code Files.copy} 到 {@code avatar-dir}，
+     * 扩展名、UUID 命名、目录创建全在本方法里重复了一遍。存到哪去是**存储实现**的事，
+     * 这个方法只该回答"存成头像"——换 MinIO 时这里一个字都不用改。
+     *
+     * <p>返回的路径形状 {@code /api/files/avatars/xxx.png} 和以前完全一致，
+     * 所以库里已存的两个头像**不需要任何迁移**。
+     */
     @Override
     public String uploadCurrentUserAvatar(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new RuntimeException("头像文件不能为空");
         }
-        try {
-            String originalFilename = file.getOriginalFilename();
-            String suffix = ".png";
-            if (StringUtils.isNotBlank(originalFilename) && originalFilename.contains(".")) {
-                suffix = originalFilename.substring(originalFilename.lastIndexOf('.'));
-            }
-            String fileName = UUID.randomUUID().toString().replace("-", "") + suffix;
-            Path dir = Path.of(localStorageProperties.getAvatarDir());
-            Files.createDirectories(dir);
-            Files.copy(file.getInputStream(), dir.resolve(fileName), StandardCopyOption.REPLACE_EXISTING);
-            String avatarPath = "/api/files/avatars/" + fileName;
-            SysUserProfileUpdateReq req = new SysUserProfileUpdateReq();
-            req.setAvatar(avatarPath);
-            updateCurrentUserProfile(req);
-            return avatarPath;
-        } catch (Exception e) {
-            throw new RuntimeException("头像上传失败", e);
-        }
+        String avatarPath = API_PREFIX + fileStorage.put(
+                SecurityUtil.getUserId(), "avatars", file);
+        SysUserProfileUpdateReq req = new SysUserProfileUpdateReq();
+        req.setAvatar(avatarPath);
+        updateCurrentUserProfile(req);
+        return avatarPath;
     }
 
     @Override

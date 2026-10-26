@@ -43,6 +43,19 @@ public class KpTopicTagRepository extends AbstractRepository<KpTopicTag, KpTopic
                 .eq(KpTopicTag::getTagId, tagId));
     }
 
+    /**
+     * 一批 tag 的关联行。**tag 侧的批量版**（topic 侧有 {@link #listByTopicIds}）。
+     *
+     * <p>用它统计一批 tag 的引用数 ⇒ 一次查完，不用每个 tag 查一次。
+     */
+    public List<KpTopicTag> listByTagIds(List<Long> tagIds) {
+        if (tagIds == null || tagIds.isEmpty()) {
+            return List.of();
+        }
+        return mapper.selectList(new LambdaQueryWrapper<KpTopicTag>()
+                .in(KpTopicTag::getTagId, tagIds));
+    }
+
     public void deleteByTopicId(Long topicId) {
         // 走物理删：纯关联表不留墓碑，否则重新插入相同 (topic_id, tag_id) 会撞唯一键
         mapper.physicalDeleteByTopicId(topicId);

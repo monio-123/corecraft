@@ -26,8 +26,6 @@ public class KpTopicResp {
 
     private String tags;
 
-    private String quizQuestions;
-
     private List<Long> relatedTopicIds;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")

@@ -23,7 +23,10 @@ public class ResourceServerConfig {
     public SecurityFilterChain resourceServerFilterChain(HttpSecurity http, UserDetailsService userDetailsService) throws Exception {
         http
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/login", "/files/avatars/**", "/error").permitAll()
+                        // `/files/**` 免鉴权**不是疏忽**：`<img src>` 由浏览器直接发起，
+                        // 不会带 Authorization 头（JWT 存在 localStorage，只有 axios 手动加）。
+                        // 加上鉴权，所有图片都是裂图。安全性靠文件名是 UUID、不可猜。
+                        .requestMatchers("/login", "/files/**", "/error").permitAll()
                         .anyRequest().authenticated()
                 )
                 .cors(Customizer.withDefaults())

@@ -1,5 +1,6 @@
 package com.mo.corecraft.controller.system;
 
+import com.mo.corecraft.exception.CoreCraftException;
 import com.mo.corecraft.model.req.AiEndpointSaveReq;
 import com.mo.corecraft.model.resp.AiEndpointResp;
 import com.mo.corecraft.model.resp.ResultResp;
@@ -29,30 +30,27 @@ public class AiEndpointController {
 
     @RequestMapping(value = "", method = RequestMethod.GET)
     public ResultResp<List<AiEndpointResp>> list() {
-        return ResultResp.data(aiEndpointService.list(currentUserId()));
+        return ResultResp.data(aiEndpointService.list(SecurityUtil.getUserId()));
     }
 
     @RequestMapping(value = "", method = RequestMethod.POST)
     public ResultResp<AiEndpointResp> create(@Validated @RequestBody AiEndpointSaveReq req) {
         req.setId(null);
-        return ResultResp.data(aiEndpointService.save(currentUserId(), req));
+        return ResultResp.data(aiEndpointService.save(SecurityUtil.getUserId(), req));
     }
 
     @RequestMapping(value = "", method = RequestMethod.PUT)
     public ResultResp<AiEndpointResp> update(@Validated @RequestBody AiEndpointSaveReq req) {
         if (req.getId() == null) {
-            throw new com.mo.corecraft.exception.CoreCraftException("更新时必须带 API ID");
+            throw new CoreCraftException("更新时必须带 API ID");
         }
-        return ResultResp.data(aiEndpointService.save(currentUserId(), req));
+        return ResultResp.data(aiEndpointService.save(SecurityUtil.getUserId(), req));
     }
 
     @RequestMapping(value = "/{id}", method = RequestMethod.DELETE)
     public ResultResp<Void> delete(@PathVariable Long id) {
-        aiEndpointService.delete(currentUserId(), id);
+        aiEndpointService.delete(SecurityUtil.getUserId(), id);
         return ResultResp.success();
     }
 
-    private Long currentUserId() {
-        return SecurityUtil.getUser().getSysUserDTO().getId();
-    }
 }

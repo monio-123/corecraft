@@ -12,7 +12,31 @@
     <description>corecraft-server</description>
     <properties>
         <java.version>17</java.version>
+        <!-- AWS SDK v2 的版本号集中在这里，下面 dependencies 里那两条不写 version -->
+        <awssdk.version>2.17.282</awssdk.version>
     </properties>
+
+    <!--
+      BOM import **必须放在 dependencyManagement 里**，放在 dependencies 里不生效（报错
+      'dependencies.dependency.version ... is missing'）。
+      spring-boot-dependencies 3.2.8 不管 awssdk，所以自己引。
+
+      锁 2.17.282 是因为本机 .m2 已有 core/bom-internal，少下一次几百 MB；
+      它比 Boot 老不少，但 S3 签名和这几个 API 多年没变，自建服务端完全够用。
+      要升就把这个属性一处改掉。
+    -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${awssdk.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <dependencies>
         <dependency>
             <groupId>com.mo.corecraft</groupId>
@@ -56,6 +80,43 @@
             <groupId>mysql</groupId>
             <artifactId>mysql-connector-java</artifactId>
             <version>8.0.33</version>
+        </dependency>
+
+        <!--
+          S3 兼容对象存储（app.storage.kind=s3 时才用得上：RustFS / MinIO / SeaweedFS / Ceph RGW / 云 OSS）。
+
+          ⚠️ **`s3` 这个 artifact 自己就同时拖进了 apache-client 和 netty-nio-client 两个 HTTP 实现**
+          （都是 runtime 作用域），加上 url-connection-client 就是三个 —— 而 AWS SDK 碰到
+          多个实现会**拒绝猜测**、直接抛
+          `SdkClientException: Multiple HTTP implementations were found on the classpath`。
+          少写 url-connection-client 也一样炸：**不是它引入了这个问题，是 s3 本身就带着。**
+
+          所以要做的有两件事，各防一类：
+          · **排除**（这里）：两个都用不到的实现别进镜像，Apache HttpClient 和大半个 Netty
+            都是白占地方。防的是「体积」。
+          · **显式 .httpClientBuilder(...)**（FileStorageConfig 里）：把选择写死在代码里，
+            而不是依赖 classpath 上恰好只有一个。防的是「将来有人加了另一个 AWS 依赖，
+            排除失效、启动才炸」。
+
+          版本由上面的 BOM 统一管（awssdk.version 一处）。
+        -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>apache-client</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>netty-nio-client</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>url-connection-client</artifactId>
         </dependency>
     </dependencies>
 

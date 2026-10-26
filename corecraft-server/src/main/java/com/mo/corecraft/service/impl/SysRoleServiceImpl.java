@@ -78,7 +78,7 @@ public class SysRoleServiceImpl implements SysRoleService {
         });
         if (req.getPermissionIds() != null) {
             sysRolePermissionRepository.saveRolePermissions(req.getId(), req.getPermissionIds());
-            CacheManagerFacade.clear(CacheKeys.SECURITY_USER_RECORD);
+            clearUserCache();
         }
     }
 
@@ -87,13 +87,22 @@ public class SysRoleServiceImpl implements SysRoleService {
     public void deleteSysRole(Long id) {
         sysRolePermissionRepository.deleteByRoleId(id);
         sysRoleRepository.delete(id);
-        CacheManagerFacade.clear(CacheKeys.SECURITY_USER_RECORD);
+        clearUserCache();
     }
 
     @Override
     public void deleteBatchSysRole(List<Long> ids) {
         ids.forEach(sysRolePermissionRepository::deleteByRoleId);
         sysRoleRepository.deleteBatch(ids);
+        clearUserCache();
+    }
+
+    /**
+     * 角色 / 权限变了 ⇒ **登录态里的用户记录缓存要清**（否则改完权限还是旧权限）。
+     *
+     * <p>这条原来在 update / delete / deleteBatch 三处**逐字重复** ⇒ 收成一个方法。
+     */
+    private void clearUserCache() {
         CacheManagerFacade.clear(CacheKeys.SECURITY_USER_RECORD);
     }
 

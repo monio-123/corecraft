@@ -22,33 +22,35 @@ public class KpTopicController {
 
     @RequestMapping(value = "list", method = RequestMethod.GET)
     public ResultResp<List<KpTopicResp>> list(KpTopicQuery query) {
-        Long userId = SecurityUtil.getUser().getSysUserDTO().getId();
+        Long userId = SecurityUtil.getUserId();
         query.setUserId(userId);
         return ResultResp.data(kpTopicService.selectTopicList(query));
     }
 
     @RequestMapping(value = "{id}", method = RequestMethod.GET)
     public ResultResp<KpTopicResp> detail(@PathVariable("id") Long id) {
-        return ResultResp.data(kpTopicService.selectTopicById(id));
+        // 归属校验和上面 list 走同一处：两条路径以前不一致，详情那条漏了
+        Long userId = SecurityUtil.getUserId();
+        return ResultResp.data(kpTopicService.selectTopicById(id, userId));
     }
 
     @RequestMapping(value = "", method = RequestMethod.POST)
     public ResultResp<Void> create(@Validated @RequestBody KpTopicCreateReq req) {
-        Long userId = SecurityUtil.getUser().getSysUserDTO().getId();
+        Long userId = SecurityUtil.getUserId();
         kpTopicService.createTopic(req, userId);
         return ResultResp.success();
     }
 
     @RequestMapping(value = "", method = RequestMethod.PUT)
     public ResultResp<Void> update(@Validated @RequestBody KpTopicUpdateReq req) {
-        Long userId = SecurityUtil.getUser().getSysUserDTO().getId();
+        Long userId = SecurityUtil.getUserId();
         kpTopicService.updateTopic(req, userId);
         return ResultResp.success();
     }
 
     @RequestMapping(value = "{id}", method = RequestMethod.DELETE)
     public ResultResp<Void> delete(@PathVariable("id") Long id) {
-        Long userId = SecurityUtil.getUser().getSysUserDTO().getId();
+        Long userId = SecurityUtil.getUserId();
         kpTopicService.deleteTopic(id, userId);
         return ResultResp.success();
     }

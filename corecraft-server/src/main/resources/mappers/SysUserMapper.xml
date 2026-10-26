@@ -6,7 +6,6 @@
         <id column="id" jdbcType="BIGINT" property="id" />
         <result column="password" jdbcType="VARCHAR" property="password" />
         <result column="username" jdbcType="VARCHAR" property="username" />
-        <result column="dept_id" jdbcType="BIGINT" property="deptId" />
         <result column="nickname" jdbcType="VARCHAR" property="nickname" />
         <result column="avatar" jdbcType="VARCHAR" property="avatar" />
         <result column="email" jdbcType="VARCHAR" property="email" />
@@ -71,70 +70,5 @@
         </if>
         order by a.create_time desc
     </select>
-
-<!--    <select id="selectUserList" resultMap="BaseResultMap">-->
-<!--        select a.id, a.password, a.username, a.dept_id, a.create_time, a.update_time,-->
-<!--               c.code as role_code,-->
-<!--               e.code as permission_code-->
-<!--        from sys_user a-->
-<!--                 left join sys_user_role b on a.id = b.user_id-->
-<!--                 left join sys_role c on b.role_id = c.id-->
-<!--                 left join sys_role_permission d on c.id = d.role_id-->
-<!--                 left join sys_permission e on d.permission_id = e.id-->
-<!--        where 1 = 1-->
-<!--        <if test="query.username != null and query.username != ''">-->
-<!--            and a.username like concat('%', #{query.username}, '%')-->
-<!--        </if>-->
-<!--        <if test="query.roleCode != null and query.roleCode != ''">-->
-<!--            and c.role_code like concat('%', #{query.roleCode}, '%')-->
-<!--        </if>-->
-<!--        <if test="query.permissionCode != null and query.permissionCode != ''">-->
-<!--            and e.permission_code like concat('%', #{query.permissionCode}, '%')-->
-<!--        </if>-->
-<!--    </select>-->
-
-<!--    <select id="selectUserIds" resultMap="BaseResultMap">-->
-<!--        select a.id-->
-<!--        from sys_user a-->
-<!--        where 1 = 1-->
-<!--        <if test="query.username != null and query.username != ''">-->
-<!--          and a.username like concat('%', #{query.username}, '%')-->
-<!--        </if>-->
-<!--        <if test="query.roleCode != null and query.roleCode != ''">-->
-<!--            and exists (-->
-<!--            select 1-->
-<!--            from sys_user_role b-->
-<!--            join sys_role c on b.role_id = c.id-->
-<!--            where b.user_id = a.id-->
-<!--            and c.code like concat('%', #{query.roleCode}, '%')-->
-<!--            )-->
-<!--        </if>-->
-<!--        <if test="query.permissionCode != null and query.permissionCode != ''">-->
-<!--            and exists (-->
-<!--            select 1-->
-<!--            from sys_user_role b-->
-<!--            join sys_role_permission d on b.role_id = d.role_id-->
-<!--            join sys_permission e on d.permission_id = e.id-->
-<!--            where b.user_id = a.id-->
-<!--            and e.code like concat('%', #{query.permissionCode}, '%')-->
-<!--            )-->
-<!--        </if>-->
-<!--        order by a.create_time desc-->
-<!--    </select>-->
-
-<!--    <select id="selectUserByIds" resultMap="BaseResultMap">-->
-<!--        select a.id, a.password, a.username, a.dept_id, a.create_time, a.update_time,-->
-<!--        c.code as role_code,-->
-<!--        e.code as permission_code-->
-<!--        from sys_user a-->
-<!--        left join sys_user_role b on a.id = b.user_id-->
-<!--        left join sys_role c on b.role_id = c.id-->
-<!--        left join sys_role_permission d on c.id = d.role_id-->
-<!--        left join sys_permission e on d.permission_id = e.id-->
-<!--        where a.id in-->
-<!--        <foreach collection="ids" item="id" open="(" separator="," close=")">-->
-<!--            #{id}-->
-<!--        </foreach>-->
-<!--    </select>-->
 
 </mapper>

@@ -1,6 +1,7 @@
 package com.mo.corecraft.service;
 
 import com.mo.corecraft.model.req.KpCategoryCreateReq;
+import com.mo.corecraft.model.req.KpCategoryImportReq;
 import com.mo.corecraft.model.req.KpCategoryRenameReq;
 import com.mo.corecraft.model.resp.KpCategoryResp;
 
@@ -12,6 +13,22 @@ public interface KpCategoryService {
 
     /** 新建目录；重名抛异常 */
     void createCategory(KpCategoryCreateReq req, Long userId);
+
+    /**
+     * 批量导入目录树：**一次提交整棵树，一个事务里建完**。
+     *
+     * <p>目录原来只能一个一个建，导入一棵几十个节点的树就是几十次请求 ——
+     * 中途失败留半棵树，重复导入也做不了幂等。
+     *
+     * <p>**只导目录**（节点里没有知识点正文）。同层重名由唯一键挡着，
+     * 报的是"同一层下已有同名目录"（和单个建目录同一句话）。
+     *
+     * <p>**返回这批目录的 id**（新建的和合并复用的都算）：调用方要拿 id
+     * 把知识点挂到具体目录下 —— 目录名会变、还可能撞名，**id 才是身份**。
+     *
+     * @return 本次涉及的所有目录 `{ id, name, parentId }`（前序顺序）
+     */
+    List<KpCategoryResp> importTree(KpCategoryImportReq req, Long userId);
 
     /** 重命名目录；新名被占用抛异常 */
     void renameCategory(KpCategoryRenameReq req, Long userId);

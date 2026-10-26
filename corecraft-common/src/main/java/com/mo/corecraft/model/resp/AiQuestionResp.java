@@ -15,7 +15,7 @@ import lombok.Setter;
 public class AiQuestionResp {
 
     /**
-     * 字典项的 value 原样透传，格式 `key:contexts`（如 `pick_category:categories`）。
+     * 引导问题的短名原样透传，格式 `key:contexts`（如 `pick_category:categories`）。
      * 前端只当不透明字符串回传，服务端自己 split。
      */
     private String key;

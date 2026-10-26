@@ -88,7 +88,7 @@ public class AuthorizationServerConfig {
     public SecurityFilterChain formLoginSecurityFilterChain(HttpSecurity http, UserDetailsService userDetailsService) throws Exception {
         http
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/login", "/css/**", "/js/**", "/files/avatars/**").permitAll()
+                        .requestMatchers("/login", "/css/**", "/js/**", "/files/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .formLogin(Customizer.withDefaults())
@@ -96,20 +96,6 @@ public class AuthorizationServerConfig {
                 .csrf(AbstractHttpConfigurer::disable);
         return http.build();
     }
-
-//    /**
-//     * spring security 默认登录用户密码
-//     */
-//    @Bean
-//    @Primary
-//    public UserDetailsService userDetailsService() {
-//        UserDetails user = User.builder()
-//                .username("user")
-//                .password(passwordEncoder().encode("password"))
-//                .roles("USER")
-//                .build();
-//        return new InMemoryUserDetailsManager(user);
-//    }
 
     @Bean
     public PasswordEncoder passwordEncoder() {

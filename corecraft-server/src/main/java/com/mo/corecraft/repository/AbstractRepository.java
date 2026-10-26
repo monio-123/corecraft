@@ -51,6 +51,17 @@ public abstract class AbstractRepository<E, Q, M extends BaseMapper<E>> {
         return mapper.insert(entity);
     }
 
+    /**
+     * 只写要改的那几列。
+     *
+     * **不能把查出来的整行丢进来**：实体里的 updateTime 是从库里读出来的（非 null），
+     * MyBatis-Plus 默认把非 null 字段全写进 SET，SQL 于是变成 SET ..., update_time='旧值'，
+     * 显式赋了值，DDL 的 ON UPDATE CURRENT_TIMESTAMP 就不再触发 —— 时间戳永远停在旧值。
+     * 传一个只带 id + 改动列的"补丁实体"才是对的（null 列不进 SET）。
+     *
+     * <p>⚠️ **这条规则只存这一处**（原来 `SysConfigRepository` / `SysConfigNodeRepository`
+     * 各抄了一份一模一样的注释，两个数字还各说各话）。
+     */
     public int update(E entity) {
         return mapper.updateById(entity);
     }

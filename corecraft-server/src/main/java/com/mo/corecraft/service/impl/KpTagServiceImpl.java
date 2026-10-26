@@ -3,6 +3,7 @@ package com.mo.corecraft.service.impl;
 import com.mo.corecraft.enums.ResultCodeEnum;
 import com.mo.corecraft.exception.CoreCraftException;
 import com.mo.corecraft.model.entity.KpTag;
+import com.mo.corecraft.model.entity.KpTopicTag;
 import com.mo.corecraft.model.query.KpTagQuery;
 import com.mo.corecraft.model.req.KpTagRenameReq;
 import com.mo.corecraft.model.resp.KpTagResp;
@@ -72,14 +73,14 @@ public class KpTagServiceImpl implements KpTagService {
     }
 
     /**
-     * 统计一组 tagId 的引用数。
-     * 简化实现：单 tag 逐次 count（早期项目数据量小；UI 还没做，不是热路径）。
-     * 如未来 N+1 明显，加 {@code @Select("SELECT tag_id, COUNT(*) FROM kp_topic_tag WHERE tag_id IN (...) GROUP BY tag_id")}
+     * 统计一组 tagId 的引用数。**一次查完**（原来每个 tag 查一次 = N+1）。
+     *
+     * <p>⚠️ 注释原来写着"UI 还没做，不是热路径" —— **与现实不符**：
+     * 前端 store 明确消费 {@code /kp/tag/list} 返回的 {@code refCount}（标签筛选器要显示每个标签的条数），
+     * 标签一多就是几十次查询。
      */
     private Map<Long, Long> countRefsByTagIds(List<Long> tagIds) {
-        return tagIds.stream().collect(Collectors.toMap(
-                id -> id,
-                id -> (long) kpTopicTagRepository.listByTagId(id).size()
-        ));
+        return kpTopicTagRepository.listByTagIds(tagIds).stream()
+                .collect(Collectors.groupingBy(KpTopicTag::getTagId, Collectors.counting()));
     }
 }

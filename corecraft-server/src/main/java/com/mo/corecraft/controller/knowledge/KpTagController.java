@@ -21,20 +21,20 @@ public class KpTagController {
 
     @GetMapping("/list")
     public ResultResp<List<KpTagResp>> list() {
-        Long userId = SecurityUtil.getUser().getSysUserDTO().getId();
+        Long userId = SecurityUtil.getUserId();
         return ResultResp.data(kpTagService.listTags(userId));
     }
 
     @PutMapping("/rename")
     public ResultResp<Void> rename(@Valid @RequestBody KpTagRenameReq req) {
-        Long userId = SecurityUtil.getUser().getSysUserDTO().getId();
+        Long userId = SecurityUtil.getUserId();
         kpTagService.renameTag(req, userId);
         return ResultResp.success();
     }
 
     @DeleteMapping("/{id}")
     public ResultResp<Void> delete(@PathVariable("id") Long id) {
-        Long userId = SecurityUtil.getUser().getSysUserDTO().getId();
+        Long userId = SecurityUtil.getUserId();
         kpTagService.deleteTag(id, userId);
         return ResultResp.success();
     }

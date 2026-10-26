@@ -44,8 +44,8 @@ public class AiChatController {
     private final AiChatService aiChatService;
 
     /**
-     * 抽屉空态那几个引导问题。来自字典 ai_topic_question——改问题在管理后台的字典管理里改，
-     * 不用改代码、也不用发版。
+     * 抽屉空态那几个引导问题。来自配置树上的「引导问题」那组——改问题在管理后台的
+     * 系统配置里改，不用改代码、也不用发版。
      */
     @GetMapping("/chat/questions")
     public ResultResp<List<AiQuestionResp>> questions() {
@@ -65,7 +65,7 @@ public class AiChatController {
 
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter chat(@Validated @RequestBody AiChatReq req) {
-        Long userId = SecurityUtil.getUser().getSysUserDTO().getId();
+        Long userId = SecurityUtil.getUserId();
         SseEmitter emitter = new SseEmitter(TIMEOUT_MS);
 
         executor.execute(() -> {

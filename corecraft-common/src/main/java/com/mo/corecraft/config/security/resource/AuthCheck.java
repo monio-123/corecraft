@@ -3,9 +3,6 @@ package com.mo.corecraft.config.security.resource;
 import com.mo.corecraft.utils.SecurityUtil;
 import org.springframework.stereotype.Component;
 
-import java.util.Collection;
-import java.util.Set;
-
 /**
  * 接口级鉴权表达式，供 {@code @PreAuthorize("@auth.hasPermission('xxx')")} 使用。
  * <p>
@@ -26,14 +23,5 @@ public class AuthCheck {
      */
     public boolean hasPermission(String permission) {
         return SecurityUtil.getPermissions().contains(permission);
-    }
-
-    public boolean hasAnyRoleOrPermission(Collection<String> roles, Collection<String> permissions) {
-        Set<String> userRoles = SecurityUtil.getRoles();
-        boolean hasRole = roles.stream().anyMatch(userRoles::contains);
-        if (hasRole) {
-            return true;
-        }
-        return permissions.stream().anyMatch(SecurityUtil.getPermissions()::contains);
     }
 }

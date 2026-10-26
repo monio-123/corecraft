@@ -24,6 +24,4 @@ public class KpTopicUpdateReq {
     private Long typeId;
 
     private List<String> tags;
-
-    private List<String> quizQuestions;
 }

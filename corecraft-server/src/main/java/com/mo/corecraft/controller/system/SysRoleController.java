@@ -39,25 +39,25 @@ public class SysRoleController {
     }
 
     @RequestMapping(value = "", method = RequestMethod.POST)
-    public ResultResp<Void> createSysUser(@Validated @RequestBody SysRoleCreateReq req) {
+    public ResultResp<Void> createSysRole(@Validated @RequestBody SysRoleCreateReq req) {
         sysRoleService.createSysRole(req);
         return ResultResp.success();
     }
 
     @RequestMapping(value = "", method = RequestMethod.PUT)
-    public ResultResp<Void> updateSysUser(@Validated @RequestBody SysRoleUpdateReq req) {
+    public ResultResp<Void> updateSysRole(@Validated @RequestBody SysRoleUpdateReq req) {
         sysRoleService.updateSysRole(req);
         return ResultResp.success();
     }
 
     @RequestMapping(value = "{id}", method = RequestMethod.DELETE)
-    public ResultResp<Void> deleteSysUser(@PathVariable("id") Long id) {
+    public ResultResp<Void> deleteSysRole(@PathVariable("id") Long id) {
         sysRoleService.deleteSysRole(id);
         return ResultResp.success();
     }
 
     @RequestMapping(value = "batch", method = RequestMethod.DELETE)
-    public ResultResp<Void> deleteBatchSysUser(@RequestParam List<Long> ids) {
+    public ResultResp<Void> deleteBatchSysRole(@RequestParam List<Long> ids) {
         sysRoleService.deleteBatchSysRole(ids);
         return ResultResp.success();
     }

@@ -52,6 +52,22 @@
 #  level:
 #    root: info
 #
+# 文件存储。**正式值在 Nacos 上**（app.storage.*），这里只是留个样子。
+#
+# 两档二选一，**kind 不填就是 local**：
+#
+#   kind: local        → 只用 root
+#   kind: s3           → 用 endpoint / region / bucket / access-key / secret-key
+#
+# kind=s3 一栏能接**所有 S3 兼容的服务**（RustFS / MinIO / SeaweedFS / Ceph RGW / 各家云 OSS）——
+# 厂商差异只是 endpoint，不是代码分支，所以枚举里没有「RUSTFS」「MINIO」这些值。
 #app:
 #  storage:
-#    avatar-dir: ${user.dir}/storage/avatars
+#    kind: local
+#    root: ${user.dir}/storage
+#    endpoint: http://rustfs103:9000
+#    region: us-east-1
+#    bucket: brove
+#    access-key: ${RUSTFS_ACCESS_KEY}
+#    secret-key: ${RUSTFS_SECRET_KEY}
+#    path-style: true

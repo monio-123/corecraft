@@ -1,24 +1,26 @@
 package com.mo.corecraft.service.impl;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.mo.corecraft.exception.CoreCraftException;
 import com.mo.corecraft.model.entity.KpTag;
 import com.mo.corecraft.model.entity.KpTopic;
-import com.mo.corecraft.model.entity.KpTopicQuiz;
 import com.mo.corecraft.model.entity.KpTopicRelation;
 import com.mo.corecraft.model.entity.KpTopicTag;
 import com.mo.corecraft.model.query.KpCategoryQuery;
 import com.mo.corecraft.model.query.KpTopicQuery;
+import com.mo.corecraft.model.query.SysDictItemQuery;
+import com.mo.corecraft.model.query.SysDictTypeQuery;
 import com.mo.corecraft.model.req.KpTopicCreateReq;
 import com.mo.corecraft.model.req.KpTopicUpdateReq;
 import com.mo.corecraft.model.resp.KpTopicResp;
+import com.mo.corecraft.model.resp.SysDictItemResp;
 import com.mo.corecraft.repository.KpCategoryRepository;
 import com.mo.corecraft.repository.KpTagRepository;
-import com.mo.corecraft.repository.KpTopicQuizRepository;
 import com.mo.corecraft.repository.KpTopicRelationRepository;
 import com.mo.corecraft.repository.KpTopicRepository;
 import com.mo.corecraft.repository.KpTopicTagRepository;
 import com.mo.corecraft.service.KpTopicService;
+import com.mo.corecraft.service.SysDictItemService;
+import com.mo.corecraft.service.SysDictTypeService;
 import com.mo.corecraft.utils.BeanUtils;
 import com.mo.corecraft.utils.JsonUtils;
 import lombok.RequiredArgsConstructor;
@@ -27,17 +29,29 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class KpTopicServiceImpl implements KpTopicService {
 
+    /**
+     * 知识点类型所在的字典编码。
+     *
+     * <p>前端 store 加载的是**同一个字典**（那边的 {@code TOPIC_TYPE_DICT}）——
+     * 字典是"知识点类型"这个概念唯一的权威定义，两端要指名同一份字典，
+     * 字典编码就是它的名字（和表名一样，是共享契约不是各写一遍的规则）。
+     */
+    private static final String TOPIC_TYPE_DICT = "kp_topic_type";
+
     private final KpTopicRepository kpTopicRepository;
     private final KpTopicTagRepository kpTopicTagRepository;
     private final KpTagRepository kpTagRepository;
     private final KpTopicRelationRepository kpTopicRelationRepository;
-    private final KpTopicQuizRepository kpTopicQuizRepository;
     private final KpCategoryRepository kpCategoryRepository;
+    private final SysDictTypeService sysDictTypeService;
+    private final SysDictItemService sysDictItemService;
+
 
     @Override
     public List<KpTopicResp> selectTopicList(KpTopicQuery query) {
@@ -49,12 +63,74 @@ public class KpTopicServiceImpl implements KpTopicService {
     }
 
     @Override
-    public KpTopicResp selectTopicById(Long id) {
+    public KpTopicResp selectTopicById(Long id, Long userId) {
         KpTopicQuery query = new KpTopicQuery();
         query.setId(id);
+        // **归属校验**：原来只按 id 查，等于"知道 id 就能读别人的知识"。
+        // 列表路径早就 setUserId 了（controller 的 list），详情这条路漏了。
+        query.setUserId(userId);
         KpTopicResp resp = kpTopicRepository.get(query, BeanUtils.converter(KpTopicResp.class));
+        // get 查不到会 orElseThrow，所以这里 resp 必然非 null，List.of(null) 那个 NPE 到不了
         enrichTopicResps(List.of(resp));
         return resp;
+    }
+
+    @Override
+    public List<KpTopicResp> selectTopicsByIds(List<Long> ids, Long userId) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        // 归属在 SQL 的 where 里（见 KpTopicRepository.listByIdsAndUserId）：
+        // 不是你的**根本查不出来**，不是查出来再丢掉。
+        List<KpTopicResp> list = kpTopicRepository.listByIdsAndUserId(ids, userId).stream()
+                .map(BeanUtils.converter(KpTopicResp.class))
+                .toList();
+        if (!list.isEmpty()) {
+            enrichTopicResps(list);
+            // **按传入顺序排回去**：`IN` 查询的返回顺序是不确定的，
+            // 而调用方给的顺序是有意义的（页面上卡片看到的顺序）⇒ 同样的集合每次汇总成同样的一段。
+            Map<Long, KpTopicResp> byId = list.stream()
+                    .collect(Collectors.toMap(KpTopicResp::getId, t -> t));
+            return ids.stream().map(byId::get).filter(Objects::nonNull).toList();
+        }
+        return list;
+    }
+
+    @Override
+    public Map<Long, String> typeNamesByTopic(Collection<KpTopicResp> topics) {
+        Map<Long, String> labels = dictTypeLabels();
+        // 默认档 = 字典里排第一的那条（和前端 defaultTopicTypeId() 同一个口径）。
+        // 字典本身查不到时没有默认档，类型名就是空串。
+        String fallback = labels.isEmpty() ? "" : labels.values().iterator().next();
+        Map<Long, String> names = new HashMap<>();
+        for (KpTopicResp topic : topics) {
+            String label = topic.getTypeId() == null ? null : labels.get(topic.getTypeId());
+            // typeId 为空 / 指向已删或已停用的字典项 ⇒ 当默认档（和前端 resolveTopicTypeId 一样）
+            names.put(topic.getId(), label == null ? fallback : label);
+        }
+        return names;
+    }
+
+    /**
+     * 知识点类型字典：字典项 id → label。**按字典顺序**（排第一的那条是默认档）。
+     *
+     * <p>只取启用中的字典项 —— 停用的类型在界面上也不出现（前端那份清单同样过滤 enabled）。
+     */
+    private Map<Long, String> dictTypeLabels() {
+        SysDictTypeQuery typeQuery = new SysDictTypeQuery();
+        typeQuery.setCode(TOPIC_TYPE_DICT);
+        var dictType = sysDictTypeService.selectSysDictTypeList(typeQuery).stream().findFirst().orElse(null);
+        if (dictType == null) {
+            return Map.of();
+        }
+        SysDictItemQuery itemQuery = new SysDictItemQuery();
+        itemQuery.setDictTypeId(dictType.getId());
+        itemQuery.setEnabled(true);
+        Map<Long, String> labels = new LinkedHashMap<>();
+        for (SysDictItemResp item : sysDictItemService.selectSysDictItemList(itemQuery)) {
+            labels.put(item.getId(), item.getLabel());
+        }
+        return labels;
     }
 
     @Override
@@ -66,7 +142,6 @@ public class KpTopicServiceImpl implements KpTopicService {
         entity.setTitle(StringUtils.defaultIfBlank(req.getTitle(), ""));
         kpTopicRepository.insert(entity);
         saveTopicTags(entity.getId(), req.getTags(), userId);
-        saveTopicQuizzes(entity.getId(), req.getQuizQuestions());
     }
 
     @Override
@@ -99,10 +174,7 @@ public class KpTopicServiceImpl implements KpTopicService {
             kpTopicTagRepository.deleteByTopicId(req.getId());
             saveTopicTags(req.getId(), req.getTags(), userId);
         }
-        if (req.getQuizQuestions() != null) {
-            kpTopicQuizRepository.deleteByTopicId(req.getId());
-            saveTopicQuizzes(req.getId(), req.getQuizQuestions());
-        }
+
     }
 
     @Override
@@ -115,7 +187,6 @@ public class KpTopicServiceImpl implements KpTopicService {
         KpTopic topic = kpTopicRepository.get(query, e -> e);
         kpTopicTagRepository.deleteByTopicId(topic.getId());
         kpTopicRelationRepository.deleteByTopicId(topic.getId());
-        kpTopicQuizRepository.deleteByTopicId(topic.getId());
         kpTopicRepository.delete(topic.getId());
     }
 
@@ -135,7 +206,7 @@ public class KpTopicServiceImpl implements KpTopicService {
     // ==================== 辅助方法 ====================
 
     /**
-     * 批量填充 resp 的 tags/quizQuestions/relatedTopicIds（避免 N+1）。
+     * 批量填充 resp 的 tags/relatedTopicIds（避免 N+1）。
      * 入参 list 可变，结果就地修改。
      */
     private void enrichTopicResps(List<KpTopicResp> resps) {
@@ -160,11 +231,6 @@ public class KpTopicServiceImpl implements KpTopicService {
             }
         }
 
-        // quizzes
-        Map<Long, List<KpTopicQuiz>> quizzesByTopic = new HashMap<>();
-        for (KpTopicQuiz q : kpTopicQuizRepository.listByTopicIds(topicIds)) {
-            quizzesByTopic.computeIfAbsent(q.getTopicId(), k -> new ArrayList<>()).add(q);
-        }
 
         // relations
         Map<Long, List<KpTopicRelation>> relationsByTopic = new HashMap<>();
@@ -180,11 +246,7 @@ public class KpTopicServiceImpl implements KpTopicService {
                         .toList();
                 resp.setTags(JsonUtils.toJsonString(encodedTags));
             }
-            List<KpTopicQuiz> quizzes = quizzesByTopic.getOrDefault(resp.getId(), List.of());
-            if (!quizzes.isEmpty()) {
-                List<String> questions = quizzes.stream().map(KpTopicQuiz::getQuestion).toList();
-                resp.setQuizQuestions(JsonUtils.toJsonString(questions));
-            }
+
             List<KpTopicRelation> relations = relationsByTopic.getOrDefault(resp.getId(), List.of());
             if (!relations.isEmpty()) {
                 List<Long> relatedIds = relations.stream().map(KpTopicRelation::getRelatedTopicId).toList();
@@ -245,44 +307,5 @@ public class KpTopicServiceImpl implements KpTopicService {
         }
     }
 
-    /**
-     * 一道题落到实体上。入参有两种形态：**结构化对象被 JSON.stringify 过的串**，
-     * 或者一段纯文本（前端 `decodeQuizQuestion` 对应的老数据）。判据是"以 { 开头"——
-     * 长得像 JSON 就按 JSON 解析，解析不了让它抛出去，不悄悄降级当纯文本，
-     * 那会把一份坏数据伪装成一次正常写入。
-     *
-     * ⚠️ 纯文本分支**也必须填 options / answer**：`kp_topic_quiz` 这两列是 NOT NULL
-     * 且没有默认值，原来这条写入路径只写 question，于是**任何一次插入都会被数据库拒掉**
-     * （该表至今 0 行就是这个原因，2026-10-07 采纳测验题时才撞出来）。
-     * 表本来就是为结构化题设计的（question_type / question / options / answer 四列齐），
-     * 只是赋值这半边从来没写过。
-     */
-    private void applyQuestion(KpTopicQuiz quiz, String raw) {
-        String text = StringUtils.defaultString(raw).trim();
-        if (text.startsWith("{")) {
-            JsonNode node = JsonUtils.readTree(text);
-            quiz.setQuestionType(node.path("type").asText("single"));
-            quiz.setQuestion(node.path("question").asText());
-            quiz.setOptions(JsonUtils.toJsonString(node.path("options")));
-            quiz.setAnswer(node.path("answer").asInt(0));
-            return;
-        }
-        quiz.setQuestionType("single");
-        quiz.setQuestion(text);
-        quiz.setOptions("[]");
-        quiz.setAnswer(0);
-    }
 
-    private void saveTopicQuizzes(Long topicId, List<String> quizQuestions) {
-        if (quizQuestions == null || quizQuestions.isEmpty()) {
-            return;
-        }
-        for (int i = 0; i < quizQuestions.size(); i++) {
-            KpTopicQuiz quiz = new KpTopicQuiz();
-            quiz.setTopicId(topicId);
-            applyQuestion(quiz, quizQuestions.get(i));
-            quiz.setSort(i);
-            kpTopicQuizRepository.insert(quiz);
-        }
-    }
 }

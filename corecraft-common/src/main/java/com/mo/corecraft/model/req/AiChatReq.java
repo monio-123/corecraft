@@ -1,18 +1,27 @@
 package com.mo.corecraft.model.req;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 
 import java.util.List;
 
 /**
- * 就某条知识提问。
+ * 就某条（或某几条）知识提问。
  *
- * **只有 topicId + question + endpointId，没有 content**：正文由服务端按 topicId 自己从库里捞。
- * 前端传正文会带来两个问题——body 可能大到几 MB，以及"客户端能指定把哪段文本当上下文"
- * 等于给了绕过数据边界的一条路。
+ * **正文默认由服务端自己从库里捞**：前端指定"要读哪条存储的知识"会带来两个问题
+ * ——body 可能大到几 MB，以及"客户端能指定把哪段文本当上下文"等于给了绕过数据边界的一条路。
+ *
+ * **这次处理哪几条知识，三种来源，优先级从高到低**：
+ * <ol>
+ *   <li>{@link #topicIds} —— 多条（考一个目录 = 这个目录下的所有知识一起出题）；</li>
+ *   <li>{@link #material} —— 用户自己敲的一段文字（不指向任何存储数据，所以不涉及越权）；</li>
+ *   <li>{@link #topicId} —— 单条（抽屉问一条知识）。</li>
+ * </ol>
+ *
+ * 归属一律按登录态收：**不是你的知识查不到**，查不到报"知识点不存在或已删除"，
+ * 不区分"不存在"和"不是你的"（免得泄露别人的数据存在性）。
  *
  * endpointId 由前端传（当前选中哪个接口存在 localStorage 里），**不接受 userId**：
  * 传了就能用别人的密钥提问。
@@ -21,8 +30,21 @@ import java.util.List;
 @Setter
 public class AiChatReq {
 
-    @NotNull(message = "知识点ID不能为空!")
+    /**
+     * **单条**知识的 id。留空时必须给 {@link #topicIds}（两个至少有一个）。
+     *
+     * 原来这里是 {@code @NotNull}，现在放开是因为**一次可能要处理多条**。
+     * 校验挪到服务端，两条路径同一个报错。
+     */
     private Long topicId;
+
+    /**
+     * **多条**知识的 id（考目录时用）。
+     *
+     * 给了它就以它为准，{@link #topicId} 忽略。**归属在 SQL 里按 userId 收**，
+     * 不是你的查不到 ⇒ 整批都拿不到 ⇒ 报"知识点不存在或已删除"。
+     */
+    private List<Long> topicIds;
 
     @NotBlank(message = "问题不能为空!")
     private String question;
@@ -31,23 +53,24 @@ public class AiChatReq {
     private Long endpointId;
 
     /**
-     * 引导问题的字典 value（`key:contexts`）。为空 = 用户自己敲的问题，
+     * 引导问题的短名（`key:contexts`）。为空 = 用户自己敲的问题，
      * 那就只有正文，没有额外描述、也不附目录标签清单。
      */
     private String questionKey;
 
     /**
-     * 问答场景，决定用哪一段统一描述（字典 {@code ai_system_prompt} 的 value）。
+     * 这次要处理的**素材**：用户自己敲的一段文字。
      *
-     * **必填、不给默认值**：场景写错就是"用了别人的描述去答"，而那种错答看着完全正常。
-     * 查不到就抛，别退回某一段固定的描述。
+     * **为空就用这次指定的知识**（一条或多条，见 topicId / topicIds）。
+     * 给了就用给的，**两者不同时出现**——两个素材会把模型绕晕，它分不清题目该考哪一份。
      *
-     * 现在只有一个 {@code chat}（就一条知识提问，5 个引导问题共用它）。将来加场景 =
-     * 字典加一行 + 前端多传一个值，**后端不用改**（后端只认"带几条知识"那几种形状，
-     * 形状没变就不用动代码）。真要引入新形状（零条、多条）那才得发版。
+     * 用途：出题不必被锁在这条知识里（可以拿一段书稿、一份资料出题）；
+     * 考试判卷时用它把**整卷 + 标准答案 + 考生作答**一次带过去。
+     * 上限 200000 字是给 body 兜的底，不是业务限制
+     * （考一个目录时正文汇总能到十万字量级，先放开、以后要收再说）。
      */
-    @NotBlank(message = "问答场景不能为空!")
-    private String scene;
+    @Size(max = 200000, message = "素材太长了")
+    private String material;
 
     /**
      * 之前几轮的问答，**由前端回传**。

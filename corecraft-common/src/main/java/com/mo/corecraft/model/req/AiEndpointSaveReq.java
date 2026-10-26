@@ -29,4 +29,24 @@ public class AiEndpointSaveReq {
     private String model;
 
     private String apiKey;
+
+    /**
+     * 厂商 code（字典里 {@code ai_vendor_<code>} 那个类型）。
+     *
+     * <p>**null = 没传这个字段 = 沿用原值；空串 = 明确清掉**（界面上把厂商下拉清空就是它）。
+     */
+    private String vendor;
+
+    /**
+     * 自定义参数（JSON 文本）。
+     *
+     * <p>存下来之后**直接展开进 chat 请求体**，与 model/stream/messages 平级。
+     * 空 = 不带任何额外字段。
+     *
+     * <p>**null = 沿用原值；空串 = 清掉**。
+     *
+     * <p>⚠️ 非法 JSON 直接报错，不静默丢掉 —— 静默丢掉的话用户填了半天没生效，
+     * 而且界面上看不出任何异常。
+     */
+    private String custom;
 }

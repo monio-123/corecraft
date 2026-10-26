@@ -131,6 +131,40 @@ public final class JsonUtils {
 			throw new RuntimeException(e.getMessage(),e);
 		}
 	}
+
+	/**
+	 * 取一个**字符串字段**。
+	 *
+	 * <p>**没有这个字段 / 字段是 null ⇒ 返回 null**（不给空串）——
+	 * 调用方自己决定"没有"要当成什么（空串 / 跳过 / 报错）。数字、布尔这类非字符串节点
+	 * 按字面量取（{@code asText()}），因为上游给的是数字时那也是值。
+	 *
+	 * <p>⚠️ **原来 {@code AiChatServiceImpl} 和 {@code AiVendorServiceImpl} 各写了一份同名同形状的
+	 * {@code text()}，语义还不一样**（一个没字段给空串、一个给 null）⇒ 收敛到这一处。
+	 */
+	public static String text(JsonNode node, String field) {
+		if (node == null) {
+			return null;
+		}
+		JsonNode v = node.get(field);
+		if (v == null || v.isNull()) {
+			return null;
+		}
+		return v.asText();
+	}
+
+	/**
+	 * JsonNode → 普通 Java 对象（Map / List / 字符串 / 数字 / 布尔）。
+	 *
+	 * <p>**用途：同一段 JSON 只解析一次**。原来"先 readTree 校验是不是对象、再 parseObjectMap 取值"
+	 * 是把同一段 JSON 解析了两遍；现在校验和取值共用这一个节点。
+	 */
+	public static Object toJava(JsonNode node) {
+		if (node == null || node.isNull()) {
+			return null;
+		}
+		return getObjectMapper().convertValue(node, Object.class);
+	}
 	
 	private static ObjectMapper getObjectMapper() {
         return SpringContextHolder.getBean(ObjectMapper.class);

@@ -15,9 +15,9 @@ import java.util.List;
 public interface AiChatService {
 
     /**
-     * 抽屉空态那几个引导问题。来自字典 ai_topic_question，改问题不用改代码。
+     * 抽屉空态那几个引导问题。来自配置树上的「引导问题」那组，改问题不用改代码。
      *
-     * **字典拉不到时返回空列表**，前端空态什么都不显示——不该为一个可有可无的引导
+     * **配置树拉不到时返回空列表**，前端空态什么都不显示——不该为一个可有可无的引导
      * 列表让整页报错。
      */
     List<AiQuestionResp> questions();
@@ -29,12 +29,12 @@ public interface AiChatService {
      * 保持纯阻塞，由 controller 决定在哪个线程上跑。
      *
      * **整个提问参数打包成 req 传进来**，不是拆成一串形参：它们已经涨到 6 个
-     * （userId / endpointId / topicId / question / questionKey / history），再加 scene
-     * 就是 7 个，其中三个是相邻的 String——**位置传错编译器不报错，症状是"AI 答非所问"，
+     * （userId / endpointId / topicId / question / questionKey / history），
+     * 其中三个是相邻的 String——**位置传错编译器不报错，症状是"AI 答非所问"，
      * 排查起来比空指针还费劲**。要加参数就往 req 上加，不会引出这类错。
      *
-     * @param req 提问参数。scene 决定用哪段统一描述；endpointId 的归属和配齐情况
-     *            由 AiEndpointService 校验；history 为空 = 第一轮
+     * @param req 提问参数。material 决定这次处理哪份素材（空 = 这条知识自己的正文）；
+     *            endpointId 的归属和配齐情况由 AiEndpointService 校验；history 为空 = 第一轮
      * @param deltaSink 收到一个事件。三种可能（靠哪个字段非空区分）：
      *                  <ul>
      *                    <li><b>prompt</b>  —— 开流前发一次，完整提交给模型的消息；</li>
@@ -44,7 +44,7 @@ public interface AiChatService {
      *                  </ul>
      *                  用一个 sink 而不是三个回调，是因为它们本来就是同一条流上的三种帧，
      *                  拆成三个参数只会让调用方多写两行。
-     * @throws com.mo.corecraft.exception.CoreCraftException 配置不可用 / 知识点不存在 / 场景取不到
+     * @throws com.mo.corecraft.exception.CoreCraftException 配置不可用 / 知识点不存在 / 全局人设取不到
      * @throws IOException 调上游失败（连不上、超时、非 2xx）
      */
     void stream(Long userId, AiChatReq req, AiDeltaSink deltaSink) throws IOException;

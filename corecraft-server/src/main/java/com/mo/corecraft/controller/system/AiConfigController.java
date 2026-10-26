@@ -26,15 +26,12 @@ public class AiConfigController {
 
     @RequestMapping(value = "", method = RequestMethod.GET)
     public ResultResp<AiConfigResp> myConfig() {
-        return ResultResp.data(aiConfigService.select(currentUserId()));
+        return ResultResp.data(aiConfigService.select(SecurityUtil.getUserId()));
     }
 
     @RequestMapping(value = "", method = RequestMethod.PUT)
     public ResultResp<AiConfigResp> save(@Validated @RequestBody AiConfigSaveReq req) {
-        return ResultResp.data(aiConfigService.save(currentUserId(), req));
+        return ResultResp.data(aiConfigService.save(SecurityUtil.getUserId(), req));
     }
 
-    private Long currentUserId() {
-        return SecurityUtil.getUser().getSysUserDTO().getId();
-    }
 }

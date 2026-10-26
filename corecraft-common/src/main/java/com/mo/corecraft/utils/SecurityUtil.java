@@ -42,4 +42,12 @@ public class SecurityUtil {
     public static Set<String> getPermissions() {
         return Set.copyOf(getUser().getPermissions());
     }
+
+    /**
+     * 当前登录用户的 id。**这里只做转发** —— 取数与「未登录返回 null」的规则都在
+     * {@link com.mo.corecraft.config.security.resource.SecurityUser#getUserId()}（规则只存那一处）。
+     */
+    public static Long getUserId() {
+        return getUser().getUserId();
+    }
 }
