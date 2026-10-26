@@ -33,7 +33,7 @@ const props = defineProps({
   // 已落库的标题。草稿另存一份：输入过程中 props 不会变，跟着它走会冲掉正在打的字。
   title: { type: String, default: '' }
 })
-const emit = defineEmits(['save', 'saved'])
+const emit = defineEmits(['save'])
 
 const draft = ref(props.title || '')
 // 刚发出去、还没存好的标题。父组件存完会把它回灌进 props.title ⇒ 对上了才算存好了。
@@ -45,7 +45,6 @@ watch(() => props.title, (v) => {
   // 靠这个确认"真的存上了"——存失败时 props.title 不动，也就不会弹「已更新」。
   if (pending.value && v === pending.value) {
     pending.value = ''
-    emit('saved', v)
     ElMessage.success('已更新')
   }
 })
