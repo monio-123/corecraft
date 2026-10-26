@@ -1,0 +1,811 @@
+/* Milkdown 编辑器的全局样式。
+   原本是 MilkdownEditorBody.vue 里的一个**全局**（非 scoped）style 块，531 行 ——
+   全局样式放在组件文件里有两个问题：一是文件太长、样式和逻辑混在一起；
+   二是"全局"这件事只体现在一个标签上，看文件的人根本看不出来它会漏到全站。
+   放进 assets/ 是这个项目已有的约定（base.css / admin-page.css / kb.css 都在那儿）。
+   顺序：main.js 里排在 prosemirror.css 之后 —— 和原来"随组件 chunk 加载"时的相对次序一致。
+   ⚠️ 选择器一律带 .milkdown-editor-body 前缀，别去掉：它是全局的。 */
+/* 全局（非 scoped）：Milkdown 由第三方函数式组件渲染，实际 DOM 结构是
+   <div data-milkdown-root> > .milkdown > .ProseMirror[contenteditable]。
+   - focus 落在 .ProseMirror（contenteditable）上，不是外层容器 → outline:none 必须加在 .ProseMirror
+   - min-height 也加在 .ProseMirror 上，整个空白区才能点击聚焦输入（加外层容器只让容器变高，空白区仍不可聚焦）
+   项目里 Milkdown 编辑器只此一处，无污染风险。 */
+/* 工具栏：透明底、无边框、灰字的一排。底边一条线把操作台和标题/正文分开。
+   按钮原来是 <el-button size="small">，EP 默认给的是白底 + 浅边框 + 圆角，
+   一排七个框看着像一组表单控件而不是工具栏（用户原话："这些按钮本身我觉得不好看"）。
+   换 text 变体去掉边框和底色；hover 底色我们自己给——EP 的 .is-text:hover 用的是
+   --el-fill-color-light(#f7f8fa)，和这里的 --cc-surface-2(#f4f6f8) 不是同一个色。 */
+.md-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  padding-bottom: var(--sp-6);
+  border-bottom: 1px solid var(--cc-border);
+  /* 工具条下沿到正文第一行的呼吸位 = **框自己的内边距**（--kb-frame-pad-y）。
+     简洁模式（没有工具条）正文第一行离框顶的距离就是那个内边距；
+     一开工具条，正文就顶在工具条那条分割线上（用户原话：
+     "一旦打开了这个栏 第一行离上方边界就几乎紧挨着了"）。
+     **下边距（不是 padding）**：padding-bottom 在分割线**上面**（按钮和线之间），
+     挪它只会把按钮推离分割线，挪不动正文。
+     ⚠️ --kb-frame-pad-y 由各个页面自己的框声明（首页录入框 / 详情正文框），
+     没声明时用 14px（首页那档）。 */
+  margin-bottom: var(--kb-frame-pad-y, var(--sp-11));
+}
+.md-toolbar .el-button {
+  height: 26px;
+  margin: 0;
+  padding: 0 var(--sp-7);
+  font-size: var(--text-sm);
+  color: var(--cc-text-2);
+  border-radius: var(--cc-radius-sm);
+}
+.md-toolbar .el-button:hover {
+  background: var(--cc-surface-2);
+  color: var(--cc-text-1);
+}
+/* el-tooltip 必须挂在有鼠标事件的元素上，而 <button disabled> 不派发鼠标事件，
+   所以工具栏每个按钮外面都包了一层 <span>。它要显式 inline-flex：
+   默认的 inline 会给按钮底下留一条基线空隙，把这一排的高度撑高几像素。 */
+.md-btn-wrap {
+  display: inline-flex;
+}
+/* ---------- 正文列左右留多少（折叠箭头那条左边距） ----------
+   三个数必须是一套：左边距多宽、箭头多宽、箭头与标题之间留多少缝。
+   散着写三遍的数字迟早会各改各的（改了一处，另外两处对不上，
+   表现是"箭头压到标题上"或者"左边距空一大块"）——
+   所以收成变量，三处只读同一个来源。
+
+   ⚠️ **箭头的尺寸跟着标题字号走（1em = 标题自己的字号）**，不是固定 px：
+   固定成 14px 的话，同一个箭头配 H1（28px）和配 H3（16px）就是两个比例，
+   大标题旁边显得特别小（用户原话："大小还是不对，能不能改回之前的样子"）。
+   代价是**左边距要装得下最大的那个箭头**（H1 的 1em）⇒ 默认 34px。
+
+   ⚠️ **左右是对等的**（2026-10-21 改）：以前只有左边 2em+缝、右边 0，
+   正文列整体偏左 17px —— 卡片里左右留白不等，一眼能看出"这段东西没居中"。
+   右边补同样宽即可。 */
+.milkdown-editor-body {
+  /* 箭头与标题文字之间的缝。**固定 px**：缝是"留白"，
+     不跟着字号放大 —— 不然正文和标题之间会隔一条越来越宽的空。 */
+  --kb-fold-gap: 6px;
+
+  /* 正文列**左右各留多少**（左右一样）。
+     默认 34px = 正文字号 14px 时的「H1 那个 1em 箭头 + 缝」。
+
+     ⚠️ **2026-10-24 起这里是固定值，不再跟字号自动缩放**：
+     偏好面板「正文白边」那一项的**内置默认就是 34px**
+     （`uiPrefs.js` 的 `ui.detail.detailTextInset.def`）——
+     CSS 兜底写另一个数（以前是 `calc(2em + 缝)`）的话，
+     面板显示的默认值和实际渲染对不上，字号一调大就露馅。
+     **现在两个地方写的是同一个数** ⇒ 改一处要改另一处。
+     要跟着字号一起放大 ⇒ 拖面板上那个滑块（它是绝对 px，自己管）。
+
+     ⚠️ **它和「顶栏下 / 正文上方 / 正文左右」不是一回事**（那三项 2026-10-21
+     已经写死、不再可配置了）：白边是**文字离框边那条缝**，而那三项是**框自己的内距**。
+     文字离框边的总距离 = 框内距 + 白边 —— 白边这一项还要能调，所以留在这儿。 */
+  --kb-gutter: var(--detail-text-inset, 34px);
+
+  /* 正文字号定在这一层：ProseMirror 的字号（以前写在 .ProseMirror 上——
+     同一件事只能有一处），标题的 em 比例也以它为基准。 */
+  font-size: var(--editor-fs, var(--text-md));
+}
+/* 插槽区（知识点详情页的标题那一行）。
+   **跟正文列左边缘对齐**：正文左边有一条给折叠箭头留的空白（--kb-gutter），
+   标题不跟着缩进的话会贴在框边、比正文缩进去一截 ⇒ 两行不在一条线上。
+   **左右各让一条**：左边 margin、右边 width 减掉 ⇒ 标题那一行和正文列
+   一样宽、一样居中（标题是输入框，框宽跟正文列一致才不会右探出去）。 */
+.milkdown-editor-body .editor__before {
+  margin-left: var(--kb-gutter);
+  width: calc(100% - 2 * var(--kb-gutter));
+}
+/* ---------- 段落间距 ----------
+   **正文里的空行不靠这里，靠段内 hardbreak**（见 handlePaste：段内连续两个换行 = 一个空行，
+   markdown 存得住）。这一条管的是另一件事：**markdown 的段落边界**。
+
+   为什么必须有：外面复制进来的富文本（网页 / Word / 语雀）是 `return false` 交回 milkdown
+   原插件按 markdown 解析的，**每个 `<p>` 都变成一个段落**。而 `base.css` 的全局 reset
+   把段落 margin 归零了，于是一整篇从网页复制的内容会**行行紧贴、完全分不出段**。
+   段间距现在**跟着排版配置走**（--kb-para-gap，默认 12px ≈ 0.66 个行高）——
+   语雀那一档：能看出分隔，又不至于把长笔记撑散。
+
+   **只给顶层段落**（`> p` 是**直接子元素**）：列表项里的段落不命中这条，
+   一并套顶层规则会和列表自己的排版打架 —— 列表项**里**的段落间距单独给一条
+   （见下面「列表」那节的 `li > p + p`）。
+   首尾不加：第一段的 margin 会把正文从框顶推开，最后一段的会在框底多留一截。 */
+.milkdown-editor-body .ProseMirror > p {
+  margin-bottom: var(--kb-para-gap, 12px);
+  /* **段首缩进**（中文排版习惯，语雀那样）。只给顶层段落：列表项、表格单元格、
+     代码块、引用块里的段落各有各的排版，一并缩进会打架。
+     默认 0（不缩进）—— 技术笔记居多，缩进不是刚需，想要的人自己在面板里拉。 */
+  text-indent: var(--kb-para-indent, 0);
+}
+.milkdown-editor-body .ProseMirror > p:last-child {
+  margin-bottom: 0;
+}
+.milkdown-editor-body .ProseMirror {
+  /* 高度三段式，跟内容走：
+     min-height 135 —— 空编辑器只占这么点。随手记是"随手记一下"，空着的时候
+       占掉小半屏会把下面的卡片列表挤到首屏之外，是纯粹的浪费。
+     不设 height     —— 内容越长框越高，长笔记不会被塞进小窗口里挪滚动条。
+     max-height 80vh —— 涨到约一屏就封顶，这时 overflow-y 才开始起作用出内层滚动条。
+       没有这个上限的话，一条超长笔记能把整个页面顶到几千像素，页面本身的滚动条
+       变成唯一的导航手段，翻找任一段都要滚很久。
+     这三个值随手记和知识点详情页共用一份，不按实例区分：详情页读长笔记时靠
+     "跟着内容长"顶起来，旧的 270px 封顶反而是它嫌小的原因。 */
+  min-height: 135px;
+  max-height: 80vh;
+  overflow-y: auto;
+  outline: none;       /* 去掉浏览器对 contenteditable 默认画的 focus outline（黑色长方形边框） */
+  /* 内边距交给外层容器（知识点详情页的 .content 自己给），这里不再叠一层。
+     原来这里是 8px 12px，和外层的 14px 18px 叠成双层内缩，正文离框线过远。
+
+     ⚠️ **左右留白是对等的**（2026-10-21 改，见上面 .milkdown-editor-body 的
+     --kb-gutter）：左边那条是折叠箭头站的地方，右边补同样宽。
+     以前只有左边有、右边是 0 ⇒ 正文列整体偏左 17px，
+     卡片里左右留白不等，一眼能看出"这段东西没居中"。
+
+     宽度跟着字号走：要装得下最大的那个箭头（H1 的 1em + 缝），
+     箭头随标题字号缩放，这儿就得跟着缩放。 */
+  padding: 0 var(--kb-gutter) 0 var(--kb-gutter);
+  /* 字号：**继承自 .milkdown-editor-body**（正文字号只有那一处定义）。
+     行高**跟着排版配置走**（--kb-line-height，默认 1.8）—— 语雀那档；
+     它是个比值，字号放大时行距按比例跟着开，不用另调。 */
+  line-height: var(--kb-line-height, 1.8);
+  color: var(--cc-text-1);
+  word-break: break-word;
+}
+/* 沉浸模式（首页全屏录入 / 详情页全屏）：解除三段式高度，改成"写满一屏"。
+   is-immersive 由 AppLayout 挂在 .app-content 上。
+
+   规则写在这个全局块里而不是业务 view 的 scoped 块：.ProseMirror 是 Milkdown
+   渲染出来的，节点上没有业务文件的 data-v，从那边 :deep 过来不可靠
+   （AppHomeView 当年就是这么写的，注释还留着）。
+
+   用 min-height: 60vh 而不是 flex 链撑满：Milkdown 渲染出来的中间层
+   （MilkdownProvider 是不是吐节点、data-milkdown-root / .milkdown）
+   是第三方内部结构，链式传高度随时会断。给一个大底高最稳：
+   空的时候是一整屏可点的书写面，长了跟着涨，页面自己滚。 */
+.is-immersive .milkdown-editor-body .ProseMirror {
+  max-height: none;
+  min-height: 60vh;
+}
+
+/* ---------- 首页录入区随屏幕高度伸缩 ----------
+   AppHomeView 的 .quick 现在是 flex:1（吃掉剩余高度），要把这份高度**传下来**，
+   .ProseMirror 才跟着长，否则录入框还是那个 135px 的小高度，底部留一大片空白。
+
+   链路是从 @milkdown/vue 和 @milkdown/core 的**源码**核出来的，不是猜的：
+     .milkdown-editor-wrapper（MilkdownEditor.vue 的根）
+       └ .milkdown-editor-body（本组件根）
+         └ div[data-milkdown-root]（Milkdown 组件渲染，vue/lib/index.js:32）
+           └ .milkdown（createViewContainer 动态 createElement，core/lib/index.js:449）
+             └ .ProseMirror
+   ⚠️ MilkdownProvider 自己返回的是 **Fragment**（index.js:51），**不吐任何 DOM 节点**——
+   所以 wrapper 和 body 是直接父子，中间没有一层unknown 的壳。这一点如果搞错，
+   flex 链会在某一环断掉，而且症状是"没报错、就是不变高"，很难查。
+
+   为什么这次敢走 flex 链，而上面的 .is-immersive 仍然用 min-height: 60vh：
+   那条是"写满一屏"的兜底（大底高，断了顶多不好看）；这条是"贴着下面两块"，
+   断链的表现是**整页塌回内容高度**、底部对齐彻底失效，必须真的传下去。
+   两者的失败代价不同，所以写法不同——不是同一件事写了两遍。
+
+   min-height: 0 每一环都要：flex 子项默认 min-height:auto（不低于内容），
+   屏一矮就会顶出滚动条，而不是我们选的"录入框被压小"。 */
+.quick .milkdown-editor-wrapper,
+.quick .milkdown-editor-body,
+.quick [data-milkdown-root],
+.quick .milkdown {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* ProseMirror 自己是滚动区：内容超过框高时内滚，不把页面撑高。
+   上面那条 min-height:135px 在这里不适用——那三段式是给"按内容长"的那几处用的，
+   首页要的是"按可用高度长"，所以给一个 height:100% 让它跟着 flex 走。 */
+.quick .ProseMirror {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  max-height: none;
+  overflow-y: auto;
+}
+
+/* ---------- 软换行 ----------
+   markdown 段落里的单换行（软换行）在 milkdown 里**不是** "\n"，也不是 `<br>`：
+   `remark-line-break.ts` 插件（`composed/plugins.ts` 里确实注册了）会把 text 节点里的每个
+   \n 拆成一个 mdast `break` 节点并打上 `data.isInline = true`；`hardbreak.ts` 的 toDOM 对
+   isInline=true 渲染成 **`<span data-type="hardbreak" data-is-inline="true"> </span>`
+   ——一个装着空格的 span**（源码注释原话："The inline line break should be treated as
+   a `space`"）。库里已存的、带软换行的笔记重新打开就会全部并成一行。
+
+   这条只负责**渲染**已经存在的软换行（新粘贴的内容走上面的 handlePaste，已经是 <br>，
+   不经过这个 span）。真 hardbreak（Shift+Enter，isInline=false）渲染的是 <br>，
+   选择器只认 span，两条路互不干扰。
+
+   ::after 里用 '\A'（CSS 换行转义）而不是改 span 本身：span 里那个空格是节点自带的，
+   删掉会改变 doc 的可选择文本。留一个行尾空格本来也就是标准 markdown 硬换行
+   （行尾两空格 / 反斜杠）在视觉上的样子。 */
+.milkdown-editor-body .ProseMirror span[data-type="hardbreak"]::after {
+  content: '\A';
+  white-space: pre;
+}
+/* ---------- 列表 ----------
+   全局 reset（base.css 的 `* { margin: 0; padding: 0 }`）把浏览器默认那套
+   40px 缩进和项目符号挂位**全归零了**，prosemirror.css 自己也没有任何列表规则。
+   不写这一段，列表是"生成了但没法看"：没有缩进，bullet 顶在正文最左边。
+
+   缩进用 em 而不是 px：1.6em ≈ 22px，跟着字号走；浏览器默认的 40px 在 920px
+   的阅读栏里会把列表项的可用宽度吃掉一大截。
+
+   **上下留白跟段落一致**（--kb-para-gap）：与相邻段落是兄弟节点，
+   margin 会折叠 ⇒ 不会叠成两倍。 */
+.milkdown-editor-body .ProseMirror ul,
+.milkdown-editor-body .ProseMirror ol {
+  padding-left: 1.6em;
+  margin: var(--kb-para-gap, 12px) 0;
+}
+/* 列表项之间也要有呼吸：原来一条纵向 margin 都没有，列表项全贴着。
+   **用 `li + li`**（相邻同级）而不是给所有 li 加 —— 给所有 li 加的话，
+   嵌套列表的第一项也会凭空多出一截空白。 */
+.milkdown-editor-body .ProseMirror li + li {
+  margin-top: calc(var(--kb-para-gap, 12px) * 0.5);
+}
+/* 列表项**里面**的段落之间也要有间距（2026-10-25 加）。
+   顶层段落那条是 `> p`（**直接子元素**）⇒ 列表项里的段落**不命中** ⇒ 零间距。
+   模型把「例：」「补充：」写成**同一项里的第二段**时，两段就贴在一起
+   （实证：「范式与反范式」那一条 6 个「例：」全是这么写的，渲染出来跟定义挤在一行）。
+   只给**同一个列表项里**的后续段落（`p + p`）；项与项之间是 `li + li` 的事，别混。 */
+.milkdown-editor-body .ProseMirror li > p + p {
+  margin-top: calc(var(--kb-para-gap, 12px) * 0.5);
+}
+/* 引用块**里面**的段落之间，同一条道理（2026-10-25 晚加）。
+   顶层段落那条是 `> p` ⇒ 引用块里的段落也不命中 ⇒ 零间距；
+   而引用块里**经常**有多段（原文一段、补充一段）⇒ 渲染出来挤成一片。
+   给的是**同一个引用块里**的后续段落（`p + p`），跟列表那条同一口径。 */
+.milkdown-editor-body .ProseMirror blockquote > p + p {
+  margin-top: calc(var(--kb-para-gap, 12px) * 0.5);
+}
+/* 项目符号压到 text-3：默认的纯黑圆点在一屏文字里太抢眼，
+   而项目符号是"这一项属于某个列表"的提示，不是内容本身。 */
+.milkdown-editor-body .ProseMirror li::marker {
+  color: var(--cc-text-3);
+}
+/* 行内代码 / 代码块：知识库里大量是代码，不上等宽字体没法读。
+   prosemirror 官方样式表只管排版不管字体，默认还是正文的无衬线。 */
+.milkdown-editor-body .ProseMirror code {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: var(--text-sm);
+  background: var(--cc-surface-2);
+  color: #c7254e;
+  padding: var(--sp-1) var(--sp-5);
+  border-radius: var(--radius-xs);
+}
+.milkdown-editor-body .ProseMirror pre {
+  background: var(--cc-surface-2);
+  border-radius: var(--radius);
+  padding: var(--sp-10) var(--sp-11);
+  overflow-x: auto;
+  /* 上下留白跟段落一致（语雀那一档） */
+  margin: var(--kb-para-gap, 12px) 0;
+}
+.milkdown-editor-body .ProseMirror pre code {
+  background: transparent;
+  color: var(--cc-text-1);
+  padding: 0;
+  font-size: var(--text-sm);
+  line-height: 1.7;
+}
+/* ---------- mermaid 图 ----------
+   代码块围栏语言是 mermaid 时，编辑器把它画成图（组件 kbMermaid.js）。
+   **图在上、源码在下**：读者看图，作者还能点进源码改。 */
+.milkdown-editor-body .ProseMirror .kb-mermaid {
+  margin: var(--kb-para-gap, 12px) 0;
+}
+.milkdown-editor-body .ProseMirror .kb-mermaid__fig {
+  padding: var(--sp-10) var(--sp-11);
+  background: var(--cc-surface-2);
+  border-radius: var(--radius);
+  overflow-x: auto;
+}
+.milkdown-editor-body .ProseMirror .kb-mermaid__fig svg {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  height: auto;
+}
+/* 画不出来的时候**要说出来**（源码还在下面，可以改） */
+.milkdown-editor-body .ProseMirror .kb-mermaid__fig.is-error {
+  color: var(--cc-danger);
+  font-size: var(--text-sm);
+}
+/* 源码：图下面那一段，弱化处理（读者看图，作者改字） */
+.milkdown-editor-body .ProseMirror .kb-mermaid__src {
+  margin: var(--sp-6) 0 0;
+  padding: var(--sp-8) var(--sp-10);
+  background: transparent;
+  border: 1px dashed var(--cc-border);
+  font-size: var(--text-2xs);
+  line-height: 1.6;
+}
+.milkdown-editor-body .ProseMirror .kb-mermaid__src code {
+  font-size: var(--text-2xs);
+  color: var(--cc-text-3);
+}
+.milkdown-editor-body .ProseMirror blockquote {
+  margin: var(--kb-para-gap, 12px) 0;
+  padding: var(--sp-2) 0 var(--sp-2) var(--sp-10);
+  border-left: 2px solid var(--cc-border-strong);
+  color: var(--cc-text-2);
+}
+.milkdown-editor-body .ProseMirror a {
+  color: var(--cc-primary);
+  text-decoration: none;
+  /* 手掌：链接是"能点的东西"，默认的 I-beam 光标让用户以为只能把光标放进去改字，
+     而这里单击本来就是选中、Ctrl+单击才是跳转 —— 光标要说的是"点它有事发生"。 */
+  cursor: pointer;
+}
+.milkdown-editor-body .ProseMirror a:hover {
+  text-decoration: underline;
+}
+
+/* ---------- 站内链接（目录 / 知识点） ----------
+   正文里指向某个知识目录的链接，点过去是那个目录下的知识点列表
+   （和侧边栏点目录是同一个地址）；指向某条知识点的，点过去是它的详情页。
+
+   **靠常驻下划线认，不靠颜色**：上面那条普通链接本来就已经是 --cc-primary，
+   再给站内链接换个颜色，正文里就出现两种蓝，而"两种蓝分别是什么意思"没有一句话说得清。
+   而正文里的普通链接平时没有下划线（只有 hover 才加），所以"有没有下划线"
+   本身就是标记，一眼能分。
+
+   ⚠️ 这两个选择器里的字面量必须和 JS 的 CATEGORY_HREF_PREFIX / TOPIC_HREF_PREFIX
+   一致（utils/categoryNav.js 那两份）—— CSS 选择器读不到 JS 变量，
+   改前缀时这一处要跟着改（JS 常量、插入、点击分流、CSS 共四处）。 */
+.milkdown-editor-body .ProseMirror a[href^="/app/learn?category="],
+.milkdown-editor-body .ProseMirror a[href^="/app/topic/"] {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ---------- 图片 ----------
+   `max-width: 100%` 不是装饰，是**拖拽缩放的前置**：用户把图拖到 800px 宽、
+   窗口一窄还是得靠它收住。少这一条，"能缩放"和"能看"就打架。 */
+.kb-img {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  line-height: 0;
+}
+.kb-img > img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+  vertical-align: bottom;
+}
+.kb-img.is-selected > img {
+  outline: 2px solid var(--cc-primary);
+  outline-offset: 2px;
+}
+/* 手柄只在选中时出现；选中态由 ProseMirror 的 NodeSelection 驱动（见 kbImageNode.js） */
+.kb-img__handle {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  width: 12px;
+  height: 12px;
+  background: var(--cc-primary);
+  border: 2px solid #fff;
+  border-radius: 50%;
+  /* `nwse-resize`（↖↘ 对角双向箭头）而不是 `ew-resize`（水平 180°）：
+     手柄长在**右下角**上，对角箭头是"从角上改尺寸"的通用视觉语言 ——
+     横向箭头放在角上看着像拖动条，不像缩放手柄。
+     实际只改宽度，但提示图标按角的位置给，不按实际自由度给（用户 2026-10-18 定的）。 */
+  cursor: nwse-resize;
+  opacity: 0;
+  transition: opacity .12s;
+}
+.kb-img.is-selected > .kb-img__handle {
+  opacity: 1;
+}
+/* 拖拽中手柄不能跟着缩放跑，否则指针和手柄会滑开 */
+.kb-img.is-resizing > .kb-img__handle {
+  pointer-events: none;
+}
+/* **触屏没有 hover**，常隐等于没有 */
+@media (hover: none) {
+  .kb-img__handle {
+    opacity: .5;
+  }
+}
+
+/* ---------- 附件 ----------
+   **判据只靠「它是 <a> 而不是 <img>」+ href 前缀**：
+   图片由 image 节点渲染成 `<img>`，所以任何指向 `/api/files/` 的**链接**必然是附件。
+   不需要查扩展名、不需要额外属性 —— 服务端在读取时已经按扩展名决定
+   Content-Type 和 inline/attachment，两边用的是同一套判据。
+   这也是**不做「文件类别」目录层**的另一个理由：卡片化完全靠渲染层兜。 */
+.milkdown-editor-body .ProseMirror a[href^="/api/files/"] {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+  max-width: 100%;
+  margin: var(--sp-4) 0;
+  padding: var(--sp-5) var(--sp-9);
+  font-size: var(--text-sm);
+  color: var(--cc-text-1);
+  text-decoration: none;
+  background: var(--cc-surface-2);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--radius-md);
+  /* 文件名可能很长（本地文件重名的情况），不能把整行撑破 */
+  word-break: break-all;
+}
+/* 图标用 CSS 画一个"回形针"，不引图片资源 —— 编辑器里嵌一张图标等于又往
+   存储里塞一个对象，而它自己还得先能显示出来 */
+.milkdown-editor-body .ProseMirror a[href^="/api/files/"]::before {
+  content: '📎';
+  font-size: var(--text-base);
+  line-height: 1;
+}
+.milkdown-editor-body .ProseMirror a[href^="/api/files/"]:hover {
+  color: var(--cc-primary);
+  border-color: var(--cc-primary);
+}
+.md-btn-bold,
+.md-btn-italic {
+  /* 用 Times New Roman 让字母 B/I 跟中文按钮视觉上区分开，不再加字重/斜体（之前 font-weight:700 + font-style:italic 看起来像 demo 按钮而不是工具栏） */
+  font-family: 'Times New Roman', serif;
+}
+
+/* 插入表格 dialog：行/列两个数字输入紧凑展示 */
+.table-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-10);
+  padding: var(--sp-4) 0;
+}
+.table-dialog__row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-10);
+}
+.table-dialog__label {
+  width: 50px;
+  font-size: var(--text-md);
+  color: #606266;
+}
+
+/* 编辑器浮层的公共容器：表格右键菜单 / 链接工具条 / URL 输入气泡。
+   三者是同一类东西——脱离正文流、贴在某处、点完即走——所以收成一份，
+   各自只写自己内部那部分（行高、按钮排布）。 */
+.editor-float {
+  position: fixed;
+  display: flex;
+  align-items: center;
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: var(--radius-xs);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* 表格右键菜单：fixed 定位（不依赖父容器 position），z-index 提到 el-dialog 之上避免被遮 */
+.ctx-menu {
+  z-index: 9999;
+  min-width: 140px;
+  padding: var(--sp-4) 0;
+  font-size: var(--text-md);
+  color: #303133;
+}
+.ctx-menu__item {
+  padding: var(--sp-8) var(--sp-12);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition: background 0.12s, color 0.12s;
+}
+.ctx-menu__item:hover {
+  background: #ecf5ff;
+  color: #409eff;
+}
+.ctx-menu__item--sep {
+  padding: 0;
+  margin: var(--sp-4) 0;
+  height: 1px;
+  background: #f0f2f5;
+  cursor: default;
+}
+.ctx-menu__item--sep:hover {
+  background: #f0f2f5;
+}
+
+/* ---------- 链接浮层 ---------- */
+/* z-index 不用 .ctx-menu 那个 9999：那是给 el-dialog 之上准备的，
+   链接浮层只在正文里出现，正文之上加 dialog 的层级没有对应的东西。 */
+.link-bar,
+.link-input,
+.cat-link {
+  z-index: 1000;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+}
+/* 工具条的按钮跟 .md-toolbar 那一排是同一张脸（text 变体 + 自家 hover 底色），
+   只是尺寸更紧凑——它贴着一个链接，四个按钮不能比正文行还高。 */
+.link-bar .el-button {
+  /* 比 .md-toolbar 那一排大一档：它是浮在正文上的独立控件，用户是"凑近了看"，
+     不是"扫过整排按钮"。--ctl-sm 就是"图标按钮"那一档，再大就压过正文行高了。 */
+  height: var(--ctl-sm);
+  margin: 0;
+  padding: 0 var(--sp-8);
+  font-size: var(--text-md);
+  color: var(--cc-text-2);
+  border-radius: var(--radius-xs);
+}
+.link-bar .el-button:hover {
+  background: var(--cc-surface-2);
+  color: var(--cc-text-1);
+}
+/* 输入框宽度是结构量（一个够放下常见 URL 的固定宽度），不进 --sp-* 阶梯。 */
+.link-input .el-input {
+  width: 260px;
+}
+/* 目录树比 URL 宽一点：节点名是中文（语言 / 基础 / 集合），260px 在四层缩进下
+   会把「集合」这一类短名挤到只剩两个字。 */
+.cat-link .el-select {
+  width: 280px;
+}
+
+/* 字号 / 字体档位浮层：贴着工具栏下沿，一列档位。 */
+.format-pick {
+  z-index: 1000;
+  flex-direction: column;
+  align-items: stretch;
+  padding: var(--sp-2);
+  min-width: 96px;
+}
+.format-pick__item {
+  padding: var(--sp-4) var(--sp-8);
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-size: var(--text-md);
+  color: var(--cc-text-1);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.format-pick__item:hover {
+  background: var(--cc-surface-2);
+}
+/* 「Aa」按钮用衬线体，跟 B / I 那一组（Times New Roman）同一张脸 */
+.md-btn-aa {
+  font-family: 'Times New Roman', serif;
+  font-size: var(--text-md);
+}
+
+/* 表格渲染样式：prosemirror-tables 自带 CSS（@milkdown/prose/tables/style/tables.css）
+   只设了 border-collapse / table-layout:fixed / 选中单元格 overlay，**没设 border 宽度和颜色**——
+   不补这层样式，DOM 里有 <table><td> 但视觉上完全无边框，用户以为"没插入表格"。
+   这里补齐 border / padding / 单元格最小宽度，让表格"看得见"。 */
+.milkdown-editor-body .ProseMirror table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  /* 上下留白跟段落一致（语雀那一档） */
+  margin: var(--kb-para-gap, 12px) 0;
+  overflow: hidden;
+}
+.milkdown-editor-body .ProseMirror th,
+.milkdown-editor-body .ProseMirror td {
+  border: 1px solid #dcdfe6;
+  padding: var(--sp-6) var(--sp-10);
+  vertical-align: top;
+  min-width: 80px;
+  position: relative;
+}
+.milkdown-editor-body .ProseMirror th {
+  background: #f5f7fa;
+  font-weight: 600;
+}
+/* 多 cell 选中态：prosemirror-tables 的 drawCellSelection 自动给选中的 cell 加 class="selectedCell"，
+   但 prosemirror-tables 自带 CSS（之前分析过不带 border）也没被我们引入——视觉上看不到高亮，
+   用户以为"没选上"。这里用 Element Plus 浅蓝主题色覆盖，跟项目主题一致。
+   选 background 直接覆盖而不是用 :after 伪元素（之前 td 已设 position:relative 兜得住，
+   但 background 方案更简单，不需要伪元素 + 透明度计算的额外开销）。 */
+.milkdown-editor-body .ProseMirror td.selectedCell,
+.milkdown-editor-body .ProseMirror th.selectedCell {
+  background: #ecf5ff;
+}
+.milkdown-editor-body .ProseMirror .tableWrapper {
+  overflow-x: auto;
+}
+
+/* ---------- 标题折叠 ----------
+   箭头是**真实 DOM 元素**（ProseMirror widget，见 kbHeadingFold.js 的 arrowDOM），
+   不是 ::before 伪元素 —— 伪元素只能靠坐标判定点击，做不准；
+   真实元素就是事件目标本身。字形走 ::after，免得箭头里多出文本。
+
+   **默认不显示，鼠标移到那个标题上才出现**（语雀那套）：
+   - 用 opacity 不用 display —— display:none 会让标题文字在出现/消失时左右跳一下；
+   - 隐藏时 pointer-events: none —— 不然那个"看不见的箭头"还能被点到，
+     用户在标题左边随手点一下就折叠了，纯属误触；
+   - **折起来的那一节箭头常驻** —— 藏起来的话，用户既看不出这节是折的，
+     也找不到把它展开的地方。
+
+   ⚠️ **宽度是 1em —— 也就是标题自己的字号**（不写死 px）：
+   箭头**跟着标题缩放**才是它的正常比例（写死 14px 的话，
+   同一个箭头配 H1 和配 H3 就是两个比例，大标题旁边显得特别小
+   —— 用户原话："大小还是不对，能不能改回之前的样子"）。
+   代价是**左边距也得装得下它**（.ProseMirror 的 padding-left = --kb-gutter，
+   而 --kb-gutter 2026-10-24 起是**定值**、不再跟字号缩放）⇒ 所以箭头宽度
+   另有一条上限：`min(1em, gutter - 缝)`（见下面标题那条规则）。
+
+   ⚠️ **margin-left / margin-right 这两个数是算出来的，不是调出来的**：
+   - `margin-left: -(1em + 缝)`：把箭头整个挪到左边距里（它自己不再占正文那一列）；
+   - `margin-right: 缝`：箭头盒子右边和标题文字之间留出 --kb-fold-gap 的缝；
+   - 两者的净效果 = 箭头的占位（宽 + 左负距 + 右负距）**正好为 0**
+     ⇒ 标题文字仍然落在正文那条基准线上，一格不差。
+   - 这里的 `1em` 是**标题自己的字号**（.kb-fold-arrow 继承了标题的 font-size），
+     所以 H1 的箭头最宽、H3 的最窄，但**右边缘都在同一条线上**（都贴着那条缝）。
+
+   为什么用 `vertical-align: baseline`（跟文字同一条基线），而不是 middle：
+   - 箭头就是一个**字**（'▾' / '▸'），它该跟标题文字坐在同一条基线上，
+     像标题里的任何一个字那样 —— 这才是"居中"的正解；
+   - `middle` 对齐的是「盒子的中心 ↔ 父级基线 + x-height 的一半」。
+     而中文标题的字形很高（墨迹从基线上 0.857em 到下 0.107em，视觉中心在基线上方 0.375em），
+     x-height 中线却只在上方 0.25em ⇒ 箭头比文字的视觉中心**低了 0.14em**
+     （实测 H1 低 4.33px、H2 低 4.04px、H3 低 2.24px）；
+   - 改成 baseline 之后，箭头的基线 = 文字的基线，箭头墨迹中心与文字视觉中心
+     **差 0~1px**（H1/H2/H3 实测），两个状态（▾ / ▸）也一样齐。
+
+   为什么不用绝对定位：绝对定位会把箭头挪出标题的盒子，鼠标移上去就不在
+   标题上了 → 箭头当场消失 → 点不到。负边距是 inline 的，箭头仍然是标题的
+   **后代节点**，鼠标在箭头上面时标题照样 :hover，箭头照常显示、照常可点。 */
+.milkdown-editor-body .ProseMirror .kb-fold-arrow {
+  display: inline-block;
+  /* 箭头宽度跟着标题走（--kb-arrow-w 在标题那条规则里算好，这里继承）。
+     **不许超过留白**：留白被调小时箭头等比变小，而不是压到标题文字上。 */
+  width: var(--kb-arrow-w);
+  margin-left: calc(-1 * var(--kb-arrow-w) - var(--kb-fold-gap));
+  margin-right: var(--kb-fold-gap);
+  /* 字形随标题缩放（不写 font-size，继承标题的） */
+  line-height: 1;
+  /* 跟标题文字同一条基线（理由见上面那段） */
+  vertical-align: baseline;
+  text-align: center;
+  color: var(--cc-text-1);
+  cursor: pointer;
+  user-select: none;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.milkdown-editor-body .ProseMirror h1:hover .kb-fold-arrow,
+.milkdown-editor-body .ProseMirror h2:hover .kb-fold-arrow,
+.milkdown-editor-body .ProseMirror h3:hover .kb-fold-arrow,
+.milkdown-editor-body .ProseMirror h4:hover .kb-fold-arrow,
+.milkdown-editor-body .ProseMirror h5:hover .kb-fold-arrow,
+.milkdown-editor-body .ProseMirror h6:hover .kb-fold-arrow {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* 箭头自己被指到时也要留着 —— 上一版把它挪到左边距里、**挪出了标题的盒子**，
+   于是「鼠标从左边扫进来」时那个位置不属于标题 → 标题不 hover → 箭头又藏起来，
+   看着像"偶尔才出现"，而且点不中。
+   现在标题的盒子一直铺到左边距（见下面的标题规则），箭头也在标题盒子里，
+   这一条只是兜底：万一以后有人又把它挪出去，箭头自己也能撑住可见。 */
+.milkdown-editor-body .ProseMirror .kb-fold-arrow:hover {
+  opacity: 1;
+  pointer-events: auto;
+}
+.milkdown-editor-body .ProseMirror .kb-is-collapsed .kb-fold-arrow {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* 字形走 ::after，免得箭头里多出文本。
+   ⚠️ **'▾' 和 '▸' 必须成对用**：实测这两个字形在同一字体下的**纵向墨迹完全一样**
+   （都在基线上方 0.5em ~ 0.214em 之间），所以展开/折叠两种状态下箭头的高度一致，
+   不会出现"折起来以后箭头忽然掉下去"（宽度差 0.357em / 0.286em，只影响胖瘦）。
+   想改成 CSS 画的三角也可以，但那样就得自己算它相对基线的位置 ——
+   字形是浏览器按字体度量摆的，天然就坐在基线上。 */
+.milkdown-editor-body .ProseMirror .kb-fold-arrow::after {
+  content: '▾';
+}
+/* 折叠中：箭头朝右 */
+.milkdown-editor-body .ProseMirror .kb-is-collapsed .kb-fold-arrow::after {
+  content: '▸';
+}
+/* 标题：**盒子往左探出去装箭头，文字退回正文那条基准线**。
+ *
+ * 两件事各归各：
+ * - `margin-left: -(箭头宽+缝)` + `padding-left: 箭头宽+缝`：
+ *   标题的**盒子**往左探出去一段（正好装它那个箭头），
+ *   而它的**文字**被等量的 padding 推回来 ⇒ 文字恒在正文那条基准线上
+ *   （用户原话："正文和标题对齐是跟这个展开图标对齐的"，
+ *   要的是跟**标题文字**对齐，不是跟图标对齐）。
+ *   **两个值互为相反数**（同一个箭头宽 + 同一个缝）⇒ 不管标题多大字号，
+ *   文字的位置都不动。
+ * - 箭头自己用负边距退进左边距里，占位抵消为 0，文字因此不被顶开
+ *   （见 .kb-fold-arrow 的注释）。
+ *
+ * ⚠️ **箭头宽（--kb-arrow-w）在这里算**：1em = 标题自己的字号（H1 最大 ⇒ 箭头最大），
+ * 但不许超过留白（--kb-gutter）—— 留白被调小时箭头等比变小，而不是压到文字上。
+ * 箭头是标题的子元素，继承这个值 ⇒ 两边永远是同一个数。
+ *
+ * ⚠️ **别再给标题加 padding-right / 改 margin-right**：
+ * 标题的盒子宽度 = 内容宽 + 探出去的那一段，右边缘正好落在
+ * .ProseMirror 的右沿（全局 reset 是 border-box，所以不会溢出）。
+ * 多给右负边距会超出滚动区。 */
+.milkdown-editor-body .ProseMirror h1,
+.milkdown-editor-body .ProseMirror h2,
+.milkdown-editor-body .ProseMirror h3,
+.milkdown-editor-body .ProseMirror h4,
+.milkdown-editor-body .ProseMirror h5,
+.milkdown-editor-body .ProseMirror h6 {
+  --kb-arrow-w: min(1em, calc(var(--kb-gutter) - var(--kb-fold-gap)));
+  margin-left: calc(-1 * var(--kb-arrow-w) - var(--kb-fold-gap));
+  padding-left: calc(var(--kb-arrow-w) + var(--kb-fold-gap));
+}
+
+/* ---------- 标题层级（正文排版规范）----------
+   **原来一条字号规则都没有** ⇒ 走浏览器默认：h1 2em / h2 1.5em / h3 1.17em / h4 1em。
+   正文 14px ⇒ H3 只比正文大 2.4px，肉眼看过去几乎一样；再加上全局 reset
+   把标题上下 margin 归零 ⇒ **标题和正文之间一点留白都没有**。
+   层次全靠"加粗"撑着（用户 2026-10-24：「标题和正文的字体大小 颜色 间隔
+   区别等等等等 我们系统中并不明确」，参照语雀）。
+
+   下面这套比例取语雀那一档：
+     h1 1.8em/800 · h2 1.43em/700 · h3 1.25em/600 · h4 1.1em/600 · h5-h6 1em/600
+   ⚠️ **em 的基准是父级字号**（= 正文字号）⇒ 用户把正文调大，标题等比跟着放大，
+     层次比例永远不变。
+   ⚠️ **--kb-head-scale 是乘数**，偏好面板拖它 = 整体调标题的大小（不改层级比例）。
+   ⚠️ **默认值写在 var() 的兜底里，不在这里声明**：自定义属性在**声明它的地方**
+     就被算成具体值 —— 这里写一句 `--kb-line-height: 1.8`，偏好面板写在 <html>
+     行内的那份会被**它盖住**、滑块怎么拖都不生效。所以一律 `var(--kb-x, 默认值)`。
+   ⚠️ **上下间距不对称**（语雀那档：标题上方留白明显大于下方），
+     而且**随层级递减** —— 大标题的上下都松，小标题的上下都紧，
+     全用同一个值会变成"小标题也松得离谱"。
+   ⚠️ **颜色不单独配**：走全站 token（--cc-text-1 最深，--cc-text-2 次之），
+     颜色调整在上面那层做，这里只定层级。 */
+.milkdown-editor-body .ProseMirror h1 {
+  font-size: calc(1.8em * var(--kb-head-scale, 1));
+  font-weight: 800;
+  line-height: 1.35;
+  margin-top: calc(var(--kb-head-gap, 20px) * 1.8);
+  margin-bottom: calc(var(--kb-head-gap, 20px) * 0.6);
+}
+.milkdown-editor-body .ProseMirror h2 {
+  font-size: calc(1.43em * var(--kb-head-scale, 1));
+  font-weight: 700;
+  line-height: 1.4;
+  margin-top: calc(var(--kb-head-gap, 20px) * 1.4);
+  margin-bottom: calc(var(--kb-head-gap, 20px) * 0.5);
+}
+.milkdown-editor-body .ProseMirror h3 {
+  font-size: calc(1.25em * var(--kb-head-scale, 1));
+  font-weight: 600;
+  line-height: 1.45;
+  margin-top: calc(var(--kb-head-gap, 20px) * 1.1);
+  margin-bottom: calc(var(--kb-head-gap, 20px) * 0.45);
+}
+.milkdown-editor-body .ProseMirror h4 {
+  font-size: calc(1.1em * var(--kb-head-scale, 1));
+  font-weight: 600;
+  line-height: 1.5;
+  margin-top: calc(var(--kb-head-gap, 20px) * 0.9);
+  margin-bottom: calc(var(--kb-head-gap, 20px) * 0.4);
+}
+.milkdown-editor-body .ProseMirror h5,
+.milkdown-editor-body .ProseMirror h6 {
+  font-size: calc(1em * var(--kb-head-scale, 1));
+  font-weight: 600;
+  line-height: 1.5;
+  /* 五级以下没什么层级了，用次一档的颜色标一下"到这儿已经是最细的" */
+  color: var(--cc-text-2);
+  margin-top: calc(var(--kb-head-gap, 20px) * 0.8);
+  margin-bottom: calc(var(--kb-head-gap, 20px) * 0.35);
+}
+
+/* 被折叠掉的那段内容 */
+.milkdown-editor-body .ProseMirror .kb-folded-hidden {
+  display: none;
+}

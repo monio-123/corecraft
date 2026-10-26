@@ -996,7 +996,7 @@ function applyTitle() {
 
 // ⚠️ 三处缺一不可，keep-alive 让它们各管一段：
 // ① watch title 而不是写进 load()——改 topic.value.title 的路径有三条（load 首屏、
-//    onTitleSaved 就地改名、onAdoptConfirm AI 采纳改标题），watch 的是**结果**不是
+//    onTitleSave 就地改名、onAdoptConfirm AI 采纳改标题），watch 的是**结果**不是
 //    **某条路径**，三条入口自动都覆盖。
 // ② onActivated——**这条是「只有第一次进有效」那个 bug 的根因**。AppLayout 的
 //    <keep-alive :max="6"> 缓存着实例：从详情页切走再点回来走的是 onActivated，
