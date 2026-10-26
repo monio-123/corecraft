@@ -72,14 +72,14 @@ async function submit() {
     if (isRename.value) {
       if (n === props.initialName) { visible.value = false; return }
       await renameCategory(props.initialId, n)
-      ElMessage.success('已重命名')
+      ElMessage.success('已更新')
     } else {
       await createCategory(n, props.parentId)
-      ElMessage.success(`已创建目录「${n}」`)
+      ElMessage.success('已创建')
     }
     visible.value = false
   } catch (e) {
-    ElMessage.error(e?.message || '操作失败')
+    // 提示归 request.js（走 axios 实例，唯一提示出口）
   } finally {
     saving.value = false
   }

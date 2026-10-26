@@ -5,7 +5,13 @@ import { authHeaders, clearAuth, hasToken } from './auth'
 
 const service = axios.create({
   baseURL: '/api',
-  timeout: 5000
+  // 5 秒对「点一下就该回」的接口够用，但它是**全局**值：一个稍慢的请求
+  //（后端刚启动时 Druid 初始化要几十秒、或某条慢查询）会被它掐断。
+  // 而超时抛的是 ECONNABORTED、**没有 response**，和「断网」落在同一个 else 分支里 ——
+  // 于是一个纯粹等太久的请求被报成「网络错误，请稍后重试」，用户去查网线，
+  // 查不出任何东西。30 秒足够覆盖冷启动，又不会让真挂掉的请求一直转圈。
+  // 天然就慢的请求（文件上传）自己再放宽，见 api/file.js。
+  timeout: 30000
 })
 
 // crypto.randomUUID 仅在安全上下文（HTTPS / localhost）可用，HTTP + IP 访问时不存在
@@ -50,7 +56,18 @@ function notifyError(msg) {
   ElMessage.error(msg)
 }
 
-// 响应拦截器
+// 响应拦截器。
+//
+// ⚠️ **这里是全站唯一的错误提示出口**，调用方不要在自己的 catch 里再弹一次。
+// 一个失败弹两条、内容还不一样（「网络错误，请稍后重试」+「文件上传失败」）
+// 是最糟的形态：用户既不知道该信哪条，也不知道下一步做什么。
+// 走了本实例的请求 → 提示归这里；调用方的 catch 只负责回滚状态（撤掉半插入的节点、清 loading）。
+// 反过来，**不走本实例的请求（原生 fetch 的 AI 流、剪贴板操作）仍然要自己弹** ——
+// 那种失败没人统一弹，漏了就是彻底静默。
+//
+// ⚠️ **`silent: true` 的请求不弹提示**（少数几处，见各自调用点的说明）：
+// 界面偏好在后端没上新版 / 后端挂了的时候，**每次进页面都弹一条红字**并不能帮上忙 ——
+// 偏好有本地兜底、页面照常用，弹提示只会变成噪音。真正的故障有别的地方报。
 service.interceptors.response.use(
   response => {
     const data = response.data
@@ -64,6 +81,7 @@ service.interceptors.response.use(
     return data
   },
   error => {
+    const silent = error.config?.silent
     if (error.response) {
       switch (error.response.status) {
         case 401:
@@ -83,12 +101,15 @@ service.interceptors.response.use(
           // 之前这里是注释掉的，等于 5xx 全静默 reject：后端挂了界面不报错、
           // 不跳转，只是各处数据停在空状态（用户看到的是"显示未登录但还能建目录"，
           // 根本猜不到是后端的问题）。字段用 message 和上面成功分支的口径一致。
-          notifyError(error.response?.data?.message || `请求失败（${error.response.status}）`)
+          if (!silent) notifyError(error.response?.data?.message || `请求失败（${error.response.status}）`)
       }
+    } else if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+      // 超时和断网是两回事：请求**确实发出去了**，只是回来得太晚。
+      // 合成一句「网络错误」会让用户去查网线 / 重启路由，而真正该做的是稍后重试。
+      if (!silent) notifyError('请求超时，请稍后重试')
     } else {
-      // 无 response = 请求根本没到服务端：断网 / 后端没起 / 5 秒超时（timeout: 5000）。
-      // 这三种和 5xx 一样之前是静默的。
-      notifyError('网络错误，请稍后重试')
+      // 无 response 且不是超时 = 请求根本没到服务端：断网 / 后端没起。
+      if (!silent) notifyError('网络错误，请稍后重试')
     }
     return Promise.reject(error)
   }

@@ -1,4 +1,6 @@
 import { ref, computed } from 'vue'
+import { createLoadSlot, loadOnce, resetSlot } from '../../utils/lazyLoad'
+import { onAuthChange } from '../../utils/auth'
 // api 层的方法统一改名（fetchXxx / saveApi / createApi…）：本文件对外导出的同名封装
 // （saveAiConfig）和它们在模块顶层撞名，会变成 "Identifier has already been declared"
 // ——白屏，且只在控制台报错。统一改名之后，"这一行属于哪一层"在文件里是一眼能看出来的。
@@ -10,7 +12,9 @@ import {
   updateAiEndpoint as updateApi,
   deleteAiEndpoint as deleteApi,
   streamChat,
-  listAiQuestions as fetchQuestions
+  listAiQuestions as fetchQuestions,
+  listAiVendors as fetchVendors,
+  refreshAiModels as refreshModels
 } from '../../api/ai'
 
 /**
@@ -47,49 +51,54 @@ const CURRENT_KEY = 'ai-current-endpoint'
 const aiConfig = ref({ enabled: false })
 // 列表直接给界面用（下拉、设置页列表），不再包一层 getter——那才是第 2 处重复
 export const aiEndpoints = ref([])
-/** 引导问题，来自字典 ai_topic_question。key 是 `key:contexts` 复合值，前端只当不透明字符串 */
+/** 引导问题，来自配置树上的「引导问题」那组。key 是 `key:contexts` 复合值，前端只当不透明字符串 */
 export const aiQuestions = ref([])
+/** 厂商清单（厂商 + 各自的模型）。**全局的**（字典表没有 user_id），跟着登录态作废 */
+export const aiVendors = ref([])
 /** 当前选中的 API id。设置页的"当前"标记直接读它，不用再包一个 computed */
 export const currentEndpointId = ref(readCurrentId())
 
-let loaded = false
-let inflight = null
+const aiSlot = createLoadSlot()
 
 function readCurrentId() {
   const v = localStorage.getItem(CURRENT_KEY)
   return v ? Number(v) : null
 }
 
-/** 跟 store 里那几个 ensure 一个套路：幂等 + 共享在途请求 + 失败不清标志位 */
+/**
+ * 幂等 + **共享在途请求** + 失败不清标志位。
+ *
+ * 共享在途那套在 `utils/lazyLoad.js`（和会话引导、store 的四份缓存同一份实现）——
+ * 以前这里是手写的一份，store 那几份又漏了，于是壳和首页同一时刻各拉一遍接口。
+ */
 export async function ensureAiConfigLoaded(force = false) {
-  if (loaded && !force) return { config: aiConfig.value, endpoints: aiEndpoints.value }
-  if (inflight && !force) return inflight
-  // 开关和列表是一次装载的：分开 await 会让首页多等一个 RTT
-  inflight = Promise.all([fetchAiConfig(), fetchEndpoints()])
-    .then(([configRes, endpointRes]) => {
-      aiConfig.value = configRes?.data || { enabled: false }
-      aiEndpoints.value = endpointRes?.data || []
-      // 选中的那条可能已经被删了，兜回第一条能用的
-      if (!aiEndpoints.value.some((e) => e.id === currentEndpointId.value)) {
-        const first = aiEndpoints.value.find((e) => e.ready) || aiEndpoints.value[0]
-        useEndpoint(first ? first.id : null)
-      }
-      loaded = true
-      return { config: aiConfig.value, endpoints: aiEndpoints.value }
-    })
-    .finally(() => {
-      // 必须清：不清的话首次失败会把 inflight 钉成一个 rejected promise，
-      // 之后每次调用都导向它，配置永远加载不出来（和 #25 同一个坑）
-      inflight = null
-    })
-  return inflight
+  return loadOnce(aiSlot, force, async () => {
+    // 开关和列表是一次装载的：分开 await 会让首页多等一个 RTT
+    const [configRes, endpointRes] = await Promise.all([fetchAiConfig(), fetchEndpoints()])
+    aiConfig.value = configRes?.data || { enabled: false }
+    aiEndpoints.value = endpointRes?.data || []
+    // 选中的那条可能已经被删了，兜回第一条能用的
+    if (!aiEndpoints.value.some((e) => e.id === currentEndpointId.value)) {
+      const first = aiEndpoints.value.find((e) => e.ready) || aiEndpoints.value[0]
+      useEndpoint(first ? first.id : null)
+    }
+    return { config: aiConfig.value, endpoints: aiEndpoints.value }
+  })
 }
 
 export async function saveAiConfig(data) {
   // 用后端回的形状覆盖：只有后端算得准 enabled
   const res = await saveApi(data)
   aiConfig.value = res?.data || aiConfig.value
-  loaded = true
+  // 缓存里的那份也得是最新的：**只改 `aiConfig` 不改缓存的话**，下一次
+  // ensureAiConfigLoaded() 命中 'ready' 会把**旧**的那份原样返回
+  // （loadOnce 直接 return slot.value），于是开关刚打开、过一会儿又变回关的，
+  // 刷新一下才对。
+  //
+  // 改法用**重拉**而不是手工改缓存：缓存归 loadOnce 管（它的 value 是什么形状
+  // 是它自己的事），手工塞一份进去等于在别处复制那条规则。
+  // 和下面增删改 API 三个函数是同一个写法。
+  await ensureAiConfigLoaded(true)
   return aiConfig.value
 }
 
@@ -117,6 +126,39 @@ export function useEndpoint(id) {
   else localStorage.removeItem(CURRENT_KEY)
 }
 
+// ---------- 厂商与模型清单（全局字典） ----------
+//
+// **和 AI 配置分开装**：厂商清单是全局的（字典表没有 user_id），
+// 跟"我配了哪些 API"不是一回事，生命周期也不同（跟着登录态作废，不跟着端点增删作废）。
+
+const vendorSlot = createLoadSlot()
+
+export async function ensureAiVendorsLoaded(force = false) {
+  return loadOnce(vendorSlot, force, async () => {
+    const res = await fetchVendors()
+    aiVendors.value = res?.data || []
+    return aiVendors.value
+  })
+}
+
+/**
+ * 拉厂商最新模型清单（后端写回字典），把这个厂商换成最新的那份。
+ *
+ * @param payload { vendor, baseUrl?, apiKey?, endpointId? }
+ * @returns 厂商最新的模型清单
+ */
+export async function refreshVendorModels(payload) {
+  const res = await refreshModels(payload)
+  const vendor = res?.data
+  if (vendor) {
+    const exists = aiVendors.value.some((v) => v.code === vendor.code)
+    aiVendors.value = exists
+      ? aiVendors.value.map((v) => (v.code === vendor.code ? vendor : v))
+      : [...aiVendors.value, vendor]
+  }
+  return vendor
+}
+
 /** 界面各处控制 AI 入口显不显示，一律用这个 */
 export const aiEnabled = computed(() => Boolean(aiConfig.value.enabled))
 
@@ -135,26 +177,28 @@ export const currentEndpoint = computed(
  * @param onDelta 每收到一段正文调用一次
  * @param onReasoning 每收到一段思考过程调用一次（**非思考模型不会触发**）
  * @param signal  传 AbortSignal 可以中途取消
- * @param questionKey 引导问题的字典 value（`key:contexts`）；用户自己敲的题不传
- * @param scene 问答场景，取字典 ai_system_prompt 的 value。**调用方必须显式给**，
- *   不在这里兜默认值——兜出来的场景一旦和实际用途对不上，症状是"AI 答非所问"，
- *   看着完全正常，排查起来比报错费劲得多
+ * @param questionKey 引导问题的短名（`key:contexts`）；用户自己敲的题不传
+ * @param material 这次要处理的素材（用户自己敲的一段文字）。不传 = 用这次指定的知识。
+ *   给了就用给的，**两者不同时出现**——出题不必被锁在这条知识里
+ * @param topicIds 这次处理**哪几条**知识（考一个目录时）。传了它就以它为准，topicId 忽略。
+ *   归属由服务端按登录态收
  * @param history 之前几轮 `[{question, answer}]`。**协议无状态，不带过去模型就不记得**
  *   （曾经就是这样：抽屉里明明是同一个对话，AI 却答"我没有上下文记忆"）。
  *   带多少轮由后端 `HISTORY_TURNS` 决定，这儿只管把已完成的轮次交上去
+ * @returns {Promise<string>} 这次收到的**完整正文**（流式层攒好的，调用方不用自己拼）
  */
 export async function ask(
   question,
-  { topicId, scene, history, onPrompt, onDelta, onReasoning, signal, questionKey } = {}
+  { topicId, topicIds, material, history, onPrompt, onDelta, onReasoning, signal, questionKey } = {}
 ) {
   if (!aiEnabled.value) {
-    throw new Error('AI 开关没打开，去「侧边栏头像 → AI 设置」里启用')
+    throw new Error('AI 开关没打开')
   }
   if (!currentEndpoint.value?.ready) {
-    throw new Error('还没选好 API，去「侧边栏头像 → AI 设置」里添加一个并选中')
+    throw new Error('还没选好 API')
   }
   return streamChat(
-    { topicId, question, endpointId: currentEndpoint.value.id, questionKey, scene, history: history || [] },
+    { topicId, topicIds, question, endpointId: currentEndpoint.value.id, questionKey, material, history: history || [] },
     { onPrompt, onDelta, onReasoning },
     signal
   )
@@ -164,29 +208,36 @@ export async function ask(
 // 独立于配置加载：配置拉不到（没配 AI）时不该顺带把引导问题也拖垮，
 // 而且引导问题只服务详情页那一个抽屉，不进首页的壳级预加载。
 
-let questionsLoaded = false
-let questionsInflight = null
+const questionsSlot = createLoadSlot()
 
 export async function ensureAiQuestionsLoaded(force = false) {
-  if (questionsLoaded && !force) return aiQuestions.value
-  if (questionsInflight && !force) return questionsInflight
-  questionsInflight = fetchQuestions()
-    .then((res) => {
-      aiQuestions.value = res?.data || []
-      questionsLoaded = true
-      return aiQuestions.value
-    })
-    .finally(() => { questionsInflight = null })
-  return questionsInflight
+  return loadOnce(questionsSlot, force, async () => {
+    const res = await fetchQuestions()
+    aiQuestions.value = res?.data || []
+    return aiQuestions.value
+  })
 }
 
-/** 退出登录时跟着作废。AI 配置是个人偏好，A 登出后 B 不该接着用 A 的 key */
-export function resetAiConfig() {
+/**
+ * 换账号 / 重新登录时把 AI 这份状态清掉。
+ *
+ * ⚠️ **模块级的内存状态不会跟着 localStorage 一起清**（`clearAuth()` 只清得到
+ * localStorage）。不作废的话：**登进来看到的是上一个账号的开关和 key** ——
+ * 症状是"AI 开关明明开着，界面显示关的；进一次设置页或刷新一下才对"。
+ *
+ * 以前这活儿挂在业务壳的"退出登录"回调上（`AppLayout.onSignedOut`），
+ * 于是**重新登录那条路没人管** —— 登出清了、登进没清。
+ * 现在挂在**登录态本身**上（`onAuthChange`：登录成功 / 退出 / 401 / 改完密码都会发），
+ * 两条路一起管住 —— 和 `useCorecraftWebStore` / `utils/session` 的做法一致
+ * （它们也是直接订阅、不额外导出一个 reset 函数）。
+ */
+onAuthChange(() => {
   aiConfig.value = { enabled: false }
   aiEndpoints.value = []
   aiQuestions.value = []
-  questionsLoaded = false
+  aiVendors.value = []
   currentEndpointId.value = null
-  loaded = false
-  inflight = null
-}
+  resetSlot(aiSlot)
+  resetSlot(questionsSlot)
+  resetSlot(vendorSlot)
+})

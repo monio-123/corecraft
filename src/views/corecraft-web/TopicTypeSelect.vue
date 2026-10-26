@@ -17,7 +17,7 @@
     </template>
 
     <div class="ttp">
-      <p v-if="!types.length" class="ttp__empty">字典里还没有类型</p>
+      <p v-if="!types.length" class="ttp__empty">没有类型</p>
       <template v-else>
         <button
           v-for="t in types"

@@ -13,6 +13,33 @@ const routes = [
     component: () => import('../views/Login.vue'),
     meta: { requiresAuth: false }
   },
+  // 编辑器实验台：**免登录**。编辑器的问题几乎全是「当场看着对、存下来再打开就不对」，
+  // 那个问题只能在「编辑 → 看存下去的 markdown → 重新打开」这条链上才看得见，
+  // 而这条链要求能反复跑、不落库、不依赖后端 —— 所以单独开一页，不进任何壳。
+  // 详见 views/EditorLab.vue。
+  {
+    path: '/editor-lab',
+    name: 'EditorLab',
+    component: () => import('../views/EditorLab.vue'),
+    meta: { requiresAuth: false }
+  },
+  // 考试（demo）：**独立窗口**，不进任何壳。
+  //
+  // 入口在知识点详情页顶栏（挨着「AI 问答」那个按钮）→ `window.open` 弹另一个标签页。
+  // 为什么单独一个路由而不挂在 /app 下面：考试是沉浸式的——侧边栏、顶栏、
+  // "这条知识在哪个目录"这些东西在考试里全是干扰。窗口关掉就关掉，
+  // 不影响原来那个页面。
+  // **题目和答题记录都不保存** —— 卷子只活在内存里，刷新就没了。
+  //
+  // ⚠️ **考哪一批知识走查询参数 `ids`**（`/exam?ids=1,2,3`），不走路径参数：
+  //   详情页给一条、列表页给当前筛选后可见的那些，两条入口共用同一个路由。
+  //   正文由服务端按 id 自己捞（AiChatReq.topicIds），前端不传正文。
+  {
+    path: '/exam',
+    name: 'AppExam',
+    component: () => import('../views/corecraft-web/AppExamView.vue'),
+    meta: { requiresAuth: true, title: '考试' }
+  },
   // 业务壳：/app/* 走 AppLayout（沉浸式、左侧栏 + 居中窄栏）
   // 与 admin 壳（/ 下的 Layout.vue：顶部菜单 + 可拖拽页面 tabs）完全独立。
   // 走哪个壳由菜单项的 meta.shell 决定，超管在资源管理页配置。
@@ -44,11 +71,13 @@ const routes = [
         meta: { title: '知识点' }
       },
       {
-        // 也不进导航列表：入口在侧边栏底部的用户菜单里。低频操作不该占导航的一行。
+        // 也不进导航列表：入口在侧边栏底栏那个齿轮的菜单里。低频操作不该占导航的一行。
         path: 'settings/ai',
         name: 'AppAiSettings',
         component: () => import('../views/corecraft-web/AiSettingsView.vue'),
-        meta: { title: 'AI 设置' }
+        // 标题跟页面自己的大标题、菜单项用同一个词（页面里写的是「AI 能力」）。
+        // 同一个东西三个地方三个名字 = 用户要自己认一遍。
+        meta: { title: 'AI 能力' }
       }
     ]
   },
@@ -88,6 +117,14 @@ const routes = [
         meta: { title: '字典管理' }
       },
       {
+        // 系统配置：系统默认的界面偏好 + 各用户自己的覆盖值。
+        // 菜单项在 sys_permission 里（code=config:manage，path 必须和这里对上）。
+        path: 'configs',
+        name: 'Configs',
+        component: () => import('../views/Configs.vue'),
+        meta: { title: '系统配置' }
+      },
+      {
         path: 'forbidden',
         name: 'Forbidden',
         component: Forbidden,
@@ -107,7 +144,7 @@ const router = createRouter({
   routes
 })
 
-const protectedMenuPaths = ['/users', '/roles', '/permissions', '/dicts']
+const protectedMenuPaths = ['/users', '/roles', '/permissions', '/dicts', '/configs']
 
 // 路由守卫
 router.beforeEach(async (to, from, next) => {

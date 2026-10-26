@@ -24,50 +24,51 @@
       />
     </template>
 
-    <!-- 标签。**写进去的是全部标签，不是只有 AI 推荐的**：
-         updateTopic 是 deleteByTopicId 后重插（替换不是合并），
-         只传新增的那几个会把用户原有的标签抹掉 -->
-    <template v-else-if="field === 'tags'">
-      <p class="adopt__hint">
-        采纳后这条知识会有下面这些标签（原有的 + AI 推荐的），点 × 就是不要它。
-      </p>
-      <div class="adopt__tags">
-        <span v-for="(t, i) in draftTags" :key="t" class="kb-chip">
-          <span class="kb-chip__text">{{ t }}</span>
-          <button
-            type="button"
-            class="kb-chip__x"
-            :aria-label="`移除标签 ${t}`"
-            @click="draftTags.splice(i, 1)"
-          ><el-icon><Close /></el-icon></button>
-        </span>
+    <!-- 标签 和 organize 合成一处分支。**这两块的标签编辑逐字相同**，
+         organize 只是多出「标题」「目录」两项控件，标签那块一个字都不用变。
+         ⚠️ 写进去的是全部标签，不是只有 AI 推荐的：updateTopic 是
+         deleteByTopicId 后重插（替换不是合并），只传新增的那几个会把用户原有的标签抹掉 -->
+    <template v-else-if="field === 'tags' || field === ORGANIZE_FIELD">
+      <template v-if="field === ORGANIZE_FIELD">
+        <div class="adopt__field">
+          <span class="adopt__label">标题</span>
+          <el-input v-model="draftTitle" placeholder="给它起个名字" />
+        </div>
+
+        <div class="adopt__field">
+          <span class="adopt__label">目录</span>
+          <p class="adopt__now">现在：{{ currentCategoryName }}</p>
+          <CategoryTreeSelect
+            v-model="draftCategoryId"
+            :categories="categories"
+            :new-category="parsed?.newCategory || null"
+            placeholder="选择目录"
+          />
+        </div>
+      </template>
+
+      <div class="adopt__field">
+        <span v-if="field === ORGANIZE_FIELD" class="adopt__label">标签</span>
+        <div class="adopt__tags">
+          <span v-for="(t, i) in draftTags" :key="t" class="kb-chip">
+            <span class="kb-chip__text">{{ t }}</span>
+            <button
+              type="button"
+              class="kb-chip__x"
+              :aria-label="`移除标签 ${t}`"
+              @click="draftTags.splice(i, 1)"
+            ><el-icon><Close /></el-icon></button>
+          </span>
+        </div>
+        <el-input
+          v-model="newTag"
+          size="small"
+          placeholder="再加一个标签"
+          @keyup.enter="addTag"
+        />
       </div>
-      <el-input
-        v-model="newTag"
-        size="small"
-        placeholder="再加一个标签"
-        @keyup.enter="addTag"
-      />
     </template>
 
-    <!-- 测验题：只读。结构化编辑（改题干 / 增删选项 / 换答案）比重新问一遍还费劲，
-         要改就取消、改完重新问 —— 这里只保证"写之前先看清楚" -->
-    <template v-else-if="field === 'quizQuestions' && parsed">
-      <p class="adopt__hint">
-        采纳后写入 {{ parsed.quizQuestions.length }} 道单选题（正确项已标出）。
-      </p>
-      <div class="adopt__quiz">
-        <p v-for="(q, i) in parsed.quizQuestions" :key="i" class="adopt__quiz-block">
-          <span class="adopt__quiz-stem">{{ i + 1 }}. {{ q.question }}</span>
-          <span
-            v-for="(o, j) in q.options"
-            :key="j"
-            class="adopt__quiz-option"
-            :class="{ 'is-answer': j === q.answer }"
-          >{{ LETTERS[j] }}. {{ o }}</span>
-        </p>
-      </div>
-    </template>
 
     <!-- 解析不出来。不是兜底：格式没对上说明 AI 没照 remark 的要求答，
          硬凑出来的值写进库是垃圾，所以这里只把原文摆出来让人复制 -->
@@ -103,7 +104,7 @@
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Close } from '@element-plus/icons-vue'
-import { adoptFieldOf, parseAdopt, NEW_CATEGORY } from './aiAdopt'
+import { adoptFieldOf, parseAdopt, NEW_CATEGORY, ORGANIZE_FIELD } from './aiAdopt'
 import CategoryTreeSelect from './CategoryTreeSelect.vue'
 import { createCategory } from './useCorecraftWebStore'
 
@@ -115,18 +116,24 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:modelValue', 'confirm'])
 
-const LETTERS = 'ABCDEFGH'
-
 const FIELD_LABEL = {
   title: '标题',
   categoryId: '目录',
-  tags: '标签',
-  quizQuestions: '测验题'
+  tags: '标签'
 }
 
 const field = computed(() => adoptFieldOf(props.turn?.questionKey))
 const parsed = computed(() => (props.turn ? parseAdopt(props.turn, props.categories) : null))
-const dialogTitle = computed(() => (field.value ? `采纳到${FIELD_LABEL[field.value]}` : '无法采纳'))
+
+/**
+ * `organize` 的 field 是 `'title|categoryId|tags'`——**一次三个字段的串，不是单个键名**。
+ * 直接拿它查 FIELD_LABEL 必然 miss，标题就会渲染成「采纳到undefined」。
+ */
+const dialogTitle = computed(() => {
+  if (!field.value) return '无法采纳'
+  const names = field.value.split('|').map((k) => FIELD_LABEL[k] || k)
+  return `采纳到${names.join(' / ')}`
+})
 
 const currentCategoryName = computed(
   () => props.categories.find((c) => c.id === props.topic?.categoryId)?.name || '未归类'
@@ -144,7 +151,12 @@ watch(
     if (!open) return
     const p = parsed.value
     draftTitle.value = p?.title ?? props.topic?.title ?? ''
-    draftCategoryId.value = p ? p.categoryId : props.topic?.categoryId ?? null
+    // 目录：AI 匹配到就预选它，匹配不到但提议了新建就预选「新建」，
+    // **AI 压根没提目录就保持原样**。原来写 `p ? p.categoryId : …`，p 存在但
+    // 没 categoryId 时会得到 undefined，界面上表现为"目录被清空了"
+    draftCategoryId.value = p
+      ? (p.categoryId ?? (p.newCategory ? NEW_CATEGORY : props.topic?.categoryId ?? null))
+      : props.topic?.categoryId ?? null
     draftTags.value = [...new Set([...(props.topic?.tags || []).map((t) => t.name), ...(p?.tags || [])])]
     newTag.value = ''
   }
@@ -165,8 +177,13 @@ const canConfirm = computed(() => {
       return draftCategoryId.value != null
     case 'tags':
       return draftTags.value.length > 0
-    case 'quizQuestions':
-      return true
+    // organize 一次三个字段，**各自独立**：有一项有值就能确认。
+    // 目录没选**不拦**——patch 里没有 categoryId 就是"不动目录"，
+    // 跟"选了空目录等于把这条知识移回未归类"完全是两回事
+    case ORGANIZE_FIELD:
+      return draftTitle.value.trim().length > 0
+        || draftTags.value.length > 0
+        || draftCategoryId.value != null
     default:
       return false
   }
@@ -176,6 +193,24 @@ function addTag() {
   const name = newTag.value.trim()
   if (name && !draftTags.value.includes(name)) draftTags.value.push(name)
   newTag.value = ''
+}
+
+/**
+ * 目录可能要新建：选了「+ 新建「X」」就真的建，返回它的 id。
+ *
+ * **返回 null = 建了但没查到（列表没同步），调用方必须就此打住**：
+ * categoryId 传 undefined 会被 updateTopic 回填成 null，等于"把这条知识移回未归类"
+ * ——一个用户根本没要求的改动。返回 undefined 则只是"这次不用建"。
+ */
+async function createNewCategoryId(nc) {
+  if (!nc) return undefined
+  // createCategory 直接返回新建的那个（回查在 store 里做了）
+  const created = await createCategory(nc.name, nc.parentId ?? undefined)
+  if (created?.id == null) {
+    ElMessage.error('目录建了但没查到，这条知识先不归类')
+    return null
+  }
+  return created.id
 }
 
 /**
@@ -194,27 +229,30 @@ async function confirm() {
     patch = { title: draftTitle.value.trim() }
   } else if (field.value === 'categoryId') {
     if (draftCategoryId.value === NEW_CATEGORY) {
-      const nc = p?.newCategory
-      if (!nc) return
-      // 建完拿 id：createCategory 直接返回新建的那个（回查在 store 里做了）
-      const created = await createCategory(nc.name, nc.parentId ?? undefined)
-      if (created?.id == null) {
-        // 建成功了却查不到 = 列表没同步。这时候**不能发 patch**：
-        // categoryId 传 undefined 会被 updateTopic 回填成 null，
-        // 等于"把这条知识移回未归类"——一个用户根本没要求的改动
-        ElMessage.error('目录建了但没查到，这条知识先不归类')
-        return
-      }
-      patch = { categoryId: created.id }
+      const id = await createNewCategoryId(p?.newCategory)
+      if (id === null) return
+      patch = { categoryId: id }
     } else {
       patch = { categoryId: draftCategoryId.value }
     }
+  } else if (field.value === ORGANIZE_FIELD) {
+    // 三段各自独立：**没有的字段不进 patch，updateTopic 就不会动它**。
+    // 用户只想要目录、把标题和标签改回原样，确认后也只动目录
+    patch = {}
+    if (draftTitle.value.trim()) patch.title = draftTitle.value.trim()
+    if (draftTags.value.length) patch.tags = [...draftTags.value]
+    if (draftCategoryId.value === NEW_CATEGORY) {
+      const id = await createNewCategoryId(p?.newCategory)
+      if (id === null) return
+      patch.categoryId = id
+    } else if (draftCategoryId.value != null) {
+      patch.categoryId = draftCategoryId.value
+    }
   } else if (field.value === 'tags') {
     patch = { tags: [...draftTags.value] }
-  } else if (field.value === 'quizQuestions') {
-    patch = { quizQuestions: p.quizQuestions }
   }
-  if (!patch) return
+  // organize 的 patch 起步是 {}，三个字段全被清空时它仍然是空的——那就不该发生任何写入
+  if (!patch || !Object.keys(patch).length) return
   // 只发出去，成功提示由写入方在 await 之后再弹。失败提示走 axios 拦截器（它已经做了去重），
   // 在这里先弹"已采纳"会变成先报喜再报错。
   emit('confirm', patch)
@@ -223,8 +261,7 @@ async function confirm() {
 </script>
 
 <style scoped>
-.adopt__now,
-.adopt__hint {
+.adopt__now {
   margin-bottom: var(--sp-8);
   color: var(--cc-text-3);
   font-size: var(--text-xs);
@@ -235,34 +272,24 @@ async function confirm() {
   font-size: var(--text-xs);
   line-height: 1.6;
 }
+/* organize 那一框：三组控件竖着排，组间要能一眼分开。标题 / 目录 / 标签
+   三段是独立可选的，所以每组自带一个小标签，不共用一个表头 */
+.adopt__field + .adopt__field {
+  margin-top: var(--sp-10);
+}
+.adopt__label {
+  display: block;
+  margin-bottom: var(--sp-4);
+  font-size: var(--text-xs);
+  color: var(--cc-text-3);
+}
 .adopt__tags {
   display: flex;
   flex-wrap: wrap;
   gap: var(--sp-6);
   margin-bottom: var(--sp-10);
 }
-.adopt__quiz {
-  max-height: 300px;
-  overflow-y: auto;
-}
-.adopt__quiz-block {
-  margin-bottom: var(--sp-10);
-  font-size: var(--text-xs);
-  line-height: 1.7;
-}
-.adopt__quiz-stem {
-  display: block;
-  color: var(--cc-text-1);
-}
-.adopt__quiz-option {
-  display: block;
-  padding-left: var(--sp-11);
-  color: var(--cc-text-3);
-}
-.adopt__quiz-option.is-answer {
-  color: var(--cc-primary);
-  font-weight: 600;
-}
+
 .adopt__raw {
   max-height: 300px;
   overflow: auto;

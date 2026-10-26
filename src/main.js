@@ -8,6 +8,9 @@ import './assets/kb.css'
 // Milkdown / ProseMirror 接管 contenteditable div 后，div 上有 .ProseMirror class
 // 但这个类不带任何基础样式，必须手动加载，否则编辑器光标 / 文本无样式
 import '@milkdown/prose/view/style/prosemirror.css'
+// 编辑器自己的全局样式（原先是 MilkdownEditorBody.vue 里那个 531 行的全局 style 块）。
+// **排在 prosemirror.css 之后**：原来它随组件 chunk 加载，相对次序就在 prosemirror.css 之后。
+import './assets/kb-editor.css'
 import { createApp } from 'vue'
 import ElementPlus from 'element-plus'
 // 不接 locale 的话 EP 内置文案全是英文：分页是 "Total 5 / 10/page"、

@@ -15,22 +15,32 @@
  *
  * ## 这不是「从自由文本里猜结构」
  *
- * 它只认字典里那几个 key（rename / pick_category / pick_tags / make_quiz / organize）。
+ * 它只认引导问题里那几个 key（rename / pick_category / pick_tags / organize）。
  * 用户自己敲的问题 `questionKey` 是空的，压根不进这里——它没有"该写进哪个字段"的语义
  * （要把它的答案写进正文是另一件事，不在采纳范围内）。
  */
 
 /**
+ * `organize` 一次产出三个字段。
+ *
+ * **导出它，而不是让 UI 侧各写各的字面量**：这个串原先在 `AiAdoptDialog` 的
+ * dialogTitle / 模板 / canConfirm / confirm / watch 里各出现一次共 5 处，
+ * 改一次漏 4 处，而漏掉的那处**不报错**，只是某个分支静默失效
+ * （2026-10-10 修 organize 采纳时就是这么坏的：四层 UI 全都没写它，
+ * 界面却显示「采纳到undefined」+「AI 没按要求的格式回答」）。
+ */
+export const ORGANIZE_FIELD = 'title|categoryId|tags'
+
+/**
  * questionKey 的 key 段 → kp_topic 的字段名。
- * 数组形式的 `'title|categoryId|tags'` 只给 `organize` 用：它一次产出三个字段，
+ * 数组形式的 `ORGANIZE_FIELD` 只给 `organize` 用：它一次产出三个字段，
  * 不走单字段的 switch（`adoptFieldOf` 只是拿它当"这条能不能被采纳"的判据）。
  */
 const ADOPT_FIELDS = {
   rename: 'title',
   pick_category: 'categoryId',
   pick_tags: 'tags',
-  make_quiz: 'quizQuestions',
-  organize: 'title|categoryId|tags'
+  organize: ORGANIZE_FIELD
 }
 
 /** 这条回答能不能被采纳；不能就返回 null（界面上不给按钮） */
@@ -73,8 +83,17 @@ function cleanName(text) {
   return cleanValue(firstLine(text))
 }
 
-/** `- xxx` / `* xxx` / `• xxx` 开头的一行。remark 里要求的就是"前面加 - " */
-const BULLET = /^\s*[-*•·]\s*(.+)$/
+/**
+ * 列表行的一行：`- xxx` / `* xxx` / `• xxx`，以及 `1. xxx`。
+ *
+ * remark 里要求的是"前面加 - "，但模型给标签时也时不时写成编号列表，
+ * 只认 `- ` 时那几行会被静默丢掉（`tagNameOf` 返回空串，上层 filter 掉）。
+ * 既然简答的要点也是同一种行，就共用这一条，别为两种行写两条正则。
+ *
+ * 内容用 `(.*)` 不是 `(.+)`：简答里一个空的 `-` 行不该被当成"没匹配"，
+ * 那会让这个破折号本身被当成一条要点。
+ */
+const BULLET = /^\s*(?:[-*•·]|\d{1,2}\s*[.、)）])\s*(.*)$/
 
 /**
  * 一行里取一个标签名，取不到返回空串。
@@ -93,15 +112,6 @@ const NAME_LINE = /^\s*(?:名字|标题)\s*[:：]\s*(.+)$/
 const CATEGORY_LINE = /^\s*目录\s*[:：]\s*(.+)$/
 const TAGS_HEAD = /^\s*标签\s*[:：]\s*$/
 
-/** 单选项的一行：`A. 内容` / `A、内容` / `A) 内容` */
-const OPTION = /^\s*([A-H])[.、)）]\s*(.+)$/
-
-/** 答案行：`答案：A` / `答案: A` / `正确答案 A` */
-const ANSWER = /^\s*(?:正确答案|答案|正确选项)\s*[:：]?\s*([A-H])/i
-
-/** 一道题的编号行：`1. 题干` / `1、题干` */
-const QUIZ_HEAD = /^\s*\d+[.、]\s*/
-
 /**
  * 解析成 `updateTopic` 的 patch。解析不出来返回 null。
  *
@@ -116,9 +126,7 @@ export function parseAdopt(turn, categories) {
       return parseCategory(turn?.answer, categories)
     case 'tags':
       return parseTags(turn?.answer)
-    case 'quizQuestions':
-      return parseQuiz(turn?.answer)
-    case 'title|categoryId|tags':
+    case ORGANIZE_FIELD:
       return parseOrganize(turn?.answer, categories)
     default:
       return null
@@ -289,57 +297,4 @@ function parseOrganize(answer, categories) {
   return { ...patch, newCategory: hit?.newCategory || null }
 }
 
-/**
- * 测验题按题拆成 `{type, question, options, answer}`。
- *
- * **按题拆而不是整段存一条**：`decodeQuizQuestion` 遇到纯文本会兜成
- * `{options: [], answer: 0}`——一个没有选项的"单选题"根本没法考。存结构化对象才
- * 是 `kp_topic_quiz` 这张表存在的意义。
- *
- * 任何一题解析不出来（没有题干、选项少于 2 个、没写答案）就整份不采纳：
- * 存 2 道正常的 + 1 道残缺的，比不存更麻烦。
- */
-function parseQuiz(answer) {
-  const blocks = splitQuizBlocks(answer)
-  if (!blocks.length) return null
-  const questions = blocks.map(parseQuizBlock)
-  return questions.every(Boolean) ? { quizQuestions: questions } : null
-}
 
-function splitQuizBlocks(text) {
-  const blocks = []
-  let current = null
-  for (const line of String(text || '').split('\n')) {
-    if (QUIZ_HEAD.test(line)) {
-      current = [line.replace(QUIZ_HEAD, '')]
-      blocks.push(current)
-    } else if (current) {
-      current.push(line)
-    }
-  }
-  return blocks.map((b) => b.join('\n').trim()).filter(Boolean)
-}
-
-function parseQuizBlock(block) {
-  const stem = []
-  const options = []
-  let answer = ''
-  for (const line of block.split('\n')) {
-    const option = line.match(OPTION)
-    if (option) {
-      options.push({ label: option[1].toUpperCase(), text: option[2].trim() })
-      continue
-    }
-    const hit = line.match(ANSWER)
-    if (hit && !answer) {
-      answer = hit[1].toUpperCase()
-      continue
-    }
-    // 选项之前都算题干；选项之后残留的行（模型多写的解释）丢掉
-    if (!options.length) stem.push(line.trim())
-  }
-  const question = stem.join(' ').trim()
-  const index = options.findIndex((o) => o.label === answer)
-  if (!question || options.length < 2 || index < 0) return null
-  return { type: 'single', question, options: options.map((o) => o.text), answer: index }
-}

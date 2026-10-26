@@ -1,8 +1,9 @@
+import { parseMeta } from './menu'
+
 const TOKEN_KEY = 'token'
 const TOKEN_TYPE_KEY = 'token_type'
 const EXPIRES_IN_KEY = 'expires_in'
 const PERMISSIONS_KEY = 'me_permissions'
-const ROLES_KEY = 'me_roles'
 const MENU_TREE_KEY = 'me_menu_tree'
 const MENU_PATHS_KEY = 'me_menu_paths'
 
@@ -59,22 +60,22 @@ export function saveAuth(payload = {}) {
   fireAuthChange()
 }
 
-export function saveAuthorizationProfile(profile = {}) {
-  localStorage.setItem(PERMISSIONS_KEY, JSON.stringify(profile.permissions || []))
-  localStorage.setItem(ROLES_KEY, JSON.stringify(profile.roles || []))
+/**
+ * 缓存权限码（`hasPermission()` 要同步读它，所以放 localStorage）。
+ *
+ * **只缓存 permissions，不缓存 roles**（2026-10-21 删）：
+ * 当前用户的角色在 `/me/profile` 的响应里就有（`SysUserProfileResp.roles`），
+ * 走 `utils/session.js` 的 `sessionProfile` 那一路。
+ * 原来这里还写一份 `me_roles`，而 `getRoles()` **零调用** ——
+ * 同一个数据的第二个副本、从来没被读过，还占了 localStorage 一个键。
+ */
+export function savePermissions(permissions = []) {
+  localStorage.setItem(PERMISSIONS_KEY, JSON.stringify(permissions || []))
 }
 
 export function getPermissions() {
   try {
     return JSON.parse(localStorage.getItem(PERMISSIONS_KEY) || '[]')
-  } catch {
-    return []
-  }
-}
-
-export function getRoles() {
-  try {
-    return JSON.parse(localStorage.getItem(ROLES_KEY) || '[]')
   } catch {
     return []
   }
@@ -89,12 +90,9 @@ export function saveMenuTree(menuTree = []) {
   const paths = []
   const walk = (nodes = []) => {
     nodes.forEach((node) => {
-      let meta = {}
-      try {
-        meta = node?.meta ? JSON.parse(node.meta) : {}
-      } catch {
-        meta = {}
-      }
+      // meta 怎么解析：**menu.js 那一份是权威**（脏 JSON 当空对象）。
+      // 这里原来自己写了一遍 try/catch，规则一样但改一处要记得改另一处。
+      const meta = parseMeta(node?.meta)
       if (meta?.path) {
         paths.push(meta.path)
       }

@@ -17,11 +17,11 @@
            click.stop：卡片点击是"进详情页"，不拦住的话打完字松手就跳走。 -->
       <TopicTitleInput
         v-if="editable"
-        :topic-id="topic.id"
         :title="topic.title"
         class="card__title"
         @pointerdown.stop
         @click.stop
+        @save="onTitleSave"
       />
       <h3 v-else class="card__title">{{ topic.title }}</h3>
       <!-- 下拉壳、竖排 ⋮、hover 前的点击拦截都在 RowMenu 里，和目录行 / 标签行
@@ -55,7 +55,7 @@
  */
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { dnd, dndPick, excerptOf } from './useCorecraftWebStore'
+import { dnd, dndPick, excerptOf, updateTopic } from './useCorecraftWebStore'
 import { useTopicDrag } from './useTopicDrag'
 import RowMenu from './RowMenu.vue'
 import TopicTitleInput from './TopicTitleInput.vue'
@@ -71,6 +71,19 @@ const props = defineProps({
 const emit = defineEmits(['click', 'delete'])
 
 const router = useRouter()
+
+/**
+ * 标题保存。列表页没有详情页那个 applyPatch，**直调 store 的 updateTopic** ——
+ * 组件自己不再调接口（保存的出口只有这一个）。store 会顺手把列表刷一遍，
+ * 卡片拿到的还是新的 title。
+ */
+async function onTitleSave(title) {
+  try {
+    await updateTopic(props.topic.id, { title })
+  } catch {
+    // 失败提示归 axios 拦截器；这里吞掉只是为了不产生 unhandled rejection
+  }
+}
 const { onPointerDown } = useTopicDrag(() => {
   const t = props.topic
   return t ? { what: { topicId: t.id }, label: t.title || excerptOf(t.content, 18) } : null
@@ -134,8 +147,8 @@ const excerpt = computed(() => excerptOf(props.topic.content))
 <style scoped>
 .card {
   position: relative;
-  background: #fff;
-  border: 1px solid #eef0f3;
+  background: var(--cc-surface);
+  border: 1px solid var(--cc-border-card);
   border-radius: var(--radius-lg);
   padding: var(--sp-12) var(--sp-13) var(--sp-11);
   cursor: pointer;
@@ -153,7 +166,7 @@ const excerpt = computed(() => excerptOf(props.topic.content))
   -webkit-touch-callout: none;
 }
 .card:hover {
-  border-color: #cfe0f7;
+  border-color: var(--cc-primary-border);
   box-shadow: 0 3px 14px rgba(31, 35, 41, 0.05);
 }
 /* 正在被拖的源卡片：压暗，让"已经拿起来了"和"跟着走的影子"分得开 */
@@ -184,7 +197,7 @@ const excerpt = computed(() => excerptOf(props.topic.content))
   font-size: var(--text-xl);
   font-weight: 600;
   line-height: 1.5;
-  color: #1f2329;
+  color: var(--cc-text-1);
   min-height: 1.5em;
 }
 /* 两行截断只对 h3 有效。input 天生单行（超出省略号由 TopicTitleInput 负责），
@@ -238,7 +251,7 @@ const excerpt = computed(() => excerptOf(props.topic.content))
   margin: var(--sp-6) 0 0;
   font-size: var(--text-xs);
   line-height: 1.65;
-  color: #8a9099;
+  color: var(--cc-icon);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   line-clamp: 2;

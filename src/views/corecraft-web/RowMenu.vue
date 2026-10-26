@@ -73,7 +73,10 @@ const emit = defineEmits(['command'])
   align-items: center;
   border: none;
   background: transparent;
-  color: #c0c4cc;
+  /* 灰度走 token（--cc-text-4 = 计数 / 占位 / 禁用那一档）：
+     原来这里写死一个灰度字面量，AI 设置页那边又出现同一个字面量当 fallback，
+     同一个颜色两处各写一份，改一处就漂。 */
+  color: var(--cc-text-4);
   cursor: pointer;
   padding: var(--sp-3);
   border-radius: var(--radius-xs);

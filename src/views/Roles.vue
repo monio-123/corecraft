@@ -205,10 +205,10 @@ const saveRoleInfo = async () => {
 
     if (roleForm.id) {
       await updateRole({ id: roleForm.id, ...payload })
-      ElMessage.success('角色已更新')
+      ElMessage.success('已更新')
     } else {
       await createRole(payload)
-      ElMessage.success('角色已创建')
+      ElMessage.success('已创建')
     }
 
     roleDialogVisible.value = false
@@ -227,7 +227,7 @@ const saveRolePermissions = async () => {
   try {
     const permissionIds = permissionTreeRef.value?.getCheckedKeys() || []
     await updateRole({ id: permForm.roleId, permissionIds })
-    ElMessage.success('权限已保存')
+    ElMessage.success('已保存')
     permDialogVisible.value = false
     await fetchRoles()
   } finally {
@@ -238,7 +238,7 @@ const saveRolePermissions = async () => {
 const removeRole = async (id) => {
   await ElMessageBox.confirm('确认删除该角色吗？', '提示', { type: 'warning' })
   await deleteRole(id)
-  ElMessage.success('角色已删除')
+  ElMessage.success('已删除')
   await fetchRoles()
 }
 
@@ -246,7 +246,7 @@ onMounted(async () => {
   try {
     await fetchRoles()
   } catch (e) {
-    ElMessage.error('加载角色列表失败')
+    // 提示归 request.js（走 axios 实例，唯一提示出口）
   }
 })
 </script>

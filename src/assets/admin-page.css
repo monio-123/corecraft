@@ -224,8 +224,12 @@
 .page .el-empty__image {
   display: none;
 }
-.page .el-empty__description,
-.page .el-table__empty-text {
+.page .el-empty__description {
   color: var(--cc-text-3);
   font-size: var(--text-sm);
+}
+/* 表格空态：**一个字都不说** —— 表头在、下面没行，用户自己看得懂。
+   EP 默认给的是「暂无数据」，准则 §8 ④ 点名的就是这种话（一处 CSS 收掉全部表格）。 */
+.page .el-table__empty-text {
+  display: none;
 }

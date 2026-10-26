@@ -22,13 +22,11 @@ export function deleteTopic(id) {
   return request.delete(`/kp/topic/${id}`)
 }
 
-export function addTopicRelation(topicId, relatedTopicId) {
-  return request.post(`/kp/topic/${topicId}/relation/${relatedTopicId}`)
-}
-
-export function removeTopicRelation(topicId, relatedTopicId) {
-  return request.delete(`/kp/topic/${topicId}/relation/${relatedTopicId}`)
-}
+// ⚠️ **知识点关联的两个接口封装删掉了**（2026-10-21）：前端从上线到现在
+// 没有建立关联的入口，`kp_topic_relation` 表恒为 0 条 ⇒ 这两个封装零调用。
+// **后端接口还在**（`POST /kp/topic/{id}/relation/{rid}` / `DELETE` 同款），
+// 真要做关联功能时按上面那两行的样子接回去即可（后端一行没动）。
+// 别在没有任何调用方的时候留着"以后也许用得上"的封装 —— 那是死的。
 
 // ============ 标签（独立主表，按 user 隔离） ============
 
@@ -58,6 +56,12 @@ export function getCategoryList() {
 
 export function createCategory(data) {
   return request.post('/kp/category', data)
+}
+
+// 批量导入目录树：一次提交整棵树（{ nodes: [{ name, children }] }），
+// 服务端在一个事务里建完 —— 逐个建就是 N 次请求，中途失败留半棵树。
+export function importCategories(data) {
+  return request.post('/kp/category/import', data)
 }
 
 // 重命名目录：按 **id** 定位（{ id, newName }），不是按名字。

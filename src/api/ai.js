@@ -6,11 +6,10 @@ import { authHeaders } from '../utils/auth'
  *
  * **路径不带 userId**：后端从登录态取，前端传了也没用，传了反而像能改别人的。
  *
- * **apiKey 明文进出**（2026-10-07 用户拍板）：设置页把它当普通字段显示和编辑，
- * 打开编辑框就是库里那个值。原来是"只进不出 + 显示『已填写，留空表示不改』"，
- * 用户要核对 / 复制的时候拿不到——藏起来是负担，不是保护。
- * ⚠️ 代价：密钥随列表响应一起下发到浏览器，且站点走 HTTP。
- * 要收回这条得靠 HTTPS + 密钥加密存储，不是改这一行能解决的。
+ * **apiKey 不再回传**（2026-10-26 改）：设置页只说"配了没有"，不给明文。
+ * 改的理由不是"密钥该藏着"这种洁癖，是**刷新模型这件事本来就得由后端做**——
+ * 厂商接口要用密钥，前端拿不到密钥就调不了 ⇒ 密钥没有必要下发到浏览器。
+ * ⚠️ 这条推翻了 2026-10-07 那次"明文回传"的决定。
  */
 
 /** 读当前用户的配置。没配过时后端返回 enabled=false 的空壳，不是 null */
@@ -40,11 +39,35 @@ export function deleteAiEndpoint(id) {
   return request.delete(`/ai/endpoint/${id}`)
 }
 
+// ---------- 厂商与模型清单（全局字典） ----------
+
+/**
+ * 厂商清单（连各自的模型）。
+ *
+ * **厂商 = 一个字典类型**（code 前缀 ai_vendor_），**模型 = 那个类型下的字典项**。
+ * 全局的（字典表没有 user_id），所以路径不带 userId。
+ */
+export function listAiVendors() {
+  return request.get('/ai/vendor')
+}
+
+/**
+ * 从厂商接口拉最新模型清单，**写回字典**。
+ *
+ * @param data { vendor, baseUrl?, apiKey?, endpointId? }
+ *   - `apiKey`：编辑已有端点时**不用传**——密钥不再下发到浏览器，后端用这条端点自己存的那把。
+ *     新增端点时还没存进库，才需要前端把刚填的密钥传上去。
+ *   - `endpointId`：告诉后端"用这条端点存的地址和密钥"
+ */
+export function refreshAiModels(data) {
+  return request.post('/ai/vendor/models/refresh', data)
+}
+
 /**
  * 抽屉空态那几个引导问题。
  *
- * 来自字典 ai_topic_question，**改问题在管理后台的字典管理里改就行，不用发版**。
- * 字典拉不到时后端返回空列表，前端空态什么都不显示——不该为一个可有可无的引导列表
+ * 来自配置树上的「引导问题」那组，**改问题在管理后台的系统配置里改就行，不用发版**。
+ * 配置树拉不到时后端返回空列表，前端空态什么都不显示——不该为一个可有可无的引导列表
  * 让整页报错。
  */
 export function listAiQuestions() {
@@ -65,21 +88,23 @@ export function listAiQuestions() {
  *   非思考模型（deepseek-flash 这类）一次都不会触发
  * - `onDelta(text)` 正文增量
  *
- * @param scene 问答场景，决定后端用哪段统一描述（字典 ai_system_prompt）。**必填**——
- *   场景写错时后端宁可报错，也不肯换一段描述顶上去（那样只是"答非所问"，看着完全正常）
+ * @param material 这次要处理的素材（用户自己敲的一段文字）。不传 = 用这次指定的知识。
+ *   给了就用给的，**两者不同时出现**
+ * @param topicIds 这次处理**哪几条**知识（考一个目录时）。传了它就以它为准，topicId 忽略
  * @param history 之前几轮 `[{question, answer}]`。**协议无状态，不回传模型就不记得**——
  *   后端不落库也拿不到，所以这份历史只能由抽屉交上来
  * @param signal 传 AbortSignal 可以中途取消
+ * @returns {Promise<string>} 这次收到的**完整正文**
  */
 export async function streamChat(
-  { topicId, question, endpointId, questionKey, scene, history },
+  { topicId, topicIds, question, endpointId, questionKey, material, history },
   { onPrompt, onDelta, onReasoning } = {},
   signal
 ) {
   const res = await fetch('/api/ai/chat/stream', {
     method: 'POST',
     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ topicId, question, endpointId, questionKey, scene, history }),
+    body: JSON.stringify({ topicId, topicIds, question, endpointId, questionKey, material, history }),
     signal
   })
   // 这一层只在"还没开始流"时才可能失败（401 / 参数校验 / 后端开流前就抛了异常）。
@@ -98,6 +123,14 @@ export async function streamChat(
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
+  // **完整正文在这里攒一份**：流式是"边收边给"，但调用方要的是"收完的那一整段"。
+  // 以前每个调用方自己写一遍 `let text = ''` + `onDelta: (t) => { text += t }`
+  // （出卷、判分、生成骨架、写知识点、挑标签……散在四个文件里），
+  // 改一处只改一半 ⇒ **这条规则收在这里，只此一份**。
+  //
+  // ⚠️ 只攒 `delta`（正文），**不攒 `reasoning`（思考过程）**：
+  // 思考过程不是模型给的答案，混进去会污染解析器的输入。
+  let full = ''
   for (;;) {
     const { done, value } = await reader.read()
     if (done) break
@@ -111,12 +144,16 @@ export async function streamChat(
       if (!payload) continue
       const evt = JSON.parse(payload)
       if (evt.error) throw new Error(evt.error)
-      if (evt.done) return
+      if (evt.done) return full
       if (evt.prompt) onPrompt?.(evt.prompt)
       if (evt.reasoning) onReasoning?.(evt.reasoning)
-      if (evt.delta) onDelta?.(evt.delta)
+      if (evt.delta) {
+        full += evt.delta
+        onDelta?.(evt.delta)
+      }
     }
   }
+  return full
 }
 
 async function readError(res) {

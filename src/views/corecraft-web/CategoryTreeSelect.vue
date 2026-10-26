@@ -34,10 +34,14 @@
  * （只有那个"新建"节点每行不同），所以 `baseTree` 提到 computed 里共用，
  * 不要每行各建一份。
  *
+ * 建树本身在 `utils/categoryTree.js`——正文里「设为目录链接」的选择器
+ * 要的是同一棵树，两边各写一遍的话改排序就得改两处，而那不会报错。
+ *
  * `size` 透传下去：批量弹框里一行一个，用默认尺寸会长得很高。
  */
 import { computed } from 'vue'
 import { newCategoryPath, NEW_CATEGORY } from './aiAdopt'
+import { toCategoryTree } from '../../utils/categoryTree'
 
 const props = defineProps({
   modelValue: { type: [Number, String], default: null },
@@ -49,25 +53,8 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:modelValue'])
 
-/** 已有目录构成的树。父不在列表里的按顶层放（都是自己的数据，那样出现是脏数据） */
-const baseTree = computed(() => {
-  const list = props.categories || []
-  const ids = new Set(list.map((c) => c.id))
-  const byParent = new Map()
-  for (const c of list) {
-    if (!c.parentId || !ids.has(c.parentId)) continue
-    if (!byParent.has(c.parentId)) byParent.set(c.parentId, [])
-    byParent.get(c.parentId).push(c)
-  }
-  const node = (c) => {
-    const kids = (byParent.get(c.id) || []).map(node)
-    return kids.length ? { value: c.id, label: c.name, children: kids } : { value: c.id, label: c.name }
-  }
-  return list
-    .filter((c) => !c.parentId || !ids.has(c.parentId))
-    .sort((a, b) => String(a.name).localeCompare(String(b.name), 'zh'))
-    .map(node)
-})
+/** 已有目录构成的树（规则见 utils/categoryTree） */
+const baseTree = computed(() => toCategoryTree(props.categories))
 
 /** 「+ 新建 数据库 / MySQL」——路径拼接在 aiAdopt 的 newCategoryPath，这里只加前缀 */
 function newCategoryLabel(nc) {

@@ -49,15 +49,24 @@
       >
         <div class="app-side__section-title">
           <span>目录</span>
+          <!-- 一个入口：**生成知识包**（主题 → 目录骨架 → 逐目录写知识点）。
+               生成的目录自成一体、放在第一层；挂到哪、怎么挪，用户自己在侧边栏拖。
+               为什么叫"生成"不叫"导入"：这套体系还没长出来的时候，"生成"才是
+               用户真正缺的那件事（"导入"的前提是先有东西可导）。 -->
+          <el-tooltip content="生成知识包" placement="right">
+            <button class="app-side__add" aria-label="生成知识包" @click="openTreeDialog">
+              <el-icon><MagicStick /></el-icon>
+            </button>
+          </el-tooltip>
           <el-tooltip content="新建一级目录" placement="right">
-            <button class="app-side__add" aria-label="新建一级目录" @click="openCreateRoot">＋</button>
+            <button class="app-side__add" aria-label="新建一级目录" @click="openCreate(ROOT_CATEGORY, '')">＋</button>
           </el-tooltip>
         </div>
         <div v-if="rootCategories.length" class="app-cats">
           <RouterLink
             v-for="c in rootCategories"
             :key="c.id"
-            :to="{ path: '/app/learn', query: { category: c.id } }"
+            :to="categoryLink(c.id)"
             class="app-cats__item"
             :class="{
               'is-on': isCurrentRoot(c.id),
@@ -71,7 +80,7 @@
           >
             <span class="app-cats__name">{{ c.name }}</span>
             <span class="app-cats__count">{{ categoryCounts[c.id] || 0 }}</span>
-            <CategoryRowMenu :category="c" @add="openChildCreate" @rename="openRename" />
+            <CategoryRowMenu :category="c" @add="(c) => openCreate(c.id, c.name)" @rename="openRename" @points="openPointsDialog" />
             <!-- 展开子树的入口。**没有下级就不给箭头**：弹出来是个空壳，
                  建子目录靠这一行自己的「⋯」就够了。
                  `@click.stop.prevent`：外层是 RouterLink，不拦住的话点箭头会顺带
@@ -86,18 +95,24 @@
             ><el-icon><ArrowRight /></el-icon></button>
           </RouterLink>
         </div>
-        <p v-else class="app-side__empty">还没有目录</p>
+        <!-- ⚠️ **「没有目录」这句话只在真的加载完之后才成立**。
+             加载中就说它，是句假话（用户明明有目录），看着像"目录被清空了"。
+             所以分「加载中」「加载失败」「真的没有」三种情况。 -->
+        <p v-else-if="categoriesState === 'loading'" class="app-side__empty">加载中…</p>
+        <p v-else-if="categoriesState === 'failed'" class="app-side__empty">加载失败</p>
+        <p v-else class="app-side__empty">没有目录</p>
       </div>
 
       <div class="app-side__spacer"></div>
 
-      <!-- 底部：用户。启动加载失败时这一格换成「加载失败 + 重试」——
+      <!-- 底部：用户。**会话拉失败时这一格换成「加载失败 + 重试」**——
            位置不变、文案如实说、按钮形态不变，只是从"谎称未登录"变成"让你重来一次"。
            为什么不能显示「未登录」：真没登录时 401 拦截器已经 clearAuth + 弹到登录页了，
            能站在这里看见侧边栏就说明 token 是好的（建目录、查目录都调得通，
-           那些请求不走 bootstrapSession）。那一格实际含义是"资料没加载出来"。 -->
+           那些请求不走 bootstrapSession）。那一格实际含义是"资料没加载出来"。
+           判断依据是**共享的** sessionState（两个壳同一份，见 utils/session.js）。 -->
       <div class="app-side__user">
-        <template v-if="loadFailed">
+        <template v-if="sessionState === 'failed' || shellDataFailed">
           <span class="app-side__failed">加载失败</span>
           <el-tooltip content="重新加载" placement="top">
             <button class="kb-icon-btn" aria-label="重新加载" @click="loadShell">
@@ -105,35 +120,45 @@
             </button>
           </el-tooltip>
         </template>
-        <!-- 用户菜单：AI 设置 + 退出都收在这里。
-             为什么不让「AI 设置」占导航一行：它是极低频操作（一辈子填一次），
-             而导航那几行留给每天都点的东西。跟管理后台的用户下拉同一套心智。 -->
-        <el-dropdown v-else class="app-side__user-menu" trigger="click" @command="handleUserCommand">
-          <span class="app-side__user-trigger">
-            <el-avatar :size="34" :src="currentUser.avatar || undefined" class="user-avatar">
-              {{ userAvatarFallback }}
-            </el-avatar>
-            <span class="app-side__username">{{ currentUser.nickname || currentUser.username || '未登录' }}</span>
-            <el-icon class="app-side__user-caret"><ArrowDown /></el-icon>
-          </span>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="ai">AI 设置</el-dropdown-item>
-              <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
+        <!-- 用户菜单：**两个壳共用这一份**（见 components/UserMenu.vue）。
+             菜单项和管理后台一样：编辑个人信息 / 修改密码 / 退出登录。
+             「AI 能力」不在这里 —— 它在右边那个齿轮里（见下面）。
 
-        <!-- 侧边栏自己的设置（宽度 / 密度）。**不塞进顶栏**：它管的就是这一块，
-             放在这儿才是"哪儿的问题回哪儿改"。admin 壳压根没有侧边栏，没有对应物。
-             **放在用户菜单之后**：`.app-side__user-trigger` 是 `flex: 1`，撑满剩下的
-             宽度，齿轮自然落到最右边——放它前面就会被顶到左边去。
+             **退出登录不用监听**：确认框、清登录态、提示、跳登录页都在
+             UserMenu 里做完了（两个壳共用那一份）；这个壳退出时没有要额外清的
+             ——数据归 store 的 onAuthChange、AI 配置归 useAi.js 的 onAuthChange。
 
              它**不装在 v-if / v-else 里**：加载失败时那一条是"重试"不是"用户"，
-             但侧边栏照样在、宽度和密度照样该能调——**没有理由让设置跟着数据一起消失。**
-             也因此不需要外面再套一层 span 专门挂显隐样式：常显，且落在最右，
-             和用户行的主次不打架。 -->
-        <SidePrefsPanel />
+             但侧边栏照样在、宽度和密度照样该能调——**没有理由让设置跟着数据一起消失。** -->
+        <UserMenu
+          class="app-side__user-menu"
+          :user="currentUser"
+        />
+
+        <!-- 设置（一个入口，两项）。**不塞进顶栏**：它管的是侧边栏和首页这两块，
+             放在侧边栏底栏才是"哪儿的问题回哪儿改"。admin 壳压根没有侧边栏，没有对应物。
+             **放在用户菜单之后**：`.app-side__user-menu` 是 `flex: 1`，撑满剩下的
+             宽度，齿轮自然落到最右边——放它前面就会被顶到左边去。
+
+             ①「界面设置」：侧边栏 / 首页 / 知识点 / 详情四组**合并到这一个面板**，顶部一条切换栏换组（用户要求）。
+                之前首页那组挂在首页自己的左下角，形态一样、组件同一个，两处入口却是两处：
+                同一个 `PrefsPanel` 摆两个位置，用户得知道"哪条调哪个"。合并后只有一个入口。
+             ②「AI 能力」：配置用哪些模型 API（地址 / 模型 / Key）。原来它在用户菜单里 ——
+                那是"关于我"的位置，放一个系统级配置不合适；它是设置，该在设置里。
+
+             ⚠️ **齿轮就是偏好面板自己的触发器**（面板里那个齿轮按钮）。
+             曾经试过把齿轮改成 el-dropdown、面板用虚拟触发器挂在它上面 ——
+             **同一个元素既是下拉的触发器、又是浮层的触发器，点一下两个都响应**：
+             面板自己冒出来（还没点「界面设置」），而且虚拟定位没解析、跑到左上角去了。
+             所以齿轮保持"一点就弹偏好面板"，AI 能力作为面板顶部的一个入口。 -->
+        <PrefsPanel :groups="['side', 'home', 'learn', 'detail']" label="界面设置">
+          <template #extra>
+            <button type="button" class="prefs__link" @click="goAiSettings">
+              <span>AI 能力</span>
+              <el-icon><ArrowRight /></el-icon>
+            </button>
+          </template>
+        </PrefsPanel>
       </div>
     </aside>
 
@@ -223,8 +248,10 @@
       :items="childrenOf(cascadeFor)"
       :anchor-top="cascadeTop"
       @pick="goCategory"
-      @add="openChildCreate"
+      @pick-topic="goTopic"
+      @add="(c) => openCreate(c.id, c.name)"
       @rename="openRename"
+      @points="openPointsDialog"
     />
 
     <!-- 「给目录起个名」只有一个弹窗：新建一级 / 新建子级 / 改名都是它，
@@ -237,27 +264,36 @@
       :initial-name="nameDialog.initialName"
     :initial-id="nameDialog.initialId"
     />
+
+    <!-- 知识包生成：主题 → 目录骨架 → 逐目录写知识点。
+         也可以从某个目录的「⋯」进"生成知识点"（目录现成，只写内容）。 -->
+    <CategoryTreeDialog
+      v-model="treeDialog.visible"
+      :mode="treeDialog.mode"
+      :category="treeDialog.category"
+    />
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter, RouterLink, RouterView } from 'vue-router'
-import { Search, Setting, Expand, Fold, Refresh, ArrowDown } from '@element-plus/icons-vue'
-import { clearAuth } from '../../utils/auth'
+import { Search, Setting, Expand, Fold, Refresh, ArrowRight, MagicStick } from '@element-plus/icons-vue'
+import { categoryLink, topicLink } from '../../utils/categoryNav'
 import { flattenShellNav, getIconComponent } from '../../utils/menu'
-import { hasAdminMenus } from '../../utils/session'
+import { hasAdminMenus, bootstrapSession, sessionState, sessionProfile } from '../../utils/session'
 import { applyUiPrefs, clearUiPrefs } from '../../utils/uiPrefs'
-import { resetAiConfig } from '../../views/corecraft-web/useAi'
-import SidePrefsPanel from './SidePrefsPanel.vue'
+import UserMenu from '../UserMenu.vue'
+import PrefsPanel from './PrefsPanel.vue'
 import CategoryNameDialog from '../../views/corecraft-web/CategoryNameDialog.vue'
+import CategoryTreeDialog from '../../views/corecraft-web/CategoryTreeDialog.vue'
 import CategoryRowMenu from '../../views/corecraft-web/CategoryRowMenu.vue'
 import CategoryTree from '../../views/corecraft-web/CategoryTree.vue'
 import { useTopicDrag } from '../../views/corecraft-web/useTopicDrag'
 import { loadShellData } from '../../views/corecraft-web/useShellData'
 import { useImmersive } from '../../views/corecraft-web/useImmersive'
 import {
-  getChildCategories, hasChildCategories,
+  getChildCategories, hasChildCategories, categoriesState,
   getCategoryCountMap, dnd, dndReset, ROOT_CATEGORY
 } from '../../views/corecraft-web/useCorecraftWebStore'
 
@@ -266,7 +302,8 @@ const router = useRouter()
 
 // 会话数据放 ref：localStorage 不是响应式的，直接读不会触发重渲染
 const session = ref({ menuTree: [], menuPaths: [], profile: {} })
-const searchKeyword = ref('')
+// 初值取自 URL：带着 ?q= 进来的（刷新 / 分享链接）框里就有那个词，见下面那段注释。
+const searchKeyword = ref(String(route.query.q || ''))
 
 // 侧边栏收起状态。存 localStorage 而不是只放内存：收起是有代价的——目录树跟着一起看不见，
 // 一次偶然点错不该让下次打开还是收着的。
@@ -287,6 +324,12 @@ function toggleSide() {
 // 那几条业务路径（进目录 / 新建子级 / 改名都会顺手关掉）。
 const cascadeFor = ref(null)
 const cascadeTop = ref(0)
+
+/**
+ * 目录生成弹窗。
+ * `mode = 'pack'` 生成一整套（主题 → 骨架 → 知识点）；`mode = 'points'` 给某个目录写知识点。
+ */
+const treeDialog = reactive({ visible: false, mode: 'pack', category: null })
 
 /**
  * 侧边栏每个一级目录**也是拖拽源**：把它拖到弹层里的某一行 = 挪到那个目录下，
@@ -334,27 +377,45 @@ const isCurrentRoot = (id) => Number(route.query.category) === id
 // hasAdminMenus() 一字不差；Layout 那侧早就调共享函数了，只剩这侧是副本。
 const hasAdminShell = computed(() => hasAdminMenus())
 
-const currentUser = computed(() => session.value.profile)
+const currentUser = sessionProfile
 
-// **启动加载失败 ≠ 没登录。** 真的没登录时 401 拦截器已经 clearAuth + 弹到登录页了，
-// 能站在这里看见侧边栏就说明 token 是好的（建目录、查目录都调得通，那些请求不走
-// bootstrapSession）。所以这一格显示「未登录」是在撒谎——它实际含义是"资料没加载出来"。
-// 失败就如实说"加载失败"并给一个重试，位置不变，不新增 UI 元素。
-const loadFailed = ref(false)
+/**
+ * 业务数据（知识点 / 目录 / 类型 / AI 配置）拉失败。
+ *
+ * **和会话的失败分开记**：会话失败 → 用户名都不知道（sessionState 管）；
+ * 业务数据失败 → 用户名好好地在那儿，只是侧边栏的目录树是空的。
+ * 合成一个状态的话，业务数据一失败连用户名都跟着说"加载失败"——那是把好的说成坏的。
+ */
+const shellDataFailed = ref(false)
 
 async function loadShell() {
-  loadFailed.value = false
+  shellDataFailed.value = false
+  // 会话（导航 / 用户名）**先到先显示** —— 它是壳的**第一帧**。
+  //
+  // 原来是从 loadShellData() 拿的，而那个函数把会话和知识点/目录/类型/AI 配置
+  // 绑在**同一个 Promise.all** 上，于是"导航和用户名要等最慢的那个业务接口"：
+  // 登录进来底下写着「未登录」、侧边栏空着好几秒。
+  //
+  // 而**数据其实早就在手**了 —— 路由守卫 await 过 bootstrapSession，这里命中
+  // 快照，不会再打接口。守卫等的是"能不能进这个路由"，壳等的是"业务数据齐了没"，
+  // 两件事被绑成一件，壳就得等最慢的那个。
+  //
+  // 失败不用这里自己记会话那份：**sessionState**（utils/session.js，两个壳共用）已经记了 ——
+  // 侧边栏那一格就是看它决定显示「加载失败 + 重试」还是用户菜单。
   try {
-    session.value = await loadShellData()
+    session.value = await bootstrapSession()
   } catch {
-    loadFailed.value = true
+    return
+  }
+  // 业务数据在后面拉，不挡壳。store 的三个缓存都是 ref、组件是 computed，到位就自己刷新。
+  try {
+    await loadShellData()
+  } catch {
+    // 提示归 request.js（唯一提示出口），这里不重复弹；
+    // 目录区自己有「加载失败」状态（见 store 的 categoriesState）。
+    shellDataFailed.value = true
   }
 }
-
-const userAvatarFallback = computed(() => {
-  const s = currentUser.value.nickname || currentUser.value.username || 'U'
-  return String(s).slice(0, 1).toUpperCase()
-})
 
 const currentTitle = computed(() => route.meta.title || '知识库')
 
@@ -362,6 +423,14 @@ const currentTitle = computed(() => route.meta.title || '知识库')
 // AppLayout、详情页、首页都从这儿取（见 useImmersive.js）。
 const immersive = useImmersive()
 
+// 搜索框跟着 URL 走（单向：URL → 框）。少了这条，**直接打开一个带 `?q=` 的分享链接**
+// 会看到列表已经筛过了、搜索框却空空如也 —— 又一处"两边各存一份"。
+//
+// ⚠️ **只在初始化取一次，不做持续回读**：边打边搜每敲一个字 replace 一次 URL，
+// 持续回读就会在用户正敲下一个字的时候把刚敲的抹掉（实测：打 "K8s" 打完框是空的）。
+// 写方只有这个框一个，URL 上的 `q` 除了它没人改，所以"取一次"就够了。
+// immediate 必须开：**首屏**这一次才是最要紧的那次（带着 ?q= 进来的），
+// watch 默认只在"之后变了"才跑，刷新页面它一次都不会跑。
 // Esc 退出沉浸模式。挂在 window 上而不是页面上：全屏时壳已经没了，
 // 页面上只剩内容，没有一个可以承载键盘事件的固定按钮区。
 function onKeydown(e) {
@@ -376,10 +445,29 @@ function isActive(path) {
   return route.path.startsWith(path)
 }
 
+// 搜索：写 `?q=`，**保留已有的其它 query**（`category` 等）。
+// 原来是 `push({ query: { q: kw } })` —— 只带 q，别的全丢：在「某个目录」下搜一句，
+// 跳过去目录筛选就没了，等于"搜索顺手把当前范围清了"。
 function goSearch() {
-  const kw = searchKeyword.value.trim()
-  if (!kw) return
-  router.push({ path: '/app/learn', query: kw ? { q: kw } : {} })
+  goSearchWith(searchKeyword.value)
+}
+
+// 边打边搜：**只在知识点列表页**生效。
+// ⚠️ 详情页（/app/topic/:id）正开着编辑器，输入框每敲一个字就把人拽到列表页，
+// 编辑位置会被冲掉 —— 那一页仍然回车才跳。这不是"功能没做全"，是那一页的输入框另有用途。
+// 用 replace 而不是 push：逐字搜索每敲一下塞一条浏览历史，回头一次退回去要按几十次。
+watch(searchKeyword, (kw) => {
+  if (route.path !== '/app/learn') return
+  goSearchWith(kw, true)
+})
+
+function goSearchWith(raw, silent = false) {
+  const kw = String(raw || '').trim()
+  const query = { ...route.query, q: kw || undefined }
+  const same = String(route.query.q || '') === kw
+  if (same) return
+  if (silent) router.replace({ path: '/app/learn', query })
+  else router.push({ path: '/app/learn', query })
 }
 
 function goAdmin() {
@@ -401,7 +489,7 @@ function toggleCascade(c, e) {
 }
 
 // 整条级联只有一个开关，要关它的理由全汇到这一处。
-// 之前 cascadeFor 只在 goCategory / openChildCreate 里被清，onCatLeave 只清了
+// 之前 cascadeFor 只在 goCategory / openCreate 里被清，onCatLeave 只清了
 // hoverTimer——打开和关闭是两条互不相干的路径，中间没人管，于是弹出来就再也
 // 关不掉，只能靠点导航或刷新。
 function closeCascade() {
@@ -410,26 +498,36 @@ function closeCascade() {
 
 function goCategory(c) {
   closeCascade()
-  router.push({ path: '/app/learn', query: { category: c.id } })
+  router.push(categoryLink(c.id))
 }
 
-// 三个入口都收在这里：建一级（侧边栏标题的 ＋）、建子级（任一行 ⋯ 的"新增子目录"）、
-// 改名（任一行 ⋯ 的"重命名"）。都先关掉 hover 弹层，免得弹层停在一棵待改的树上。
-function openCreateRoot() {
+/**
+ * 点树上的知识点叶子 ⇒ 进它的详情页。
+ *
+ * <p>和 `goCategory` 一样先把弹层关掉：留着弹层的话，新页面上面还挂着一棵
+ * 旧树，看着像没跳过去。
+ */
+function goTopic(t) {
   closeCascade()
-  nameDialog.mode = 'create'
-  nameDialog.parentId = ROOT_CATEGORY
-  nameDialog.parentLabel = ''
-  nameDialog.initialName = ''
-  nameDialog.initialId = null
-  nameDialog.visible = true
+  router.push(topicLink(t.id))
 }
 
-function openChildCreate(c) {
+/**
+ * 新建目录。**一级和子级是同一个动作**，只是父目录不同 ——
+ * 原来 openCreateRoot / openChildCreate 两个函数体逐行相同，只差父目录。
+ *
+ * <p>新建的三个入口都收在这一带：建一级（侧边栏标题的 ＋）、建子级（任一行 ⋯ 的
+ * "新增子目录"）、改名（任一行 ⋯ 的"重命名"）。都先关掉 hover 弹层，
+ * 免得弹层停在一棵待改的树上。
+ *
+ * @param {number} parentId 父目录 id（一级用 ROOT_CATEGORY）
+ * @param {string} parentLabel 父目录名（一级是空串；给对话框显示用）
+ */
+function openCreate(parentId, parentLabel) {
   closeCascade()
   nameDialog.mode = 'create'
-  nameDialog.parentId = c.id
-  nameDialog.parentLabel = c.name
+  nameDialog.parentId = parentId
+  nameDialog.parentLabel = parentLabel
   nameDialog.initialName = ''
   nameDialog.initialId = null
   nameDialog.visible = true
@@ -445,20 +543,47 @@ function openRename(c) {
   nameDialog.visible = true
 }
 
-function handleUserCommand(command) {
-  if (command === 'ai') {
-    router.push({ name: 'AppAiSettings' })
-    return
-  }
-  if (command === 'logout') handleLogout()
+/**
+ * 打开知识包生成弹窗（主题 → 骨架 → 逐目录写知识点）。
+ *
+ * <p>生成的目录**自成一体、放在第一层**：挂到哪、怎么挪层级，用户自己在侧边栏拖。
+ */
+function openTreeDialog() {
+  closeCascade()
+  treeDialog.mode = 'pack'
+  treeDialog.category = null
+  treeDialog.visible = true
 }
 
-async function handleLogout() {
-  // AI 配置是个人偏好，退出时一并作废：否则下一个登进来的账号会接着用上一个的 key
-  resetAiConfig()
-  clearAuth()
-  router.push({ name: 'Login' })
+/**
+ * 给某个**现成的目录**写知识点（目录行「⋯」→「生成知识点」）。
+ *
+ * <p>材料里会带上这个目录现有的子目录 ⇒ 模型知道哪些领域已经有人管了，
+ * 不会把该属于子目录的内容写在这里。
+ */
+function openPointsDialog(c) {
+  closeCascade()
+  treeDialog.mode = 'points'
+  treeDialog.category = c
+  treeDialog.visible = true
 }
+
+/**
+ * 偏好面板顶部的「AI 能力」入口：跳 AI 设置页。
+ *
+ * 它是**设置**，不是"关于我"——所以不在用户菜单里，在齿轮的浮层里。
+ */
+function goAiSettings() {
+  router.push({ name: 'AppAiSettings' })
+}
+
+/**
+ * ⚠️ **这里原来还挂着一份「AI 配置作废」**（退出登录 / 改完密码时清）。
+ * 现在归 `useAi.js` 自己订阅 `onAuthChange` 管了：AI 配置是按用户的，
+ * 登录态一变就得清，而"登录态变了"这个信号只有一个出处。
+ * 挂在这儿只有登出那一条路，**重新登录就漏了** ——
+ * 症状是"登进来 AI 开关是关的，刷新一下才对"。
+ */
 
 // 落点浮层的位置：**锚在起拖那一刻**（dnd.ax / dnd.ay），整个拖拽过程不动。
 // 贴到视口右/下边缘就翻到另一侧，免得浮层一半露在屏幕外。
@@ -479,12 +604,19 @@ async function handleLogout() {
 // 症状是"该翻到左边却翻到右边、还露一半在屏幕外"。token 在 base.css 的 --w-drop / --h-drop。
 const dropTreeStyle = computed(() => {
   const cs = getComputedStyle(document.documentElement)
-  const px = (name, fb) => Math.round(parseFloat(cs.getPropertyValue(name)) || fb)
-  const w = px('--w-drop', 264)
-  const h = px('--h-drop', 312)
-  const gap = px('--sp-9', 10) + 9
-  const flipX = dnd.ax + gap + w > window.innerWidth
-  const flipY = dnd.ay + gap + h > window.innerHeight
+  // **读 token，不抄常数**（base.css 的 --w-drop / --h-drop / --sp-9）。
+  // 抄一份的话两边一改就不同步，症状是"浮层翻到了该翻的反面、还露一半在屏幕外"。
+  // 读不到就**不猜**：不翻转，浮层从指针右下展开（宁可位置差一点，
+  // 也别拿猜的数把它翻到屏幕外去）。
+  const num = (name) => {
+    const v = parseFloat(cs.getPropertyValue(name))
+    return Number.isFinite(v) ? Math.round(v) : null
+  }
+  const w = num('--w-drop')
+  const h = num('--h-drop')
+  const gap = (num('--sp-9') ?? 0) + 9
+  const flipX = w != null && dnd.ax + gap + w > window.innerWidth
+  const flipY = h != null && dnd.ay + gap + h > window.innerHeight
   return {
     left: `${flipX ? dnd.ax - gap - w : dnd.ax + gap}px`,
     top: `${Math.max(8, flipY ? dnd.ay - h - gap : dnd.ay + gap)}px`
@@ -602,7 +734,7 @@ onBeforeUnmount(() => {
   height: var(--ctl-md);
   border-radius: var(--radius);
   background: var(--cc-logo-gradient);
-  color: #fff;
+  color: var(--cc-surface);
   font-size: var(--text-md);
   font-weight: 700;
   display: flex;
@@ -659,7 +791,7 @@ onBeforeUnmount(() => {
   border-radius: var(--radius-sm);
 }
 .app-side__section.is-bad {
-  outline: 2px solid #d4302b;
+  outline: 2px solid var(--cc-danger-deep);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
@@ -727,11 +859,11 @@ onBeforeUnmount(() => {
    一次性的要压过常态，否则拖到哪行都看着像"只是悬停着"。 */
 .app-cats__item.is-drop {
   background: var(--cc-primary);
-  color: #fff;
+  color: var(--cc-surface);
 }
 .app-cats__item.is-bad {
-  background: #fdecea;
-  color: #d4302b;
+  background: var(--cc-danger-soft);
+  color: var(--cc-danger-deep);
 }
 /* 名字吃掉全部剩余宽度，数字和图标才贴到同一条右边上。
    不给名字 flex 的话，space-between 会把余量均分给三个子元素——
@@ -797,27 +929,19 @@ onBeforeUnmount(() => {
 /* 用户菜单在底栏里要**撑满**，齿轮才能被顶到最右。
  *
  * ⚠️ **撑的是 wrapper，不是触发器。** `ElDropdown` 的根是它自己包的一层
- * `<div class="el-dropdown">`（node_modules/element-plus/.../dropdown2.mjs 的
- * `createElementBlock("div", { class: [ns.b(), ...] })`），触发器在那一层**里面**。
- * 所以给 `.app-side__user-trigger` 写 `flex: 1` 只会在 wrapper 内部把尖角推到
- * 名字右边，**footer 层面那个 flex item 仍按内容收窄**，齿轮照样贴着尖角
- * （2026-10-07 实机截图）。
+ * `<div class="el-dropdown">`，触发器在那一层**里面**。所以给触发器写 flex: 1
+ * 只会在 wrapper 内部把尖角推到名字右边，**footer 层面那个 flex item 仍按内容收窄**，
+ * 齿轮照样贴着尖角（2026-10-07 实机截图）。
  *
- * ElDropdown 没声明 `class` prop，但它只有一个根元素，Vue 的 fallthrough attrs
- * 会把 class 合并到根 div 上——所以这个 class 确实落在 wrapper 上。
+ * 现在用户菜单是独立的 `UserMenu` 组件，**它的根元素**承担这个 flex: 1
+ * （ElDropdown 没声明 class prop，但只有一个根元素，Vue 的 fallthrough attrs
+ * 会把 class 合并到根 div 上——所以这个 class 确实落在 wrapper 上）。
  * `min-width: 0` 别省：不然长用户名的 min-content 会把这一格顶开、名字不省略号。 */
 .app-side__user-menu {
   flex: 1;
   min-width: 0;
 }
-.app-side__username {
-  flex: 1;
-  font-size: var(--text-base);
-  color: var(--cc-text-2);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+
 /* 启动加载失败时顶掉用户名那一格。文案用警示色而不是灰——"加载失败"是需要
    用户点一下重试的状态，不该和"未设置昵称"那种中性缺省长得一样。 */
 .app-side__failed {
@@ -829,27 +953,30 @@ onBeforeUnmount(() => {
    以前这一格是「头像 + 名字 + 一个独立的退出图标」，现在退出收进下拉了，
    触发区整体变成菜单入口，所以要自己给 cursor 和 hover 反馈。
 
-   **没有 `flex: 1`**：撑满 footer 那一格的是外层 wrapper（见上面 .app-side__user-menu），
-   这里是块容器里的普通子元素，`display: flex` 本身就让它填满宽度。
-   名字那一格（.app-side__username）才有 `flex: 1`，作用是把尖角推到最右。 */
-.app-side__user-trigger {
-  min-width: 0;
+/* 用户菜单的触发区（头像 + 名字 + 尖角）的样式在 components/UserMenu.vue ——
+   两个壳共用那一份组件，样式也该跟着走一份。 */
+
+/* 偏好面板顶部的「AI 能力」入口：一条整行的跳转。
+   它是插槽内容（由本组件给 PrefsPanel），所以样式归这里 ——
+   插槽内容的 scope 属于**给内容的那一方**，不是组件自己。 */
+.prefs__link {
   display: flex;
   align-items: center;
-  gap: var(--sp-10);
-  cursor: pointer;
+  justify-content: space-between;
+  width: 100%;
+  margin-bottom: var(--sp-6);
+  padding: var(--sp-3) var(--sp-4);
+  border: 0;
   border-radius: var(--cc-radius-sm);
-  padding: var(--sp-3);
-  margin: calc(-1 * var(--sp-6));
-  transition: var(--cc-transition);
+  background: transparent;
+  color: var(--cc-text-1);
+  font-size: var(--text-md);
+  text-align: left;
+  cursor: pointer;
 }
-.app-side__user-trigger:hover {
+.prefs__link:hover {
   background: var(--cc-surface-2);
-}
-.app-side__user-caret {
-  font-size: var(--text-xs);
-  color: var(--cc-text-4);
-  flex-shrink: 0;
+  color: var(--cc-primary);
 }
 
 /* ---------- 右侧 ---------- */
@@ -917,11 +1044,12 @@ onBeforeUnmount(() => {
 }
 
 /* 内容区：居中窄栏——这是"产品"的视觉签名，不是"后台"。
-   宽度分两档（base.css 的 --cc-content-w / --cc-content-w-reading）。
+   宽度只剩一档（base.css 的 --cc-content-w）。原来还有一档 --cc-content-w-reading
+   专给详情页的 920px，#134 解除了列表页/首页的 1440 上限后**把详情页留作例外**，
+   而那个例外正是用户反复投诉的"窗口一变宽、卡片比例就掉"的来源，已一并解除
+   （见 base.css 同名注释）。
    1280 只在约 1330px 以上的视口才咬：1440 / 1536 这类笔记本已经铺满，
-   1920 收起侧栏时左右留白从 476px 收到 296px。
-   max-width 用 :where() 包掉权重，让 AppTopicDetailView 的 .detail 能覆盖成阅读档：
-   子组件根节点同时带父组件的 scope id，不包零的话本选择器 (0,3,0) 会压过子页的 (0,2,0)。 */
+   1920 收起侧栏时左右留白从 476px 收到 296px。 */
 .app-content {
   flex: 1;
   overflow-y: auto;
@@ -933,10 +1061,61 @@ onBeforeUnmount(() => {
      切一下筛选滚动条就时有时无，看着像筛选条自己动了一下。
      留槽之后有没有滚动条都一样宽，起点也就固定了。 */
   scrollbar-gutter: stable;
+  /* 底部 72px 是给**会滚动**的页面留的翻页呼吸位（列表页拉到最底时最后一张卡
+     不会贴着视口边）。首页 AppHomeView 是唯一一页「三排刚好铺满一屏」的，它不滚动，
+     不该继承这份呼吸位——见下面那条覆写。
+
+     72 直接写字面量，不提成变量：#126 之前中间过一层 `--app-pad-b`，那是因为
+     当时的错误做法让**子页面**去读它算补偿。现在子页面已经不读了（它在 .home 上
+     老老实实 min-height:100%），这个变量只剩"被自己定义的 padding 消费"一次，
+     纯属多绕一层。 */
   padding: var(--sp-15) var(--sp-15) 72px;
+}
+/* 首页不留底部呼吸位，改成和左右一样的 --sp-15。
+   左右留白交给偏好面板（--home-pad-x，见 uiPrefs.js 的 HOME_PAD_X）。
+
+   ⚠️ **这里改 padding，不要让子页面去"补偿"**（#124 / #125 连续返工两次就在这）。
+   之前首页写的是 `min-height: calc(100% + 72px - var(--sp-15))`，看着是把 72−32
+   补回来了，实际是**错的**：`100%` 量的是内容盒，`.home` 顶到 y=32、底到 y=H−32，
+   而**内容盒底边在 y=H−72** —— 元素多出来 40px 扎进了 padding 区。padding 不吸收
+   溢出，滚动容器照样按内容盒 + 溢出算 scrollHeight，于是**凭空多出 40px 滚动条**。
+   补 padding 只能在**拥有这个 padding 的元素自己身上**改。 */
+.app-content:has(.home) {
+  padding-bottom: var(--sp-15);
+  padding-left: var(--home-pad-x, var(--sp-15));
+  padding-right: var(--home-pad-x, var(--sp-15));
+}
+/* 知识点列表：只有左右留白（--learn-pad-x，见 uiPrefs.js 的 LEARN_PAD_X），底部呼吸位照旧。
+
+   判据用 :has(根节点) 而不是路由名：这一页"要不要底部留白 / 左右留白多大"是**它自己的
+   形态**（三排铺满一屏 / 卡片网格）决定的，认根节点比认路由贴近事实，路由改名也不会失效。 */
+.app-content:has(.learn) {
+  padding-left: var(--learn-pad-x, var(--sp-15));
+  padding-right: var(--learn-pad-x, var(--sp-15));
 }
 .app-content > * {
   margin: 0 auto;
+}
+/* **首页 / 知识点列表 / 知识点详情都解除 1440 读宽上限**——但三者的理由不一样，
+   别把其中一条当通用理由：
+
+   · **首页**：三排是数据概览、不是正文，卡在 1440 意味着窗口一拉满两侧就空出 100px 以上。
+   · **知识点列表**：`auto-fill minmax(--w-grid, 1fr)` 的卡片网格**在内部就已经把列宽封住了**
+     ——列数 = floor((可用宽+gap)/(400+gap))，列宽在"刚好塞不下一列"时被 1fr 拉到最大，
+     上界约 **537px**。**卡片宽度本来就有界，屏幕再宽只是多排列**，外面这层封顶是多余的。
+   · **知识点详情**：⚠️ #134 当初**只解除了前两页、把详情页留作例外**（它当时自己压着
+     920px）。但用户随后发现详情页是**同一个毛病**，原话："**在比例相同的情况下 不应该
+     被是否全屏影响啊 为什么会存在长度限制**"。根因就是这个 max-width——定值，宽过它卡片
+     就卡住、两侧空白一路增长、占屏比例一路往下掉。**#134 留下的那个例外，正是问题本身的来源。**
+     详情页自己那条封顶后来也整个删掉了（2026-10-21：「阅读宽度」那根滑块默认 2400 ≈ 不封顶，
+     **调它像调了个摆设**），所以这条必须一起解除：
+     **不解除的话，删掉详情页自己的 920 只会让它退到 1440 这个定值上，问题一点没解决。**
+
+   三条的共同后果（用户原话："很明显缩放的更好看"、"拉满就两侧空一大片"）：浏览器一放大、
+   视口宽度掉下来跨过上限，**内容宽度当场停住**，两侧开始长空白。
+   ⚠️ 1440 现在**没有任何消费者**了（--cc-content-w 仍是 admin 之外的默认值来源）。 */
+.app-content:has(.home, .learn, .detail) > :where(*) {
+  max-width: none;
 }
 .app-content > :where(*) {
   max-width: var(--cc-content-w);

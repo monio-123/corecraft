@@ -36,20 +36,22 @@
           AI 归类 {{ shown.length }}
         </button>
 
-        <el-input
-          v-model="keyword"
-          placeholder="搜索标题 / 正文"
-          size="small"
-          clearable
-          class="bar__search"
-        >
-          <template #prefix><el-icon><Search /></el-icon></template>
-        </el-input>
+        <!-- 出卷：考**当前筛选出来的这些**（默认 = 全部）。
+             范围只有这一种：屏幕上筛出什么就考什么。⚠️ **未归类的条目不参与**——
+             待归类不是目录（用户 2026-10-23 定），里面也是没整理过的东西。
+             正文不由前端带过去：只给 id 列表，服务端自己按 id 捞（归属按登录态收）。 -->
+        <button v-if="showExam" class="pill pill--ai" @click="openExam">
+          <el-icon><EditPen /></el-icon>
+          出卷 {{ examScope.length }}
+        </button>
 
         <!-- 类型也收进下拉，和标签并排。同一把尺子：90% 的时候想看全部，
              不该为"偶尔筛一下学习类"在首屏摆一排药丸。
              类型是单选（一律"什么性质"），标签是多选（"涉及什么"），
-             两个筛选互不干涉，可以叠加。 -->
+             两个筛选互不干涉，可以叠加。
+             药丸上**只显示当前选中的名字**（没选中才写「类型」）：写着"类型 笔记"
+             是把这层筛选的**属性**和它的**取值**并排印出来，而类型只有这一个下拉，
+             属性是白占的宽度。标签是同一套形状，跟着改。 -->
         <el-popover
           v-model:visible="typePanelVisible"
           :width="200"
@@ -59,16 +61,15 @@
         >
           <template #reference>
             <button class="pill pill--filter" :class="{ 'is-on': typeFilter !== null }">
-              类型
-              <span v-if="typeFilterLabel" class="pill__on">{{ typeFilterLabel }}</span>
-              <el-icon v-else class="pill__caret"><ArrowDown /></el-icon>
+              <span class="pill__label" :title="typeFilterLabel || '类型'">{{ typeFilterLabel || '类型' }}</span>
+              <el-icon class="pill__caret"><ArrowDown /></el-icon>
             </button>
           </template>
           <div class="tagpanel">
             <button class="tagpanel__item" :class="{ 'is-on': typeFilter === null }" @click="pickType(null)">
               全部类型
             </button>
-            <p v-if="!topicTypes.length" class="tagpanel__empty">字典里还没有类型</p>
+            <p v-if="!topicTypes.length" class="tagpanel__empty">没有类型</p>
             <div v-else class="tagpanel__list">
               <button
                 v-for="t in topicTypes"
@@ -94,9 +95,8 @@
         >
           <template #reference>
             <button class="pill pill--filter" :class="{ 'is-on': tagFilter !== null }">
-              标签
-              <span v-if="tagFilter" class="pill__on">{{ tagFilter }}</span>
-              <el-icon v-else class="pill__caret"><ArrowDown /></el-icon>
+              <span class="pill__label" :title="tagFilter || '标签'">{{ tagFilter || '标签' }}</span>
+              <el-icon class="pill__caret"><ArrowDown /></el-icon>
             </button>
           </template>
           <div class="tagpanel">
@@ -120,7 +120,7 @@
                 <TagRowMenu :tag="t" />
               </div>
             </div>
-            <p v-else class="tagpanel__empty">还没有标签</p>
+            <p v-else class="tagpanel__empty">没有标签</p>
           </div>
         </el-popover>
       </div>
@@ -138,9 +138,10 @@
         @delete="handleDelete"
       />
     </div>
-    <div v-else class="empty">
-      <p>{{ emptyText }}</p>
-    </div>
+    <!-- 列表为空时**什么都不画**：上面已经有筛选条件（目录 / 搜索词 / 类型），
+         空白是自解释的。⚠️ 以前这里写着「没有待归类的知识点」「这个目录还是空的」
+         「没搜到」「还没有知识点」四句 —— 加载中的那几秒它就在说"没有"，那是句假话
+         （用户明明有）；现在不说了，也就没有假话。 -->
 
     <AiOrganizeDialog
       v-model="organizeOpen"
@@ -154,15 +155,15 @@
 defineOptions({ name: 'CorecraftWebAppLearn' })
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox, ElPopover } from 'element-plus'
-import { Search, ArrowDown, MagicStick } from '@element-plus/icons-vue'
+import { ArrowDown, EditPen, MagicStick } from '@element-plus/icons-vue'
 import {
   ensureTopicsLoaded, ensureCategoriesLoaded, ensureAllTagsLoaded,
-  getTopics, getCategory, getCategories, getCategorySubtreeIds,
-  getAllTags, deleteTopic, encodeTag, deleteConfirmMessage, UNCATEGORIZED,
+  getTopics, getCategory, getCategories, topicsInScope,
+  getAllTags, confirmDeleteTopic, encodeTag, UNCATEGORIZED, ALL,
   getTopicTypes, getTopicTypeLabel, resolveTopicTypeId
 } from './useCorecraftWebStore'
 import { aiEnabled } from './useAi'
+import { openExamTab } from './exam'
 import CategoryCrumbs from './CategoryCrumbs.vue'
 import TopicCard from './TopicCard.vue'
 import TagRowMenu from './TagRowMenu.vue'
@@ -173,7 +174,6 @@ const router = useRouter()
 
 const tagPanelVisible = ref(false)
 const tagFilter = ref(null)
-const ALL = 'all'
 
 // 类型筛选。和 tagFilter 一样**只存本地 ref，不进 URL**——
 // 目录筛选要进 URL 是因为侧边栏也在写它；类型只有这一个入口，没有第二个写方。
@@ -199,7 +199,12 @@ function readCategoryQuery(c) {
 }
 
 const categoryFilter = ref(readCategoryQuery(route.query.category))
-const keyword = ref(String(route.query.q || ''))
+// 关键词：**直接从 URL 读**，不是 ref、也没有 watch。
+// 原来筛选条里那个输入框和顶栏那个共享同一个 `?q=`，于是 keyword 既是 ref 又被
+// watch 同步一次 —— 两处可写、一条同步路径，清空顶栏那个时下面这个就留住了旧词
+// （两个框各存一份，漏的是"反方向"）。现在筛选条里那个输入框删了，**只有顶栏一个写方**，
+// URL 就是唯一真相，读它不需要再抄一份到 ref 里。
+const keyword = computed(() => String(route.query.q || ''))
 
 function setCategoryFilter(key) {
   // 值为 undefined 的 query 会被 vue-router 直接删掉，"全部"就是不带 category 参数
@@ -223,15 +228,14 @@ function matchTag(t) {
  * 子树平铺让页面永远是一排卡片，层级靠侧边栏当前高亮的那一项表达，
  * 不靠额外的子目录区块。（原来这里写的是"靠卡片上的目录 chip"，
  *  那个 chip 早就撤掉了，注释和代码对不上。）
+ *
+ * **范围怎么算只有一份**（store 的 `topicsInScope`）：列表筛出来的这批，
+ * 和考试要考的必须是同一批。各算一遍，目录一改就可能对不上——**而且界面上什么异常都看不到**。
  */
-const subtreeIds = computed(() =>
-  currentCategoryId.value ? getCategorySubtreeIds(currentCategoryId.value) : null
-)
+const scopeIds = computed(() => new Set(topicsInScope(categoryFilter.value).map((t) => t.id)))
 
 function matchCategory(t) {
-  if (categoryFilter.value === UNCATEGORIZED) return t.categoryId == null
-  if (!subtreeIds.value) return true
-  return subtreeIds.value.has(t.categoryId)
+  return scopeIds.value.has(t.id)
 }
 
 function matchKeyword(t) {
@@ -313,6 +317,38 @@ const shown = computed(() =>
   allTopics.value.filter((t) => matchCategory(t) && matchType(t) && matchTag(t) && matchKeyword(t))
 )
 
+// ==================== 出卷 ====================
+
+/**
+ * 能考的那些：**当前筛选结果里排除未归类的**。
+ *
+ * <p>未归类不是目录、也不许考（用户 2026-10-23 定）；它是筛选条上的一个固定桶，
+ * 里面是没整理过的东西（还混着一条 3 万字的垃圾）。
+ */
+const examScope = computed(() => shown.value.filter((t) => t.categoryId != null))
+
+/** 出卷入口的显示条件：有东西可考（和「AI 归类」一样，AI 关了就不画这个按钮） */
+const showExam = computed(() => aiEnabled.value && examScope.value.length > 0)
+
+/**
+ * 去出卷：**在当前浏览器开一个新标签页**。
+ *
+ * <p>范围 = 当前筛选出来的那些（见 `examScope`）。名字带过去，考试页顶栏显示它。
+ *
+ * <p>URL 怎么拼、弹窗被拦了怎么办，都在 `exam.js` 的 `openExamTab` 里。
+ */
+function openExam() {
+  if (!examScope.value.length) return
+  const name = currentCategoryId.value ? getCategory(currentCategoryId.value)?.name || '' : '全部'
+  openExamTab(
+    examScope.value.map((t) => t.id),
+    name,
+    `list-${categoryFilter.value}`,
+    currentCategoryId.value
+  )
+}
+
+
 // ==================== AI 归类 ====================
 
 const organizeOpen = ref(false)
@@ -329,12 +365,6 @@ const showOrganize = computed(
 // 直接在模板里调拿到的会是一份普通数组快照，弹框里新增目录后这里不跟着变。
 const organizeCategories = computed(() => getCategories())
 
-const emptyText = computed(() => {
-  if (categoryFilter.value === UNCATEGORIZED) return '没有待归类的知识点'
-  if (currentCategoryId.value) return '这个目录还是空的'
-  return keyword.value.trim() ? '没搜到' : '还没有知识点'
-})
-
 function pickTag(name) {
   tagFilter.value = name
   tagPanelVisible.value = false
@@ -350,24 +380,16 @@ function goDetail(t) {
 }
 
 async function handleDelete(t) {
-  try {
-    await ElMessageBox.confirm(deleteConfirmMessage(t), '删除知识点', {
-      confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning'
-    })
-  } catch {
-    return
-  }
-  await deleteTopic(t.id)
-  ElMessage.success('已删除')
-  await refresh()
+  // 确认框 + 删除 + 提示 + 刷新**全在 store**（和详情页顶栏同一个入口）：
+  // confirmDeleteTopic 内部已经刷过 topics 和 tags（删一条会带走它身上的标签引用）。
+  // 这里再调一次 refresh() 就是**同一个列表被拉两遍**（topics / tags 各两遍）——
+  // 而列表是 computed(store 的 topics)，store 刷完它自己就跟着变了。
+  await confirmDeleteTopic(t)
 }
 
 // 侧边栏（AppLayout）也在写这两个 query：目录链接写 category，搜索框回车写 q。
 // 只在 onMounted 读一次的话，页面已经挂着时路由变了没人接——URL 变了、界面纹丝不动。
 watch(() => route.query.category, (c) => { categoryFilter.value = readCategoryQuery(c) })
-// 关键词只做入站同步，不反向写：这里的搜索框是逐字过滤的，每次按键都 replace 路由代价太大。
-// 重复提交同一个关键词本来就没区别，不存在"点不动"的副作用。
-watch(() => route.query.q, (q) => { keyword.value = String(q || '') })
 
 // 正在筛的标签被改名或删掉了 → 回到"全部"。
 // 兜在这里而不是让 TagRowMenu 回调里清：改标签的入口不止这一个（详情页的标签编辑也能改），
@@ -386,7 +408,9 @@ onMounted(refresh)
 .learn {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-12);
+  /* 偏好面板的「上下」（utils/uiPrefs.js 的 LEARN_GAP）。筛选条 / 标签面板 / 卡片区
+     这几个区块之间的距离，用户可直接拖。 */
+  gap: var(--learn-gap, var(--sp-12));
 }
 
 /* 录入（原 .composer 六条规则）：录入框已统一收到首页，这里跟着删。
@@ -413,13 +437,14 @@ onMounted(refresh)
   gap: var(--sp-10);
   margin-left: auto;
 }
-.bar__search {
-  width: 216px;
-}
 
 .pill {
   font-size: var(--text-md);
-  padding: var(--sp-5) var(--sp-10);
+  /* 只把上下内距接进偏好面板（LEARN_PILL_PY），左右保持 --sp-10：药丸是横着的，
+     左右跟着松会让整条筛选条在宽屏上散开，而上下松紧才是这一行真正在调的东西。
+     兜底值跟 LEARN_PILL_PY.def 一起改成 --sp-3：两处不一致的话，
+     "没设过偏好的用户看到的药丸高度"会和"点恢复默认之后的高度"不一样。 */
+  padding: var(--learn-pill-py, var(--sp-3)) var(--sp-10);
   border: 1px solid transparent;
   border-radius: var(--radius-xl);
   background: #f1f2f4;
@@ -432,22 +457,32 @@ onMounted(refresh)
 }
 .pill:hover {
   background: #e8eaed;
-  color: #1f2329;
+  color: var(--cc-text-1);
 }
 .pill.is-on {
-  background: #1f2329;
-  color: #fff;
+  background: var(--cc-text-1);
+  color: var(--cc-surface);
 }
 /* 「待归类」的落点反馈。放在 .is-on 之后：它常常正好是当前筛选的那个，
    同优先级靠后者覆盖，让"正在放这里"压过"已选中"。 */
 .pill.is-drop {
-  background: #2b7fff;
-  color: #fff;
+  background: var(--cc-primary);
+  color: var(--cc-surface);
   box-shadow: 0 0 0 3px rgba(43, 127, 255, 0.16);
 }
 .pill--filter {
   background: transparent;
   border-color: #e2e5e9;
+}
+/* 下拉药丸的文字位：显示筛选值（没选中时是「类型」「标签」两个字）。
+   固定 min-width 是为了让「类型」和「标签」两个字宽窄不同时药丸**一样宽** ——
+   这两个词谁选中谁变长，不锁宽的话药丸宽度跟着选中状态跳，选一下整行就抖一下。 */
+.pill__label {
+  min-width: 28px;
+  max-width: 108px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 /* AI 归类：唯一一个"会改数据"的控件，给个主色描边跟纯筛选药丸拉开。
    不做成实心主色按钮——它旁边就是搜索框和两个筛选下拉，一主一次两个实心太吵。 */
@@ -459,12 +494,6 @@ onMounted(refresh)
 .pill--ai:hover {
   background: rgba(43, 127, 255, 0.08);
   color: var(--cc-primary);
-}
-.pill__on {
-  max-width: 108px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .pill__caret {
   font-size: var(--text-sm);
@@ -501,11 +530,11 @@ onMounted(refresh)
   --row-tools: 1;
 }
 .tagpanel__item:hover {
-  background: #f4f6f8;
+  background: var(--cc-surface-2);
 }
 .tagpanel__item.is-on {
-  background: #eef5ff;
-  color: #2b7fff;
+  background: var(--cc-primary-soft);
+  color: var(--cc-primary);
   font-weight: 500;
 }
 /* 行里的"选它"那一半。名字太长得靠 min-width:0 + ellipsis 让位给右边的数字和 ⋯，
@@ -532,22 +561,31 @@ onMounted(refresh)
 }
 .tagpanel__count {
   font-size: var(--text-sm);
-  color: #b6bac1;
+  color: var(--cc-text-4);
   flex-shrink: 0;
 }
 .tagpanel__empty {
   margin: 0;
   padding: var(--sp-10);
   font-size: var(--text-md);
-  color: #b6bac1;
+  color: var(--cc-text-4);
 }
 
-/* 卡片网格：固定列宽 + 卡片等高
+/* 卡片网格：列数由宽度算出来，卡片等高
  *
  * 列数从来没写死，是 `repeat(auto-fill, minmax(N, 1fr))` 由**实际可用宽度**算出来的。
- * 1920 窗口下：视口 − 侧边栏 264 − 内容区左右 padding 56 = 1600，
- * 实际宽度 = min(1600, --cc-content-w) = min(1600, 1440)。**侧边栏宽度可调之后，
- * 这个 min 的左项会跟着变**（200→360），所以列数不写死才是对的。
+ * 1920 窗口下：视口 − 侧边栏 264 − 内容区左右 padding 64 = 1592 → 3 列 × 521px。
+ * **侧边栏宽度可调之后这个数会跟着变**（200→360），所以列数不写死才是对的。
+ *
+ * ⚠️ **卡片宽度是被 `--w-grid` 自己封住的，不需要再加一个列宽上限**（用户问过要不要
+ * "列宽封顶、超宽就多排列"，结论是这件事本来就在发生）：列数 = floor((可用宽 + gap)/(400 + gap))，
+ * 列宽在"刚好塞不下一列"时被 `1fr` 拉到最大，上界约 **537px**（3 列撑到 1641px 可用宽时
+ * 第 4 列就塞不下了）。**屏幕再宽只是多排列，卡片不会被拉成一条**，也因此不需要
+ * `justify-content` —— 1fr 永远把宽度吃满，写了也是空规则。
+ *
+ * ⚠️ **1440 读宽上限已经在 AppLayout 里对这一页解除了**（`.app-content:has(.learn)`）。
+ * 留着它，浏览器一放大、视口宽度掉下来跨过 1440，**卡片宽度当场停住**，两侧开始长空白，
+ * 而且屏幕越宽空白越宽 —— 用户原话："很明显缩放的更好看"、"拉满就两侧空一大片"。
  *
  * ⚠️ **列宽下限 --w-grid 不参与任何"疏密"调节**（见 base.css §5.2）：列宽是**内容单位**，
  * 跟着放大就会在某个值上突然放不下三列 → 3 列掉成 2 列，版式整个变样。
@@ -558,23 +596,7 @@ onMounted(refresh)
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--w-grid), 1fr));
-  gap: var(--sp-11);
-}
-.grid :deep(.topic-card-wrap) {
-  margin-bottom: 0;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-/* ---------- 空状态 ---------- */
-.empty {
-  padding: 56px 0;
-  text-align: center;
-}
-.empty p {
-  margin: 0;
-  font-size: var(--text-base);
-  color: #b6bac1;
+  /* 偏好面板的「卡片间距」（LEARN_GRID_GAP）。 */
+  gap: var(--learn-grid-gap, var(--sp-11));
 }
 </style>

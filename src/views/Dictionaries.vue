@@ -273,10 +273,10 @@ const saveType = async () => {
     }
     if (typeForm.id) {
       await updateDictType({ id: typeForm.id, ...payload })
-      ElMessage.success('字典类型已更新')
+      ElMessage.success('已更新')
     } else {
       await createDictType(payload)
-      ElMessage.success('字典类型已创建')
+      ElMessage.success('已创建')
     }
     typeDialogVisible.value = false
     await fetchDictTypes()
@@ -294,7 +294,7 @@ const saveType = async () => {
 const removeType = async (id) => {
   await ElMessageBox.confirm('确认删除该字典类型及其下所有字典项吗？', '提示', { type: 'warning' })
   await deleteDictType(id)
-  ElMessage.success('字典类型已删除')
+  ElMessage.success('已删除')
   await fetchDictTypes()
 }
 
@@ -335,10 +335,10 @@ const saveItem = async () => {
     }
     if (itemForm.id) {
       await updateDictItem({ id: itemForm.id, ...payload })
-      ElMessage.success('字典项已更新')
+      ElMessage.success('已更新')
     } else {
       await createDictItem(payload)
-      ElMessage.success('字典项已创建')
+      ElMessage.success('已创建')
     }
     itemDialogVisible.value = false
     await fetchDictItems(currentType.value.id)
@@ -350,7 +350,7 @@ const saveItem = async () => {
 const removeItem = async (id) => {
   await ElMessageBox.confirm('确认删除该字典项吗？', '提示', { type: 'warning' })
   await deleteDictItem(id)
-  ElMessage.success('字典项已删除')
+  ElMessage.success('已删除')
   await fetchDictItems(currentType.value?.id)
 }
 
@@ -362,7 +362,7 @@ onMounted(async () => {
   try {
     await fetchDictTypes()
   } catch (e) {
-    ElMessage.error('加载字典数据失败')
+    // 提示归 request.js（走 axios 实例，唯一提示出口）
   }
 })
 </script>

@@ -16,7 +16,7 @@
         <el-icon class="entry__arrow"><ArrowRight /></el-icon>
       </RouterLink>
     </div>
-    <p v-else class="empty">当前账号没有可用的后台菜单</p>
+    <p v-else class="empty">没有菜单</p>
   </div>
 </template>
 
@@ -25,11 +25,15 @@ import { ref, computed, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import { ArrowRight, Setting } from '@element-plus/icons-vue'
 import { flattenShellNav, getIconComponent } from '../utils/menu'
-import { bootstrapSession } from '../utils/session'
+import { bootstrapSession, sessionProfile, sessionUserName } from '../utils/session'
 
+// 菜单树 / 路径：这一页自己存一份（它只要这两个）。
+// **用户资料不存** —— 会话里那一份是共享的（utils/session.js），这一页也用同一份。
 const session = ref({ menuTree: [], menuPaths: [], profile: {} })
 
-const userName = computed(() => session.value.profile?.nickname || session.value.profile?.username || '')
+// 显示什么名字：**共享的那条规则**（sessionUserName）——
+// 以前这一页自己写了一遍 `nickname || username || ''`，漏了"加载失败"那一种情况。
+const userName = computed(() => sessionUserName(sessionProfile.value))
 
 // 去掉首页自身（path '/'），其余后台菜单平铺成入口卡片
 const entries = computed(() =>

@@ -120,8 +120,8 @@ import { updateTopic, createCategory, excerptOf } from './useCorecraftWebStore'
 /**
  * organize 的机器标识。
  *
- * **只认 key 段、不写 contexts**：字典里那条的完整 value（`organize:categories,tags`）
- * 原样透传给后端，字典改 contexts 加一种附料时前端不用动。
+ * **只认 key 段、不写 contexts**：配置树上那条的短名（`organize:categories,tags`）
+ * 原样透传给后端，配置里改 contexts 加一种附料时前端不用动。
  */
 const ORGANIZE = 'organize'
 
@@ -159,17 +159,12 @@ function close() {
   emit('update:modelValue', false)
 }
 
-/** 把一条的流式回答攒成完整文本。这里不显示逐帧过程，只在行上标"还在跑" */
+/** 问一条要它的完整回答。这里不显示逐帧过程，只在行上标"还在跑" */
 function collectOne(topic, questionKey, question, signal) {
-  return new Promise((resolve, reject) => {
-    let answer = ''
-    askAi(question, {
-      topicId: topic.id,
-      scene: 'chat',
-      questionKey,
-      signal,
-      onDelta: (t) => { answer += t }
-    }).then(() => resolve(answer), reject)
+  return askAi(question, {
+    topicId: topic.id,
+    questionKey,
+    signal
   })
 }
 
@@ -185,7 +180,7 @@ async function start() {
     (it) => String(it.key || '').split(':')[0] === ORGANIZE
   )
   if (!q) {
-    error.value = '字典里没有「补全这条知识」这条引导问题（管理后台 → 字典管理里看 ai_topic_question）'
+    error.value = '没有「补全这条知识」这条引导问题（管理后台 → 系统配置 → 系统 AI 配置 → AI 提示词 → 引导问题）'
     return
   }
 
@@ -205,13 +200,14 @@ async function start() {
   error.value = ''
   abort = new AbortController()
 
-  // 同一批里**同一个概念只建一个目录**。逐条串行的固有代价就在这儿：
+  // 同一批里**同一个目录只建一次**。逐条串行的固有代价就在这儿：
   // 每条都看不见别的条，于是第 1 条提议「工作/Git」、第 2 条提议「git」、第 3 条提议
   // 「Git」——三个都会真建出来，界面上看着像三回事，库里就是三个目录。
   //
-  // key 用**小写名字、不带父级**：这是同一个概念，该挂在哪由第一次提议的位置说了算，
-  // 后面的复用它（用户之后仍可以在每行的下拉里改选）。带父级的话「工作/Git」和顶层
-  // 「Git」还是两个，而它们本来就是一回事——**判据是概念，不是位置**。
+  // key 用**名字 + 父级**（`newCategoryKey`）：这和后端的唯一键
+  // `(user_id, parent_id, name)` 对得上，也和 `createProposed` 建目录时的判重口径一致。
+  // 「数据库/JDBC」和「中间件/JDBC」是**两个不同的目录，都要建** —— 拿名字当键
+  // 会把它们并成一个，"中间件/JDBC" 这条就永远建不出来。
   const proposedDirs = new Map()
 
   for (let i = 0; i < rows.value.length; i++) {
@@ -230,7 +226,7 @@ async function start() {
         }
         row.patch = patch
         if (newCategory) {
-          const key = String(newCategory.name).toLowerCase()
+          const key = newCategoryKey(newCategory)
           if (!proposedDirs.has(key)) proposedDirs.set(key, newCategory)
           row.newCategory = proposedDirs.get(key)
           // 预选「+ 新建」。行本身的勾选框就是确认：
@@ -259,6 +255,11 @@ async function start() {
  *
  * 去重的键是 **名字 + 父级**，不是光名字：唯一键就是 (user_id, parent_id, name)，
  * `数据库/JDBC` 和 `中间件/JDBC` 是两个不同的目录，都要建。
+ *
+ * **这一层和上面 `start()` 里那层用的是同一个键**（`newCategoryKey`）—— 之前是两套
+ * 规则打架：上面按小写名字去重（概念级），这里按路径去重（位置级），
+ * 结果上面那层先把不同父级的同名目录并成了一个，**这里这层永远算不出两个不同结果**，
+ * 承诺的「都要建」做不到。
  *
  * 返回同样的键 → 新目录 id 的表。建不成的（重名等）不写进表，对应行就只写别的字段。
  */
@@ -291,7 +292,7 @@ async function confirm() {
         : r.pick
       await updateTopic(r.id, categoryId == null ? r.patch : { ...r.patch, categoryId })
     }
-    ElMessage.success(`已采纳 ${targets.length} 条`)
+    ElMessage.success('已采纳')
     close()
     emit('done')
   } finally {

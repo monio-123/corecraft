@@ -71,21 +71,13 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import PermissionForm from '../components/PermissionForm.vue'
 import request from '../utils/request'
+import { parseMeta } from '../utils/menu'
 
 const treeData = ref([])
 const currentNode = ref(null)
 
 const saving = ref(false)
 const creating = ref(false)
-
-// 解析 meta JSON
-function parseMeta(meta) {
-  try {
-    return meta ? JSON.parse(meta) : {}
-  } catch {
-    return {}
-  }
-}
 
 // 节点表单的字段集。编辑面板和新增弹窗是同一套结构，只是新增用不到 id
 function emptyForm() {
@@ -205,7 +197,7 @@ const createNode = async () => {
   try {
     await request.post('/permission', permissionPayload(createForm))
     createDialogVisible.value = false
-    ElMessage.success('创建成功')
+    ElMessage.success('已创建')
     await fetchTree()
   } finally {
     creating.value = false
@@ -219,7 +211,7 @@ const saveEdit = async () => {
   saving.value = true
   try {
     await request.put('/permission', { id: editForm.id, ...permissionPayload(editForm) })
-    ElMessage.success('保存成功')
+    ElMessage.success('已保存')
     await fetchTree()
   } finally {
     saving.value = false
@@ -232,7 +224,7 @@ const removeNode = async (node) => {
   }
   await ElMessageBox.confirm(`确认删除 "${node.name}" ?`, '提示', { type: 'warning' })
   await request.delete(`/permission/${node.id}`)
-  ElMessage.success('删除成功')
+  ElMessage.success('已删除')
   currentNode.value = null
   await fetchTree()
 }
@@ -241,7 +233,7 @@ onMounted(async () => {
   try {
     await fetchTree()
   } catch (e) {
-    ElMessage.error('加载资源树失败')
+    // 提示归 request.js（走 axios 实例，唯一提示出口）
   }
 })
 </script>

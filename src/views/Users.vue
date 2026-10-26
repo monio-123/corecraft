@@ -222,7 +222,7 @@ const openAssignRole = async (row) => {
 const removeUser = async (id) => {
   await ElMessageBox.confirm(`确认删除用户ID: ${id} ?`, '提示', { type: 'warning' })
   await deleteUser(id)
-  ElMessage.success('删除成功')
+  ElMessage.success('已删除')
   await fetchPage()
 }
 
@@ -234,7 +234,7 @@ const submitRole = async () => {
   roleSaving.value = true
   try {
     await assignUserRole(roleForm.userId, roleForm.roleId)
-    ElMessage.success('保存成功')
+    ElMessage.success('已保存')
     roleDialogVisible.value = false
     await fetchPage()
   } finally {
@@ -263,7 +263,7 @@ const submit = async () => {
         email: form.email,
         mobile: form.mobile
       })
-      ElMessage.success('创建成功')
+      ElMessage.success('已创建')
     } else {
       await updateUser({
         id: form.id,
@@ -272,7 +272,7 @@ const submit = async () => {
         email: form.email,
         mobile: form.mobile
       })
-      ElMessage.success('保存成功')
+      ElMessage.success('已保存')
     }
     dialogVisible.value = false
     await fetchPage()

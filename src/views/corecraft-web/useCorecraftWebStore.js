@@ -5,35 +5,55 @@ import {
   createTopic as apiCreateTopic, updateTopic as apiUpdateTopic, deleteTopic as apiDeleteTopic,
   createCategory as apiCreateCategory, renameCategory as apiRenameCategory,
   moveCategory as apiMoveCategory, deleteCategory as apiDeleteCategory,
+  importCategories as apiImportCategories,
   renameTag as apiRenameTag, deleteTag as apiDeleteTag
 } from '../../api/knowledge'
 import { getDictTypeList, getDictItemList } from '../../api/dict'
 import { onAuthChange } from '../../utils/auth'
+import { createLoadSlot, loadOnce, resetSlot } from '../../utils/lazyLoad'
 
 // ==================== 内部状态 ====================
 
+/**
+ * 四份缓存的"加载状态"槽。**共享在途请求**那套在 `utils/lazyLoad.js` 里，
+ * 和 `utils/session.js`（会话引导）、`useAi.js`（AI 配置）是同一份实现 ——
+ * 以前这三处各写各的，store 这四份**漏了**，于是壳和首页同一时刻各拉一遍，
+ * 登录进来 topic/list、category/list、字典类型**各被拉了两次**。
+ */
 const topicMap = ref(new Map())
-let topicsLoaded = false
+const topicsSlot = createLoadSlot()
 
 // 标签缓存：{ name, count }。原本从 topicMap 聚合，要先 ensureTopicsLoaded 拉全部 topic。
 // 现在改成直接调 /kp/tag/list 拉全部 tag（含孤儿），不依赖全部 topic。
 // 详情页打开不再调 /kp/topic/list，"选择已有标签" popover 懒加载触发请求。
 const allTags = ref([])
-let allTagsLoaded = false
+const allTagsSlot = createLoadSlot()
 
 // 目录缓存：[{ id, name, parentId }]。树的骨架，标签不参与建树。
 // parentId 归一：后端对历史 NULL 返回 0，但老数据/老接口可能给 null，
 // 这里统一收口成 0，全站只面对"0 = 顶层"一种表示。
 const categories = ref([])
-let categoriesLoaded = false
+const categoriesSlot = createLoadSlot()
+/**
+ * 目录的加载状态（侧边栏要用）：'loading' | 'ready' | 'failed'。
+ *
+ * **响应式**（而不是一个普通 `let`）：侧边栏要靠它区分三种完全不同的情况 ——
+ * "还在加载"、"加载完了但一个目录都没有"、"加载失败了"。
+ * 不区分的话，加载中的那几秒侧边栏会显示「没有目录」——**那是句假话**
+ * （用户明明有目录），看着像"目录被清空了"。
+ */
+export const categoriesState = categoriesSlot.state
 
-// 知识点类型缓存：[{ id, label }]，来自字典 sys_dict_type.code = 'kp_topic_type'。
+// 知识点类型缓存：[{ id, label, value }]，来自字典 sys_dict_type.code = 'kp_topic_type'。
 //
 // **字典是全局的**，所以每个用户天然都有默认档——不给它建独立主表正是因为这个。
 // kp_topic.typeId 存的是这里的 id（纯数字），不是 label 也不是 0/1/2：
 // 字典项增删排序都不影响任何代码，代码里也不存在"1 = 笔记"这种要同步维护的映射。
+//
+// **value 才是能写进代码的语义键**：label 是显示名（管理员可以改），
+// value 是机器名（note / learn）。代码要指名某一档时认 value，不认 label。
 const topicTypes = ref([])
-let topicTypesLoaded = false
+const topicTypesSlot = createLoadSlot()
 
 function normalizeCategory(c) {
   return { id: c.id, name: c.name, parentId: c.parentId || ROOT_CATEGORY }
@@ -43,13 +63,13 @@ function normalizeCategory(c) {
 // 登录态一变就全部作废：数据本身也要清，否则 loaded=false 但列表里还挂着旧账号的内容。
 onAuthChange(() => {
   topicMap.value = new Map()
-  topicsLoaded = false
+  resetSlot(topicsSlot)
   allTags.value = []
-  allTagsLoaded = false
+  resetSlot(allTagsSlot)
   categories.value = []
-  categoriesLoaded = false
+  resetSlot(categoriesSlot)
   topicTypes.value = []
-  topicTypesLoaded = false
+  resetSlot(topicTypesSlot)
 })
 
 // ==================== 通用 helpers ====================
@@ -58,8 +78,18 @@ onAuthChange(() => {
 export const ROOT_CATEGORY = 0
 /** 「待归类」不是目录，是个固定桶。用字符串哨兵，避免和数字 id 撞类型 */
 export const UNCATEGORIZED = 'uncategorized'
+/** 「全部」也不是目录，是另一种范围。同样用字符串哨兵（原来它只在列表页内部是个局部常量，
+ *  范围计算收进 store 之后，它就成了范围的一种，值必须只有一份） */
+export const ALL = 'all'
 /** 知识点类型所在的字典编码。类型存字典而不是本地表——字典是全局的，每个用户都有默认档 */
 export const TOPIC_TYPE_DICT = 'kp_topic_type'
+/**
+ * 「学习」档的字典 **value**（sys_dict_item.value）。
+ *
+ * <p>生成出来的知识点是系统整理过的学习内容 ⇒ 落这一档（不是随手记那一档）。
+ * 认 value 不认 label：label 是显示名，管理员改个名代码就失效了。
+ */
+export const TOPIC_TYPE_LEARN = 'learn'
 
 function parseJson(raw, fallback) {
   try {
@@ -74,27 +104,13 @@ export function encodeTag(tag) {
   return tag?.name || ''
 }
 
+/** 标签：界面上是对象，线上是名字数组。建/改两条路各写一遍 map 的话，改一边不同步 */
+const encodeTags = (tags) => (tags || []).map(encodeTag).filter(Boolean)
+
+
 function decodeTag(raw) {
   const value = String(raw || '').trim()
   return { name: value }
-}
-
-function decodeQuizQuestion(raw) {
-  if (typeof raw !== 'string') return raw
-  try {
-    const parsed = JSON.parse(raw)
-    if (parsed && typeof parsed === 'object' && parsed.question) {
-      return parsed
-    }
-  } catch {
-    // ignore
-  }
-  return {
-    type: 'single',
-    question: raw,
-    options: [],
-    answer: 0
-  }
 }
 
 // ==================== 标准化 ====================
@@ -108,7 +124,6 @@ function normalizeTopic(item) {
     categoryId: item.categoryId ?? null,
     typeId: item.typeId ?? null,
     tags: parseJson(item.tags, []).map(decodeTag),
-    quizQuestions: parseJson(item.quizQuestions, []).map(decodeQuizQuestion),
     relatedTopicIds: item.relatedTopicIds || [],
     createdAt: item.createTime || '',
     updatedAt: item.updateTime || ''
@@ -118,13 +133,13 @@ function normalizeTopic(item) {
 // ==================== 知识点 ====================
 
 export async function ensureTopicsLoaded(force = false) {
-  if (!topicsLoaded || force) {
+  await loadOnce(topicsSlot, force, async () => {
     const res = await getTopicList()
     const nextMap = new Map()
     ;(res?.data || []).map(normalizeTopic).forEach((topic) => nextMap.set(topic.id, topic))
     topicMap.value = nextMap
-    topicsLoaded = true
-  }
+    return nextMap
+  })
   return getTopics()
 }
 
@@ -158,9 +173,21 @@ async function refreshAfterTopicChange(tagsChanged) {
   if (tagsChanged) await ensureAllTagsLoaded(true)
 }
 
-export async function createTopic({ title, content, tags, quizQuestions, parentTopicId, categoryId, typeId }) {
+/**
+ * 新建一条知识点。
+ *
+ * @param {object} data 知识点内容
+ * @param {{refresh?: boolean}} opts `refresh: false` = **建完不刷新缓存**。
+ *        批量建（一次几十条）时用它：每建一条都全量拉一次列表，
+ *        80 条就是 80 次请求，纯浪费。批量结束时自己刷一次。
+ *        注意：不刷新时**返回 null**（新 id 是从刷新后的缓存里找出来的）。
+ */
+export async function createTopic(
+  { title, content, tags, parentTopicId, categoryId, typeId },
+  { refresh = true } = {}
+) {
   const beforeIds = new Set(getTopics().map((item) => item.id))
-  const encoded = (tags || []).map(encodeTag).filter(Boolean)
+  const encoded = encodeTags(tags)
   await apiCreateTopic({
     title: title || '',
     content: content || '',
@@ -170,14 +197,22 @@ export async function createTopic({ title, content, tags, quizQuestions, parentT
     // 但录入路径永远给得出来——默认档一直存在
     typeId: typeId ?? defaultTopicTypeId(),
     tags: encoded,
-    quizQuestions: (quizQuestions || []).map((q) => typeof q === 'string' ? q : JSON.stringify(q))
   })
+  if (!refresh) return null
   // 带标签建出来才会多出引用；不带标签建一条不碰 refCount
   await refreshAfterTopicChange(encoded.length > 0)
   return getTopics().find((item) => !beforeIds.has(item.id)) || null
 }
 
-export async function updateTopic(id, patch) {
+/**
+ * 改一条知识点。
+ *
+ * @param {number} id 知识点 id
+ * @param {object} patch 要改的字段
+ * @param {{refresh?: boolean}} [opts] `refresh: false` = 改完不刷新缓存
+ *        （批量改时用：每改一条都全量拉一次列表是纯浪费，批量结束自己刷一次）
+ */
+export async function updateTopic(id, patch, opts = {}) {
   // categoryId 的 null 有含义（未归类），跟"没传这个字段"不是一回事。
   // 后端对 categoryId 是无条件覆盖写（配合 updateStrategy = ALWAYS 支持置空），
   // 所以没传时必须回填当前值，否则会被当成 null 误抹掉归类。
@@ -192,11 +227,11 @@ export async function updateTopic(id, patch) {
     categoryId,
     // 没传 typeId = 不打算改它；后端那边也是这么判的（不像 categoryId 无条件写）
     typeId: patch.typeId,
-    tags: patch.tags ? patch.tags.map(encodeTag).filter(Boolean) : undefined,
-    quizQuestions: patch.quizQuestions
-      ? patch.quizQuestions.map((q) => typeof q === 'string' ? q : JSON.stringify(q))
-      : undefined
+    tags: patch.tags ? encodeTags(patch.tags) : undefined,
   })
+  // 批量改（生成完回填链接）时关掉刷新：每改一条都全量拉一次列表是纯浪费，
+  // 批量结束时自己刷一次。和 `createTopic` 的 `refresh: false` 同一个理由。
+  if (opts.refresh === false) return getTopic(id)
   await refreshAfterTopicChange(patch.tags !== undefined)
   return getTopic(id)
 }
@@ -205,6 +240,32 @@ export async function deleteTopic(id) {
   await apiDeleteTopic(id)
   // 删一条一定会带走它身上的标签引用（哪怕它本来没标签），所以这里没法省那个请求
   await refreshAfterTopicChange(true)
+}
+
+/**
+ * 删除知识点的**交互流**（确认框 → 删 → 提示）。
+ *
+ * 列表页卡片和详情页顶栏是两个删除入口，规则必须一致：
+ * 确认框的整句文案、按钮文案、删完的提示都各写一份的话，
+ * 以后改其中一处（比如提示改成"已删除并归档"）就只改得动一处 ⇒ 两边行为漂移。
+ * 和 `confirmDeleteTag` / `confirmDeleteCategory` 同一个形状。
+ *
+ * **删除后各自要做什么由调用方决定**（列表页要刷新，详情页要返回上一页），
+ * 所以这里只做"确认 + 删 + 提示"，返回是否真的执行了。
+ */
+export async function confirmDeleteTopic(topic) {
+  try {
+    await ElMessageBox.confirm(
+      deleteConfirmMessage(topic),
+      '删除知识点',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch {
+    return false // 用户取消
+  }
+  await deleteTopic(topic.id)
+  ElMessage.success('已删除')
+  return true
 }
 
 // ==================== 标签 ====================
@@ -223,27 +284,29 @@ export function getTopicTypes() {
 }
 
 export async function ensureTopicTypesLoaded(force = false) {
-  if (topicTypesLoaded && !force) return topicTypes.value
-  // 字典编码 → 字典类型 id。取的是 sys_dict_type 那张表的行，不是硬编码的数字。
-  const typeRes = await getDictTypeList({ code: TOPIC_TYPE_DICT })
-  const dictType = (typeRes?.data || [])[0]
-  if (!dictType) {
-    // **不上锁**：loaded 保持 false，这次查不到就当没发生过，下一个调用方会重试。
-    //
-    // 原来这里是 `topicTypes.value = []; topicTypesLoaded = true`——把"这一次没查到"
-    // 存成了"字典里就是没有类型"这个结论。于是上一行的短路生效，之后所有调用
-    // 都直接返回那个空数组，永远不重试，只有整页刷新才能恢复。症状是"类型下拉
-    // 忽然空了，刷新一下又好"，看起来像随机，其实是被缓存住的失败。
-    //
-    // 另外三个缓存（topics / categories / allTags）本来就只在真拿到数据时置 true，
-    // 只有这一份反着来——口径统一，别给它开特例。
+  await loadOnce(topicTypesSlot, force, async () => {
+    // 字典编码 → 字典类型 id。取的是 sys_dict_type 那张表的行，不是硬编码的数字。
+    const typeRes = await getDictTypeList({ code: TOPIC_TYPE_DICT })
+    const dictType = (typeRes?.data || [])[0]
+    if (!dictType) {
+      // **不上锁**：这次查不到就当没发生过，下一个调用方会重试
+      // （返回 undefined = "这次没拿到"，状态停在 failed，下次还能试）。
+      //
+      // 原来这里是 `topicTypes.value = []; topicTypesLoaded = true`——把"这一次没查到"
+      // 存成了"字典里就是没有类型"这个结论。于是上一行的短路生效，之后所有调用
+      // 都直接返回那个空数组，永远不重试，只有整页刷新才能恢复。症状是"类型下拉
+      // 忽然空了，刷新一下又好"，看起来像随机，其实是被缓存住的失败。
+      //
+      // 另外三个缓存（topics / categories / allTags）本来就只在真拿到数据时置 true，
+      // 只有这一份反着来——口径统一，别给它开特例。
+      return undefined
+    }
+    const itemRes = await getDictItemList({ dictTypeId: dictType.id })
+    topicTypes.value = (itemRes?.data || [])
+      .filter((i) => i.enabled)
+      .map((i) => ({ id: i.id, label: i.label, value: i.value }))
     return topicTypes.value
-  }
-  const itemRes = await getDictItemList({ dictTypeId: dictType.id })
-  topicTypes.value = (itemRes?.data || [])
-    .filter((i) => i.enabled)
-    .map((i) => ({ id: i.id, label: i.label }))
-  topicTypesLoaded = true
+  })
   return topicTypes.value
 }
 
@@ -255,6 +318,16 @@ export async function ensureTopicTypesLoaded(force = false) {
  */
 export function defaultTopicTypeId() {
   return topicTypes.value[0]?.id ?? null
+}
+
+/**
+ * 按字典项的 **value** 找类型 id。找不到返回 null（**不回落成默认档**）。
+ *
+ * <p>回落会骗人：调用方要的是"就是这一档"，回落到默认档等于静默给出另一档，
+ * 界面上看不出来、数据是错的。要么拿到那一档，要么明确知道没有。
+ */
+export function topicTypeIdByValue(value) {
+  return topicTypes.value.find((t) => t.value === value)?.id ?? null
 }
 
 /**
@@ -273,12 +346,13 @@ export function getTopicTypeLabel(typeId) {
 }
 
 export async function ensureAllTagsLoaded(force = false) {
-  if (allTagsLoaded && !force) return allTags.value
-  const res = await getTagList()
-  // /kp/tag/list 返回 { id, name, refCount }，store 统一暴露 { id, name, count }
-  // id 留着：标签管理 dialog 改名/删除要按 id 调接口，不用再单独拉一份
-  allTags.value = (res?.data || []).map((t) => ({ id: t.id, name: t.name, count: t.refCount }))
-  allTagsLoaded = true
+  await loadOnce(allTagsSlot, force, async () => {
+    const res = await getTagList()
+    // /kp/tag/list 返回 { id, name, refCount }，store 统一暴露 { id, name, count }
+    // id 留着：标签管理 dialog 改名/删除要按 id 调接口，不用再单独拉一份
+    allTags.value = (res?.data || []).map((t) => ({ id: t.id, name: t.name, count: t.refCount }))
+    return allTags.value
+  })
   return allTags.value
 }
 
@@ -321,7 +395,7 @@ export async function renameTag(tag) {
   await apiRenameTag({ oldName: tag.name, newName: next })
   await ensureAllTagsLoaded(true)
   await ensureTopicsLoaded(true)  // topic 上的 tags 字段带着旧名字，不刷就是脏的
-  ElMessage.success('标签已重命名')
+  ElMessage.success('已更新')
   return true
 }
 
@@ -339,7 +413,7 @@ export async function confirmDeleteTag(tag) {
   await apiDeleteTag(tag.id)
   await ensureAllTagsLoaded(true)
   await ensureTopicsLoaded(true)
-  ElMessage.success('标签已删除')
+  ElMessage.success('已删除')
   return true
 }
 
@@ -378,11 +452,12 @@ export function getCategories() {
 }
 
 export async function ensureCategoriesLoaded(force = false) {
-  if (categoriesLoaded && !force) return categories.value
-  const res = await getCategoryList()
-  // /kp/category/list 返回 { id, name, parentId }；refCount 前端自己算（见 getCategoryCountMap）
-  categories.value = (res?.data || []).map(normalizeCategory)
-  categoriesLoaded = true
+  await loadOnce(categoriesSlot, force, async () => {
+    const res = await getCategoryList()
+    // /kp/category/list 返回 { id, name, parentId }；refCount 前端自己算（见 getCategoryCountMap）
+    categories.value = (res?.data || []).map(normalizeCategory)
+    return categories.value
+  })
   return categories.value
 }
 
@@ -437,28 +512,77 @@ export function getCategorySubtreeIds(id) {
 }
 
 /**
- * 深度优先的**前序**扁平行：[{ c, depth }]，拖拽浮树直接 v-for 这一份。
+ * 一个「范围」下的知识点。
+ *
+ * <p>范围有三种：`ALL`（全部）、`UNCATEGORIZED`（待归类）、目录 id（**含整棵子树**）。
+ *
+ * <p>列表页筛出来的就是这个集合，考试的范围也必须是它 ⇒ **收在这里一份，两边共用**。
+ * 各算一遍就是两套规则：目录一改，列表看到的和考的就对不上，**而界面上什么异常都看不到**。
+ */
+export function topicsInScope(scope) {
+  if (scope === UNCATEGORIZED) {
+    return getTopics().filter((t) => t.categoryId == null)
+  }
+  if (scope === ALL) {
+    return getTopics()
+  }
+  const ids = getCategorySubtreeIds(scope)
+  return getTopics().filter((t) => ids.has(t.categoryId))
+}
+
+/**
+ * 深度优先的**前序**扁平行：[{ kind: 'cat', c, depth } | { kind: 'topic', t, depth }]，
+ * 拖拽浮树直接 v-for 这一份。
  *
  * 必须是前序——父节点后面紧跟自己的子树。要是"先把本层列完再把子目录组接在后面"
  * （层序），「计算机网络」会夹在「JAVA」和「JAVA 的子目录」中间，缩进再准也读不出
  * 父子关系，看起来就像三个平级目录。
  *
+ * `withTopics` 把**知识点也摊成叶子行**（浏览模式用，拖拽落点模式不要）：
+ * 知识点挂在哪一级就在哪一级出现，**排在同级的子目录前面** ——
+ * 「总览」是挂在父目录上的知识点，于是它和自己的子目录并排，一眼看得见。
+ * 拖拽落点模式不给：那里每一行都是可投放的目录，多出来的叶子行只会挡住命中检测。
+ *
  * seen + 10 层上限双重防环，数据被改坏出现环时不会把渲染卡死。
  */
-export function flattenCategoryTree(roots) {
+export function flattenCategoryTree(roots, { withTopics = false } = {}) {
   const rows = []
   const seen = new Set()
+  // 知识点按目录分组：**一次遍历建表**，别在每个目录上全量扫一遍知识点
+  const byCat = withTopics ? topicsByCategory() : new Map()
   const walk = (list, depth) => {
     if (depth > 10) return
     for (const c of list) {
       if (seen.has(c.id)) continue
       seen.add(c.id)
-      rows.push({ c, depth })
+      rows.push({ kind: 'cat', c, depth })
+      for (const t of byCat.get(c.id) || []) rows.push({ kind: 'topic', t, depth: depth + 1 })
       walk(getChildCategories(c.id), depth + 1)
     }
   }
   walk(roots, 0)
   return rows
+}
+
+/**
+ * 直挂在各目录下的知识点：{ [categoryId]: [topic] }。
+ *
+ * <p>**只认直挂**：挂在子目录下的知识点在子目录那一层出现一次，不会重复出现两遍。
+ *
+ * <p>顺序按 id 升序 = 创建顺序 = 生成时的骨架顺序。
+ * （`getTopics()` 是按创建时间倒序，而批量生成时一批条目的创建时间可能落在同一秒
+ * ⇒ 那个序不稳，树上会随机跳。）
+ */
+function topicsByCategory() {
+  const byCat = new Map()
+  for (const t of getTopics()) {
+    if (t.categoryId == null) continue
+    const list = byCat.get(t.categoryId)
+    if (list) list.push(t)
+    else byCat.set(t.categoryId, [t])
+  }
+  for (const list of byCat.values()) list.sort((a, b) => a.id - b.id)
+  return byCat
 }
 
 // ==================== 归类 ====================
@@ -471,7 +595,9 @@ export function flattenCategoryTree(roots) {
 export async function categorizeTopic(topic, categoryId) {
   if (categoryId === topic.categoryId) return
   await updateTopic(topic.id, { categoryId })
-  ElMessage.success(categoryId == null ? '已移回待归类' : `已归入「${getCategoryName(categoryId)}」`)
+  // **通用结果词**：不按业务场景定制（准则见 brove-shared §8）——
+  // 「已归入「MySQL」」是把界面刚发生的事又说了一遍，而且每个场景各写各的。
+  ElMessage.success('已保存')
 }
 
 // ==================== 拖拽归类 ====================
@@ -620,7 +746,7 @@ export async function moveCategory(categoryId, parentId) {
     await apiMoveCategory({ id: categoryId, parentId: parentId || null })
     await ensureCategoriesLoaded(true)
   } catch (e) {
-    ElMessage.error(e?.message || '移动失败')
+    // 提示归 request.js（走 axios 实例，唯一提示出口）
   }
 }
 
@@ -644,11 +770,6 @@ export function dndReset() {
   dnd.catId = null
   dnd.over = null
   dnd.overOk = false
-}
-
-export function getCategoryName(categoryId) {
-  if (categoryId == null) return '未归类'
-  return categories.value.find((c) => c.id === categoryId)?.name || '未归类'
 }
 
 /**
@@ -702,6 +823,24 @@ export async function createCategory(name, parentId = ROOT_CATEGORY) {
   ) || null
 }
 
+/**
+ * 批量创建目录树（`{ name, children }` 的树）。
+ *
+ * <p>**一次请求建完整棵树**（服务端一个事务）—— 逐个建就是 N 次请求，
+ * 中途失败留半棵树。建完刷目录缓存。
+ *
+ * @param {Array} nodes 目录树
+ * @param {number} parentId 挂在谁底下（0 = 挂根）。服务端按这个 id 定位父目录，
+ *        并按**真实层数**校验深度（挂在第三层下面 = 新目录是第四层）。
+ * @returns {Array} 服务端返回的这批目录 `{ id, name, parentId }` ——
+ *        知识点要挂到具体目录下，**id 才是身份**（名字会变、还可能撞名）。
+ */
+export async function importCategories(nodes, parentId = 0) {
+  const res = await apiImportCategories({ nodes, parentId: parentId || 0 })
+  await ensureCategoriesLoaded(true)
+  return res?.data || []
+}
+
 /** 重命名。按 id 定位，不按名字——名字是可变字段，拿它当键认不准改的是哪一个 */
 export async function renameCategory(id, newName) {
   await apiRenameCategory({ id, newName })
@@ -745,7 +884,7 @@ export async function confirmDeleteCategory(c) {
     ElMessage.success('已删除')
     return true
   } catch (e) {
-    ElMessage.error(e?.message || '删除失败')
+    // 提示归 request.js（走 axios 实例，唯一提示出口）
     return false
   }
 }

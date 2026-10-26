@@ -57,22 +57,16 @@
             <el-icon><component :is="tabsVisible ? ArrowDown : ArrowUp" /></el-icon>
           </button>
         </el-tooltip>
-        <el-dropdown @command="handleUserCommand">
-          <span class="user-trigger">
-            <el-avatar :size="28" :src="currentUser.avatar || undefined" class="user-avatar">
-              {{ userAvatarFallback }}
-            </el-avatar>
-            <span class="user-name">{{ currentUser.nickname || currentUser.username || '未登录' }}</span>
-            <el-icon class="user-caret"><ArrowDown /></el-icon>
-          </span>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="profile">编辑个人信息</el-dropdown-item>
-              <el-dropdown-item command="password">修改密码</el-dropdown-item>
-              <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
+        <!-- 用户菜单：**两个壳共用这一份**（见 components/UserMenu.vue）。
+             菜单项 + 个人信息/改密码两个弹窗 + 退出登录（确认框、清登录态、跳登录页）
+             都在那边，这里只接"退出之后清什么"（这个壳的页面标签页）。 -->
+        <UserMenu
+          class="user-menu"
+          :user="currentUser"
+          :size="28"
+          @logout="onSignedOut"
+          @password-changed="onSignedOut"
+        />
       </div>
     </header>
 
@@ -133,99 +127,27 @@
         </router-view>
       </div>
     </main>
-
-    <el-dialog v-model="profileDialogVisible" title="编辑个人信息" width="560px">
-      <el-form :model="profileForm" label-width="90px">
-        <el-form-item label="头像">
-          <div class="avatar-editor">
-            <el-avatar :size="72" :src="profileForm.avatar || undefined">
-              {{ userAvatarFallback }}
-            </el-avatar>
-            <el-upload :show-file-list="false" :http-request="handleAvatarUpload" accept="image/*">
-              <el-button>上传头像</el-button>
-            </el-upload>
-          </div>
-        </el-form-item>
-        <el-form-item label="用户名">
-          <el-input v-model="profileForm.username" disabled />
-        </el-form-item>
-        <el-form-item label="昵称">
-          <el-input v-model="profileForm.nickname" />
-        </el-form-item>
-        <el-form-item label="邮箱">
-          <el-input v-model="profileForm.email" />
-        </el-form-item>
-        <el-form-item label="手机">
-          <el-input v-model="profileForm.mobile" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="profileDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="profileSaving" @click="saveProfile">保存</el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog v-model="passwordDialogVisible" title="修改密码" width="520px">
-      <el-form :model="passwordForm" label-width="90px">
-        <el-form-item label="旧密码">
-          <el-input v-model="passwordForm.oldPassword" type="password" show-password />
-        </el-form-item>
-        <el-form-item label="新密码">
-          <el-input v-model="passwordForm.newPassword" type="password" show-password />
-        </el-form-item>
-        <el-form-item label="确认密码">
-          <el-input v-model="passwordForm.confirmPassword" type="password" show-password />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="passwordDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="passwordSaving" @click="savePassword">保存</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, watch, reactive, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
 import * as Icons from '@element-plus/icons-vue'
 import { ArrowDown, ArrowUp, Reading } from '@element-plus/icons-vue'
-import { clearAuth, getMenuPaths, getMenuTree } from '../utils/auth'
-import { parseMeta, getIconComponent, isPlaceholderPath, shellOf } from '../utils/menu'
-import { bootstrapSession, hasAppMenus } from '../utils/session'
-import { updateMyPassword, updateMyProfile, uploadMyAvatar } from '../api/user'
+import { getMenuPaths, getMenuTree } from '../utils/auth'
+import { parseMeta, getIconComponent, buildShellMenuTree } from '../utils/menu'
+import { bootstrapSession, hasAppMenus, sessionProfile } from '../utils/session'
+import UserMenu from './UserMenu.vue'
 
 const route = useRoute()
 const router = useRouter()
-const currentUser = reactive({
-  username: '',
-  nickname: '',
-  avatar: '',
-  email: '',
-  mobile: '',
-  roles: []
-})
-const profileDialogVisible = ref(false)
-const passwordDialogVisible = ref(false)
-const profileSaving = ref(false)
-const passwordSaving = ref(false)
+// 当前用户资料：**会话里那一份**（utils/session.js，两个壳共用）。
+// 以前这个壳自己存一份 reactive 的 currentUser，改完资料还得写回自己那份 ——
+// 那是第二份资料，改个人资料这件事也就得写两遍。
+const currentUser = sessionProfile
 const allowedMenuPaths = ref(getMenuPaths())
 const menuTree = ref(getMenuTree())
-
-const profileForm = reactive({
-  username: '',
-  nickname: '',
-  avatar: '',
-  email: '',
-  mobile: ''
-})
-
-const passwordForm = reactive({
-  oldPassword: '',
-  newPassword: '',
-  confirmPassword: ''
-})
 
 // 页面标签页数据
 const tabs = ref([
@@ -273,23 +195,15 @@ const activeMenu = computed(() => {
 //   此前这里不过滤 shell，导致业务壳的「知识库」分组也出现在 admin 顶栏，点进去就跳出本壳。
 // - 跳过 meta.path 含 ':' 的菜单项（如 /app/topic/:id）：占位路径，用户主动点会跳
 //   字面量 URL 触发 #34 的 NaN bug。menuTree 里仍含此项供 menuRouteNameMap 读 tab 标题。
-// - GROUP 类型不仅要整体判断可见，还要过滤掉内部不可见的子项（避免 el-sub-menu 渲染出占位子项）
-const visibleMenuTree = computed(() => {
-  const isVisibleMenu = (node) => {
-    const meta = parseMeta(node.meta)
-    return meta.path && !isPlaceholderPath(meta.path) && allowedMenuPaths.value.includes(meta.path)
-  }
-  return menuTree.value
-    .filter((item) => shellOf(item.meta) === 'admin')
-    .map((item) => {
-      if (item.type === 'GROUP') {
-        const visibleChildren = (item.children || []).filter(isVisibleMenu)
-        return { ...item, children: visibleChildren }
-      }
-      return isVisibleMenu(item) ? item : null
-    })
-    .filter(Boolean)
-})
+// - GROUP 类型不仅要整体判断可见，还要过滤掉内部不可见的子项（避免 el-sub-menu 渲染出占位子项）。
+//   **子项也要按 shell 过滤**：分组层过滤了、子项层没过滤的话，业务壳的菜单项
+//   照样会出现在 admin 顶栏的分组里 —— 同一个洞，只补了一半。
+// - 可见性判定和按壳过滤**都走 utils/menu.js 那一份**
+//   （buildShellMenuTree）：这里原来自己写了一遍，规则一样但改一处要记得改另一处。
+//   业务壳那边（AppLayout）本来就是调共享函数的，只剩这侧是副本。
+const visibleMenuTree = computed(() =>
+  buildShellMenuTree('admin', menuTree.value, allowedMenuPaths.value)
+)
 
 // menuTree → routeName → name 映射：让 tab 标题从 sys_permission.name 读（用户诉求"通过数据库配置"）。
 // meta.routeName 跟 router/index.js 的 route.name 一一对应（如 'AppTopicDetail'）。
@@ -308,11 +222,6 @@ const menuRouteNameMap = computed(() => {
 })
 
 const cachedTabNames = computed(() => tabs.value.map(tab => tab.name))
-
-const userAvatarFallback = computed(() => {
-  const source = currentUser.nickname || currentUser.username || 'U'
-  return source.slice(0, 1).toUpperCase()
-})
 
 // 监听路由变化，添加页面标签。
 // tab 标题优先级：menuRouteNameMap（sys_permission.name，数据库配置）→ route.meta.title（路由 fallback）→ route.name。
@@ -337,45 +246,22 @@ watch(
   { immediate: true }
 )
 
-const handleUserCommand = async (command) => {
-  if (command === 'profile') {
-    profileForm.username = currentUser.username || ''
-    profileForm.nickname = currentUser.nickname || ''
-    profileForm.avatar = currentUser.avatar || ''
-    profileForm.email = currentUser.email || ''
-    profileForm.mobile = currentUser.mobile || ''
-    profileDialogVisible.value = true
-    return
-  }
-
-  if (command === 'password') {
-    passwordForm.oldPassword = ''
-    passwordForm.newPassword = ''
-    passwordForm.confirmPassword = ''
-    passwordDialogVisible.value = true
-    return
-  }
-
-  if (command === 'logout') {
-    await ElMessageBox.confirm('确认退出当前登录状态吗？', '退出登录', {
-      type: 'warning',
-      confirmButtonText: '退出',
-      cancelButtonText: '取消'
-    })
-    clearAuth()
-    tabs.value = [{ name: 'Home', title: '首页', path: '/' }]
-    activeTab.value = 'Home'
-    ElMessage.success('已退出登录')
-    router.push('/login')
-  }
+/**
+ * 登录态没了（退出登录 / 改完密码）：**这个壳自己的**状态一起清。
+ *
+ * ⚠️ 退出登录本身（确认框 / 清 token / 提示 / 跳登录页）在 `UserMenu.vue` 里 ——
+ * 两个壳共用那一份。各壳只管自己那点收尾（这个壳有页面标签页要清）。
+ */
+function onSignedOut() {
+  tabs.value = [{ name: 'Home', title: '首页', path: '/' }]
+  activeTab.value = 'Home'
 }
 
 const loadCurrentContext = async (force = false) => {
   // 会话引导（资料/菜单/权限）收敛到 utils/session，AppLayout 走同一份。
   // mount 时【不能】force：子页面（Home.vue）也会调 bootstrapSession，force 会绕开共享的
   // inflight，导致同一轮接口被打两遍。只有改完个人资料需要强刷。
-  const { profile, menuTree: tree, menuPaths } = await bootstrapSession({ force })
-  Object.assign(currentUser, profile)
+  const { menuTree: tree, menuPaths } = await bootstrapSession({ force })
   menuTree.value = tree
   allowedMenuPaths.value = menuPaths
 }
@@ -386,48 +272,6 @@ const hasAppShell = computed(() => hasAppMenus())
 function goApp() {
   router.push('/app')
 }
-
-const saveProfile = async () => {
-  profileSaving.value = true
-  try {
-    await updateMyProfile({
-      nickname: profileForm.nickname,
-      avatar: profileForm.avatar,
-      email: profileForm.email,
-      mobile: profileForm.mobile
-    })
-    await loadCurrentContext(true)
-    profileDialogVisible.value = false
-    ElMessage.success('个人信息已更新')
-  } finally {
-    profileSaving.value = false
-  }
-}
-
-const savePassword = async () => {
-  if (!passwordForm.oldPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
-    ElMessage.error('请完整填写密码信息')
-    return
-  }
-  passwordSaving.value = true
-  try {
-    await updateMyPassword(passwordForm)
-    passwordDialogVisible.value = false
-    ElMessage.success('密码已修改，请重新登录')
-    clearAuth()
-    router.push('/login')
-  } finally {
-    passwordSaving.value = false
-  }
-}
-
-const handleAvatarUpload = async ({ file }) => {
-  const res = await uploadMyAvatar(file)
-  profileForm.avatar = res?.data?.avatar || ''
-  currentUser.avatar = profileForm.avatar
-  ElMessage.success('头像上传成功')
-}
-
 
 const switchTab = (tabName) => {
   const targetTab = tabs.value.find(tab => tab.name === tabName)
@@ -595,7 +439,9 @@ onMounted(async () => {
   try {
     await loadCurrentContext()
   } catch (e) {
-    ElMessage.error(`加载用户信息失败：${e?.message || e}`)
+    // 提示归 request.js（bootstrapSession 走 axios 实例，唯一提示出口）。
+    // 这里原来再弹一条「加载用户信息失败：<e.message>」，一次失败出两条、
+    // 而且两条内容还不一样 —— 挂在界面顶上的那条反而是最没有信息量的。
   }
 })
 
@@ -637,7 +483,7 @@ onBeforeUnmount(() => {
   height: 26px;
   border-radius: var(--radius);
   background: var(--cc-logo-gradient);
-  color: #fff;
+  color: var(--cc-surface);
   font-size: var(--text-2xs);
   font-weight: 700;
   display: flex;
@@ -741,26 +587,8 @@ onBeforeUnmount(() => {
   background: var(--cc-primary-soft);
 }
 
-.user-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-8);
-  padding: var(--sp-4) var(--sp-8) var(--sp-4) var(--sp-4);
-  border-radius: var(--radius-xl);
-  cursor: pointer;
-  transition: var(--cc-transition);
-}
-.user-trigger:hover {
-  background: var(--cc-surface-2);
-}
-.user-name {
-  font-size: var(--text-md);
-  color: var(--cc-text-2);
-}
-.user-caret {
-  font-size: var(--text-xs);
-  color: var(--cc-text-4);
-}
+/* 用户菜单的样式（触发区、名字、尖角）搬进 components/UserMenu.vue ——
+   两个壳共用那一份组件，样式也该跟着走一份。 */
 
 /* ---------- 页面标签页 ---------- */
 /* 下划线式：原来那套「浏览器文件页」造型（1px 边框 + -1px 重叠 + 灰底 + 激活变白）
@@ -883,11 +711,5 @@ onBeforeUnmount(() => {
 .page-wrap {
   max-width: 1440px;
   margin: 0 auto;
-}
-
-.avatar-editor {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-12);
 }
 </style>

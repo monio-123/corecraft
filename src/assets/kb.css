@@ -18,8 +18,8 @@
  * 别把这几条也加上前缀——那正是当初加前缀要避开的地方。
  */
 .panel {
-  background: #fff;
-  border: 1px solid #eef0f3;
+  background: var(--cc-surface);
+  border: 1px solid var(--cc-border-card);
   border-radius: var(--radius-lg);
   padding: var(--sp-12) var(--sp-14) var(--sp-7);
 }
@@ -32,19 +32,11 @@
 .panel__title {
   font-size: var(--text-xl);
   font-weight: 600;
-  color: #1f2329;
+  color: var(--cc-text-1);
 }
 .panel__extra {
   font-size: var(--text-md);
-  color: #a0a5ad;
-}
-.panel__more {
-  font-size: var(--text-md);
-  color: #8a9099;
-  text-decoration: none;
-}
-.panel__more:hover {
-  color: #2b7fff;
+  color: var(--cc-text-3);
 }
 
 /* ---------- 标签 chip ----------
@@ -79,7 +71,9 @@
   border: none;
   background: transparent;
   padding: 0;
-  margin-right: -var(--sp-2);
+  /* var() 不能直接取负（负号后面直接接 var()，整条声明会被浏览器丢掉），
+     负值要包一层 calc */
+  margin-right: calc(-1 * var(--sp-2));
   color: var(--cc-text-4);
   cursor: pointer;
   display: inline-flex;
@@ -151,6 +145,52 @@
 .kb-text-btn--danger:hover {
   background: var(--el-color-danger-light-9);
   color: var(--el-color-danger);
+}
+
+/* ---------- 抽屉的头 ----------
+ * 「AI 问答」（详情页）和「AI 调整正文」是同一个抽屉控件的两种用途，
+ * 头（左边标题 + 右边关闭钮）长得一模一样 —— 两个组件各写一份 scoped 规则，
+ * 逐字符相同，改一处就得记得改另一处。收到这里一份，两个组件引用。
+ * ⚠️ 名字带 kb- 前缀：这两个 class 不带壳限定（不像 admin-page.css 的 .page
+ * 能靠容器圈住），名字本身就是边界。 */
+.kb-drawer__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: none;
+  padding-bottom: var(--sp-10);
+  border-bottom: 1px solid var(--cc-border);
+}
+.kb-drawer__title {
+  font-size: var(--text-base);
+  color: var(--cc-text-1);
+}
+
+/* ---------- 判定三档（对 / 部分对 / 错）----------
+ * 类名来自 examParse.js 的 VERDICTS[].cls（那张表是判定词的唯一一份），
+ * 考试页原来在 5 个 CSS 块里各写一遍"这一档是什么颜色"，逐字符相同。
+ * 收到这里一份，组件里只留各自**额外**的属性（得分环的环色、chip 的底色）。
+ *
+ * ⚠️ **必须带 .kb-verdict 这道标记类**：别处（拖拽落点、目录名校验）也用 is-bad，
+ * 那是另一件事（能不能拖进去 / 名字合不合法），不该跟着判分的三档一起变色。
+ * 用法：class="kb-verdict" + :class="判定档的 cls"。
+ *
+ * --kb-verdict-color 是给"要用这一档的颜色但不改文字颜色"的地方用的
+ * （得分环的环色、chip 的底色都从它取 ⇒ 颜色只在上面这张表里出现一次）。 */
+.kb-verdict {
+  color: var(--kb-verdict-color, inherit);
+}
+.kb-verdict.is-good {
+  --kb-verdict-color: var(--cc-success);
+  --kb-verdict-tint: 12%;
+}
+.kb-verdict.is-mid {
+  --kb-verdict-color: var(--cc-warning);
+  --kb-verdict-tint: 14%;
+}
+.kb-verdict.is-bad {
+  --kb-verdict-color: var(--cc-danger);
+  --kb-verdict-tint: 12%;
 }
 
 /* 拖拽幽灵已回到 AppLayout 里的手写实现（原因见那里的注释）：
