@@ -149,6 +149,11 @@ export function splitShortContent(points = []) {
  * @param {Array<string>} [o.siblings] 同目录的**其它**知识点（**不写它们**，只用来避免内容重复）
  * @param {Array<string>} o.written 已经写过的知识点标题（防重复）
  * @param {Array<string>} o.kids 这个目录**现有的**子目录名（别写它们管的领域）
+ * @param {string} [o.extra] **补充说明**：用户自己写的一句话（"面向开发"、"面向考试"……）。
+ *        模型照它调整写法和深度；**空 = 没有补充**
+ * @param {string} [o.pref] **生成偏好**：整个系统通用的默认口味（系统配置里的那一项）。
+ *        和「补充说明」是同一类东西的两种粒度 —— **补充说明是这次说的，偏好是一直这样**；
+ *        **空 = 没配偏好**（材料里就不出现这一段）
  * @param {Object} o.node 这个目录在骨架里的节点（用来列下级章节和它们的知识点）
  * @param {(path: string) => string|null} [o.linkOf] 目录路径 → 链接地址；
  *        给了就在章节后面附上地址（总览知识点照着它写 markdown 链接）
@@ -163,12 +168,21 @@ export function buildMaterial({
   siblings = [],
   written = [],
   kids = [],
+  extra = '',
+  pref = '',
   node = null,
   linkOf = null,
   allPoints = []
 } = {}) {
   const parts = []
   if (String(topic).trim()) parts.push(`主题：${String(topic).trim()}`)
+  // **补充说明**紧跟主题：它是对"这次要写什么"的整体限定
+  // （面向开发 / 面向考试 / 只要原理不要例子……），放在最前面模型才拿它当总纲。
+  if (String(extra).trim()) parts.push(`补充说明：${String(extra).trim()}`)
+  // **生成偏好**：整个系统通用的默认口味（系统配置里的「生成偏好」那一项）。
+  // 和补充说明是同一类东西的两种粒度 —— **补充说明是这次说的，偏好是一直这样**；
+  // 两者都在最前面，模型才拿它们当总纲。
+  if (String(pref).trim()) parts.push(`生成偏好（按它取舍）：\n${String(pref).trim()}`)
   parts.push(`目录：${dirPath}`)
   if (titles.length) {
     parts.push(`这次要写的知识点：\n${titles.map((t) => `- ${t}`).join('\n')}`)

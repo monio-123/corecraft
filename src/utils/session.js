@@ -62,7 +62,7 @@ export function isSessionReady() {
 }
 
 export function bootstrapSession({ force = false } = {}) {
-  return loadOnce(sessionSlot, force, async () => {
+  return loadOnce(sessionSlot, force, async (isCurrent) => {
     // 记下发起时的登录态：请求在途中换了账号，这批资料就属于旧账号，不能写进缓存
     const token = getToken()
     const [menuRes, profileRes, permissionsRes] = await Promise.all([
@@ -72,6 +72,15 @@ export function bootstrapSession({ force = false } = {}) {
     ])
     // 换账号了：这批资料作废（返回 undefined = "这次没拿到"，状态留在 failed，下次能重试）
     if (getToken() !== token) return undefined
+    // **只有最新发起的那次才落缓存**（见 lazyLoad 的「版本号」）：旧的请求晚回来时，
+    // 它带的是更早的菜单/权限 ⇒ 落进去等于把新的那份覆盖掉。
+    if (!isCurrent()) {
+      return {
+        menuTree: getMenuTree(),
+        menuPaths: getMenuPaths(),
+        profile: sessionProfile.value
+      }
+    }
     saveMenuTree(menuRes?.data || [])
     // 只缓存权限码。角色在下面那行 sessionProfile 里（/me/profile 的响应带 roles），
     // 不在这里另存一份 —— 详见 utils/auth.js 的 savePermissions 注释。

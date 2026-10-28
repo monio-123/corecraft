@@ -33,7 +33,7 @@
              按钮上把条数写出来，就不会有人以为它连没显示出来的那些也一起动了。 -->
         <button v-if="showOrganize" class="pill pill--ai" @click="organizeOpen = true">
           <el-icon><MagicStick /></el-icon>
-          AI 归类 {{ shown.length }}
+          AI 归类 {{ scopedTopics.length }}
         </button>
 
         <!-- 出卷：考**当前筛选出来的这些**（默认 = 全部）。
@@ -128,10 +128,26 @@
 
     <!-- 平铺。这里显示的是**当前目录整棵子树**的知识点（见 matchCategory）。
          卡片上不放目录入口：目录一多就没法在小 chip 里选了，
-         归类和改类都是"把卡片拖到右侧浮出的那棵树"这一个动作。 -->
-    <div v-if="shown.length" class="grid">
+         归类和改类都是"把卡片拖到右侧浮出的那棵树"这一个动作。
+
+         ⚠️ **加载中不画旧内容**：这一块整个换成转圈。
+         旧列表杵在那儿的时候，"没变"和"正在变"长得一模一样 ——
+         用户看到的就是"点了没反应，过几秒突然换了"。 -->
+    <div v-if="loading" class="kb-center">
+      <el-icon class="is-loading"><Loading /></el-icon>
+      <p>加载中…</p>
+    </div>
+
+    <!-- 出错：拉不到的时候摆出来。错误详情由 request.js 弹（那里是全站唯一的
+         提示出口），这里只摆状态，不重复弹一遍。 -->
+    <div v-else-if="loadFailed" class="kb-center">
+      <p class="kb-error">加载失败</p>
+      <el-button @click="loadPage">重试</el-button>
+    </div>
+
+    <div v-else-if="pageRecords.length" class="grid">
       <TopicCard
-        v-for="t in shown"
+        v-for="t in pageRecords"
         :key="t.id"
         :topic="t"
         @click="goDetail(t)"
@@ -143,9 +159,21 @@
          「没搜到」「还没有知识点」四句 —— 加载中的那几秒它就在说"没有"，那是句假话
          （用户明明有）；现在不说了，也就没有假话。 -->
 
+    <!-- 分页。只有超过一页才画：一页装得下的时候画个"1"是噪音。 -->
+    <div v-if="pageTotal > pageSize" class="pager">
+      <el-pagination
+        layout="prev, pager, next"
+        background
+        :total="pageTotal"
+        :page-size="pageSize"
+        :current-page="page"
+        @current-change="onPageChange"
+      />
+    </div>
+
     <AiOrganizeDialog
       v-model="organizeOpen"
-      :topics="shown"
+      :topics="scopedTopics"
       :categories="organizeCategories"
     />
   </div>
@@ -153,17 +181,19 @@
 
 <script setup>
 defineOptions({ name: 'CorecraftWebAppLearn' })
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onActivated, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowDown, EditPen, MagicStick } from '@element-plus/icons-vue'
+import { ArrowDown, EditPen, Loading, MagicStick } from '@element-plus/icons-vue'
 import {
-  ensureTopicsLoaded, ensureCategoriesLoaded, ensureAllTagsLoaded,
-  getTopics, getCategory, getCategories, topicsInScope,
+  ensureTopicIndexLoaded, ensureCategoriesLoaded, ensureAllTagsLoaded,
+  loadTopicPage, getTopicIndex, getCategory, getCategories, topicsInScope,
+  getCategorySubtreeIds, getDataVersion,
   getAllTags, confirmDeleteTopic, encodeTag, UNCATEGORIZED, ALL,
   getTopicTypes, getTopicTypeLabel, resolveTopicTypeId
 } from './useCorecraftWebStore'
 import { aiEnabled } from './useAi'
 import { openExamTab } from './exam'
+import { keywordFromRoute } from '../../utils/routeQuery'
 import CategoryCrumbs from './CategoryCrumbs.vue'
 import TopicCard from './TopicCard.vue'
 import TagRowMenu from './TagRowMenu.vue'
@@ -171,6 +201,20 @@ import AiOrganizeDialog from './AiOrganizeDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
+
+/**
+ * 现在是不是正停在列表页。
+ *
+ * <p>**这一页的筛选条件只在这一页开着的时候才算数**：路由上的 `?category=` / `?q=`
+ * 离开这一页就没了（详情页的 URL 里没有它们），
+ * 而"空"会被当成"用户把筛选清掉了" ⇒ 列表在后台被重拉成「全部」那份，
+ * 回来时先闪一下「全部」，再跳回该目录的那份（实测就是这样）。
+ *
+ * <p>以前这里还有一个 `viewActive` 标志（onDeactivated 置否），
+ * 说的是同一件事 —— 两个名字两份判据，路由一换就可能一边说开着一边说关着。
+ * **只留路由这一个判据**。
+ */
+const onLearnRoute = computed(() => route.name === 'AppLearn')
 
 const tagPanelVisible = ref(false)
 const tagFilter = ref(null)
@@ -204,20 +248,155 @@ const categoryFilter = ref(readCategoryQuery(route.query.category))
 // watch 同步一次 —— 两处可写、一条同步路径，清空顶栏那个时下面这个就留住了旧词
 // （两个框各存一份，漏的是"反方向"）。现在筛选条里那个输入框删了，**只有顶栏一个写方**，
 // URL 就是唯一真相，读它不需要再抄一份到 ref 里。
-const keyword = computed(() => String(route.query.q || ''))
+const keyword = computed(() => keywordFromRoute(route))
 
 function setCategoryFilter(key) {
   // 值为 undefined 的 query 会被 vue-router 直接删掉，"全部"就是不带 category 参数
   router.replace({ path: route.path, query: { ...route.query, category: key === ALL ? undefined : key } })
 }
 
-const allTopics = computed(() => getTopics())
+/**
+ * **结构索引**（全集，不含正文）：分面计数、考试范围、目录树都用它。
+ *
+ * <p>它是"**当前关键词下的全集**"（关键词要搜正文，只有服务端能筛）⇒ 关键词一变就得重拉。
+ * 它**不含正文**：正文那 90 万字符是列表接口慢的真正原因（实测读全文 4416ms、不读 78ms）。
+ */
+const allTopics = computed(() => getTopicIndex())
+
+// ==================== 分页 ====================
+
+/** 当前页码（1 起）。筛选条件一变就回到第 1 页。 */
+const page = ref(1)
+/** 一页多少条。 */
+const pageSize = ref(20)
+/**
+ * 当前页的知识点（**带正文**）。列表显示的就是它。
+ *
+ * <p>⚠️ **不再本地筛一遍**：服务端已经按目录/类型/标签/关键词筛好了，
+ * 本地那份是结构索引（没有正文），用它筛会把正文命中的那几条滤掉。
+ */
+const pageRecords = ref([])
+/** 当前条件下**一共**多少条（服务端数出来的）。 */
+const pageTotal = ref(0)
+/**
+ * 这一页正在拉。**加载中不画旧内容**（模板里那一块整个换成转圈）：
+ * 旧列表杵在那儿的时候，"没变"和"正在变"在界面上长得一模一样，
+ * 用户只能靠"过几秒突然变了"判断刚才那一下到底有没有生效。
+ */
+const loading = ref(true)
+/** 这一次拉失败了（界面摆「加载失败」+ 重试）。 */
+const loadFailed = ref(false)
+/**
+ * 这一页的请求参数。
+ *
+ * <p>筛选条件**全部交给服务端** —— 正文在服务端才有意义（浏览器那份索引没有正文，
+ * 用它筛会把"正文里命中的那几条"滤掉，那就等于没有全文搜索了）。
+ *
+ * <p>⚠️ **目录范围传的是一串 id**（逗号分隔），不是单个 categoryId：
+ * 「选中一个目录 = 看整棵子树」这条规则**只有前端一份**
+ * （store 的 getCategorySubtreeIds）—— 列表的筛选、考试的范围都按它算。
+ * 后端再实现一遍就成了两套规则：目录一改，列表看到的和考的就对不上，
+ * **而界面上什么异常都看不到**。
+ */
+function buildPageParams() {
+  const params = {
+    page: page.value,
+    size: pageSize.value,
+    keyword: keyword.value
+  }
+  if (categoryFilter.value === UNCATEGORIZED) {
+    params.uncategorized = true
+  } else if (categoryFilter.value !== ALL) {
+    params.categoryIds = [...getCategorySubtreeIds(categoryFilter.value)].join(',')
+  }
+  if (typeFilter.value != null) params.typeId = typeFilter.value
+  if (tagFilter.value) params.tag = tagFilter.value
+  return params
+}
+
+/**
+ * 在飞的那一次列表请求（去重 + 竞态守卫）。
+ *
+ * <p>⚠️ **同一组条件已经在飞了就不要再发一份**：
+ * 「切回列表页」这条路上有**两个**触发点 —— onActivated 的重拉、筛选条件的 watch。
+ * 两边参数一样 ⇒ 实测**两条一模一样的重查询并发跑**，
+ * 单条 440ms 的活被两份同时压着变成 **5.5s / 7.2s**（后端那条查询被压住了）。
+ * 也就是说：返回一次列表，从"等半秒"变成"等七秒"。
+ *
+ * <p>⚠️ **旧响应不许盖掉新响应**（`seq`）：两条请求同时在飞时慢的那条后到，
+ * 会把新筛选的结果顶掉 —— 界面上是"筛选已经变了，列表还是旧的"，而且不会再自己纠正。
+ */
+let pageRequest = null
+let pageRequestSeq = 0
+
+/** 拉当前页。 */
+async function loadPage() {
+  let seq = 0
+  try {
+    // 子树 id 列表要用目录树 ⇒ **目录得先在**（不强制重拉：命中缓存是零成本，
+    // 没命中就等它 —— 否则"刚进来就改筛选条件"会拿着空的目录树算出错的范围）。
+    await ensureCategoriesLoaded()
+    const params = buildPageParams()
+    const key = JSON.stringify(params)
+    // 同样的条件已经在飞 ⇒ 跟着那一次，不重发（见 pageRequest 那段注释）。
+    if (pageRequest && pageRequest.key === key) return pageRequest.promise
+
+    seq = ++pageRequestSeq
+    const promise = (async () => {
+      let { records, total } = await loadTopicPage(params)
+      // 删掉最后一页的最后一条 ⇒ 会停在一个**空页**上。回到还有内容的那一页。
+      if (!records.length && page.value > 1) {
+        const last = Math.max(1, Math.ceil(total / pageSize.value))
+        if (last < page.value) {
+          page.value = last
+          const again = await loadTopicPage(buildPageParams())
+          records = again.records
+          total = again.total
+        }
+      }
+      return { records, total }
+    })()
+    pageRequest = { key, seq, promise }
+    loading.value = true
+    loadFailed.value = false
+    const { records, total } = await promise
+    // 慢的那条后到 ⇒ 它是过期的，丢掉（见 pageRequest 那段注释）。
+    if (seq !== pageRequestSeq) return
+    pageRecords.value = records
+    pageTotal.value = total
+  } catch {
+    // 错误详情由 request.js 弹（那里是全站唯一的提示出口），这里只摆状态。
+    loadFailed.value = true
+  } finally {
+    // 只有**最新**那次负责收尾：loading 复位、在途标记清掉。
+    // 旧的那条收尾时若把 loading 置回 false，新请求还在飞、界面就不转圈了。
+    if (seq === pageRequestSeq) {
+      loading.value = false
+      pageRequest = null
+    }
+  }
+}
+
+function onPageChange(p) {
+  page.value = p
+  loadPage()
+}
 
 // 目录被删掉后 URL 还指着它时 getCategory 拿不到，当成"全部"，不白屏
 const currentCategoryId = computed(() => getCategory(categoryFilter.value)?.id ?? null)
 
+/**
+ * 这条知识点有没有某个标签。**只有这一处判据** ——
+ * 筛选（matchTag）和标签清单上的数字（tagList）问的是同一句话，
+ * 各写一遍的话，标签的数据形状一变就有一处对不上
+ * （症状是"下拉里有数、点进去没有"）。
+ */
+function hasTag(t, name) {
+  return (t.tags || []).some((x) => encodeTag(x) === name)
+}
+
 function matchTag(t) {
-  return tagFilter.value === null || (t.tags || []).some((tag) => encodeTag(tag) === tagFilter.value)
+  return tagFilter.value === null || hasTag(t, tagFilter.value)
 }
 
 /**
@@ -238,16 +417,26 @@ function matchCategory(t) {
   return scopeIds.value.has(t.id)
 }
 
-function matchKeyword(t) {
-  const q = keyword.value.trim().toLowerCase()
-  if (!q) return true
-  return (t.title || '').toLowerCase().includes(q) || (t.content || '').toLowerCase().includes(q)
+// ⚠️ **关键词这一维没有本地谓词了**：它**已经在服务端应用过了** ——
+// 结构索引就是"当前关键词下的全集"（正文只有服务端能搜），
+// 本地再判一次的话索引里没有正文，会把正文命中的那几条全滤掉。
+
+/**
+ * 这条知识点的**类型档**（收口后的真实 id）。
+ *
+ * <p>typeId 可能悬空（字典项被软删）⇒ 统一当默认档。
+ * **只有这一处**：筛选（matchType）和类型下拉上的数字（typeCountMap）
+ * 问的是同一句话，各写一遍的话，字典一改就有一处对不上
+ * （症状是"下拉里有数、点进去没有"）。
+ */
+function typeIdOf(t) {
+  return resolveTopicTypeId(t.typeId)
 }
 
-// 类型筛选：typeId 可能悬空（字典项被软删），所以比之前先收口成真实存在的 id
+// 类型筛选
 function matchType(t) {
   if (typeFilter.value === null) return true
-  return resolveTopicTypeId(t.typeId) === typeFilter.value
+  return typeIdOf(t) === typeFilter.value
 }
 
 // ==================== 分面计数 ====================
@@ -271,10 +460,10 @@ function countBy(dimensions, extra) {
 }
 
 // 原子谓词。算哪个维度的数字，就挑**除它以外**的那几个交给 countBy。
+// **不含关键词**：关键词已经在服务端应用了（索引就是"关键词下的全集"）。
 const mCategory = (t) => matchCategory(t)
 const mType = (t) => matchType(t)
 const mTag = (t) => matchTag(t)
-const mKeyword = (t) => matchKeyword(t)
 
 // 标签清单**直接算，不存快照**。
 // 原来是 `ref([])` + refresh() 里 `tagList.value = [...getAllTags()].sort(...)`，那是一次性拷贝——
@@ -288,44 +477,52 @@ const tagList = computed(() =>
   getAllTags()
     .map((tag) => ({
       ...tag,
-      count: countBy([mCategory, mType, mKeyword], (t) =>
-        (t.tags || []).some((x) => encodeTag(x) === tag.name)
-      )
+      count: countBy([mCategory, mType], (t) => hasTag(t, tag.name))
     }))
     .sort((a, b) => b.count - a.count)
 )
 
 // 目录这一维在筛选条上常驻两个值：全部 / 待归类。选中某个具体目录时它们照常显示——
 // 数字答的是"假如点它会得到多少"，这正是换维度该给的提示。
-const allCount = computed(() => countBy([mType, mTag, mKeyword]))
+const allCount = computed(() => countBy([mType, mTag]))
 const uncategorizedCount = computed(() =>
-  countBy([mType, mTag, mKeyword], (t) => t.categoryId == null)
+  countBy([mType, mTag], (t) => t.categoryId == null)
 )
 
 // 类型下拉每项的数字
 const typeCountMap = computed(() => {
   const counts = new Map()
   for (const ty of topicTypes.value) {
-    counts.set(ty.id, countBy([mCategory, mTag, mKeyword], (t) =>
-      resolveTopicTypeId(t.typeId) === ty.id
-    ))
+    counts.set(ty.id, countBy([mCategory, mTag], (t) => typeIdOf(t) === ty.id))
   }
   return counts
 })
 
-const shown = computed(() =>
-  allTopics.value.filter((t) => matchCategory(t) && matchType(t) && matchTag(t) && matchKeyword(t))
+/**
+ * 当前筛选条件下的**全集**（结构索引那份）：目录 ∧ 类型 ∧ 标签。
+ *
+ * <p>它是"这一屏筛出来的所有条目"，不是"这一页显示的那几条"——
+ * 考试要考的是全部，AI 归类要处理的是全部，分面计数要数的也是全部。
+ */
+const scopedTopics = computed(() =>
+  allTopics.value.filter((t) => matchCategory(t) && matchType(t) && matchTag(t))
 )
 
 // ==================== 出卷 ====================
 
 /**
- * 能考的那些：**当前筛选结果里排除未归类的**。
+ * 能考的那些：**当前筛选结果里排除未归类的，再排除还没写正文的**。
  *
  * <p>未归类不是目录、也不许考（用户 2026-10-23 定）；它是筛选条上的一个固定桶，
  * 里面是没整理过的东西（还混着一条 3 万字的垃圾）。
+ *
+ * <p>⚠️ **没写正文的也不许考**（2026-10-26）：送模型的材料是「标题 + 正文」，
+ * 占位只有标题没有正文 ⇒ 模型无料出题（空题、少题或胡编）。
+ * 判据只有一条：**正文非空**（前后端同一口径，后端那条在 `KpTopicServiceImpl`）。
  */
-const examScope = computed(() => shown.value.filter((t) => t.categoryId != null))
+const examScope = computed(() =>
+  scopedTopics.value.filter((t) => t.categoryId != null && t.hasContent)
+)
 
 /** 出卷入口的显示条件：有东西可考（和「AI 归类」一样，AI 关了就不画这个按钮） */
 const showExam = computed(() => aiEnabled.value && examScope.value.length > 0)
@@ -358,7 +555,7 @@ const organizeOpen = ref(false)
  * 另外两个条件：得正在「待归类」这一屏（别的屏上这个按钮没有意义），而且确实有东西可归。
  */
 const showOrganize = computed(
-  () => aiEnabled.value && categoryFilter.value === UNCATEGORIZED && shown.value.length > 0
+  () => aiEnabled.value && categoryFilter.value === UNCATEGORIZED && scopedTopics.value.length > 0
 )
 
 // 包一层 computed 才是响应式的：getCategories() 只是读 categories.value，
@@ -371,8 +568,20 @@ function pickTag(name) {
 }
 
 async function refresh() {
-  // 标签列表是 computed(tagList)，这里只管把 store 的三份缓存刷一遍就够了
-  await Promise.all([ensureTopicsLoaded(true), ensureCategoriesLoaded(true), ensureAllTagsLoaded(true)])
+  // 目录先刷：**子树的 id 列表要用它**（列表请求要传 categoryIds）
+  await ensureCategoriesLoaded()
+  // 索引（结构：目录/计数/范围）和这一页（内容：正文/摘要）**互不依赖** ⇒ 一起发，
+  // 别一个接一个等（两个都是几百毫秒量级，串行就是两倍）。
+  //
+  // ⚠️ **都不强制重拉**：壳（AppLayout）启动时已经把目录 / 索引拉了，
+  // 这里再 force 一遍就是**同一个接口打两次**（实测每次进列表页多打一遍
+  // /kp/topic/index，而它和列表请求是并发的，等于把列表也一起拖慢）。
+  // 数据变了由 store 自己 force（改完知识点、改完标签都会刷一遍）⇒ 这儿重拉是白拉。
+  await Promise.all([
+    ensureTopicIndexLoaded(false, keyword.value),
+    ensureAllTagsLoaded(),
+    loadPage()
+  ])
 }
 
 function goDetail(t) {
@@ -380,16 +589,66 @@ function goDetail(t) {
 }
 
 async function handleDelete(t) {
-  // 确认框 + 删除 + 提示 + 刷新**全在 store**（和详情页顶栏同一个入口）：
-  // confirmDeleteTopic 内部已经刷过 topics 和 tags（删一条会带走它身上的标签引用）。
-  // 这里再调一次 refresh() 就是**同一个列表被拉两遍**（topics / tags 各两遍）——
-  // 而列表是 computed(store 的 topics)，store 刷完它自己就跟着变了。
+  // 确认框 + 删除 + 提示**全在 store**（和详情页顶栏同一个入口）：
+  // confirmDeleteTopic 内部已经删完并刷了索引和标签。
+  // ⚠️ **别在这里再调一次 refresh()** —— store 删完会把数据版本号 +1，
+  // 下面那个 watch 看到就会重拉这一页（再调一次就是同一个列表被拉两遍）。
   await confirmDeleteTopic(t)
 }
 
+/**
+ * ⚠️ **第一次激活不重拉**（onMounted 的 refresh 已经在拉了）⇒ 用 activatedOnce 区分。
+ */
+let activatedOnce = false
+onActivated(() => {
+  // 切回来的：离开这段时间数据可能变了（别处改的、别处删的）⇒ 重拉这一页。
+  if (activatedOnce) loadPage()
+  activatedOnce = true
+})
+
+/**
+ * store 说"数据变了" ⇒ **重拉这一页**。
+ *
+ * <p>「当前页」归这一侧管（它知道第几页、筛了什么），store 只负责说"变了"。
+ * ⚠️ 原来 store 自己缓存了一份当前页、视图渲染的却是另一份 ⇒
+ * **在列表页删掉一条知识点，卡片不消失**（得刷新页面）——
+ * 两份"当前页"只有一份是活的，另一份白拉一次请求。
+ *
+ * <p>⚠️ **只在这一页正开着的时候重拉**（见 onLearnRoute）：
+ * AppLayout 的 `<keep-alive :max="6">` 把页面实例缓存着 ——
+ * 切到详情页时**组件不销毁、watch 还在跑**，
+ * 而详情页每 1.5s 防抖保存一次正文 ⇒ 不加这个判据就是
+ * **每存一次字，列表页在后台偷偷重拉一遍**（那正是这次要省掉的那次请求）。
+ */
+watch(getDataVersion, () => { if (onLearnRoute.value) loadPage() })
+
 // 侧边栏（AppLayout）也在写这两个 query：目录链接写 category，搜索框回车写 q。
 // 只在 onMounted 读一次的话，页面已经挂着时路由变了没人接——URL 变了、界面纹丝不动。
-watch(() => route.query.category, (c) => { categoryFilter.value = readCategoryQuery(c) })
+watch(() => route.query.category, (c) => {
+  // ⚠️ **只在列表页开着的时候才跟着 URL 变**（见 onLearnRoute）：
+  // 离开这一页时详情页的 URL 里没有 category ⇒ 不改它。
+  // 改了的话，"暂时不在眼前"就被当成了"用户把目录筛选清了" ⇒ 列表在后台被刷成「全部」。
+  if (!onLearnRoute.value) return
+  categoryFilter.value = readCategoryQuery(c)
+})
+
+/**
+ * 筛选条件变了 → 重拉这一页。
+ *
+ * <p>**回到第 1 页**：翻到第 5 页再换个条件，第 5 页多半是空的（这一次的总数变小了）。
+ *
+ * <p>关键词也在这个 watch 里：**索引是"关键词下的全集"**（服务端筛的），
+ * 关键词一变索引就得跟着重拉 —— 不拉的话侧边栏的条数还是"不筛关键词"的那份。
+ * 关键词没变时它是空操作（store 认得"这份就是当前的"）。
+ */
+watch([categoryFilter, typeFilter, tagFilter, keyword], () => {
+  // ⚠️ 关键词是**直接从 URL 读**的 ⇒ 离开这一页时它会变成空（详情页的 URL 里没有 ?q=）。
+  // 那一瞬间**不是**"用户清了搜索词"，是"这一页暂时不在眼前" ⇒ 不在这儿发请求。
+  if (!onLearnRoute.value) return
+  page.value = 1
+  ensureTopicIndexLoaded(false, keyword.value)
+  loadPage()
+})
 
 // 正在筛的标签被改名或删掉了 → 回到"全部"。
 // 兜在这里而不是让 TagRowMenu 回调里清：改标签的入口不止这一个（详情页的标签编辑也能改），
@@ -598,5 +857,12 @@ onMounted(refresh)
   grid-template-columns: repeat(auto-fill, minmax(var(--w-grid), 1fr));
   /* 偏好面板的「卡片间距」（LEARN_GRID_GAP）。 */
   gap: var(--learn-grid-gap, var(--sp-11));
+}
+
+/* 分页条：居中一行，贴在卡片区下面。 */
+.pager {
+  display: flex;
+  justify-content: center;
+  padding: var(--sp-4) 0 var(--sp-2);
 }
 </style>

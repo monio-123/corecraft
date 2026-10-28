@@ -80,23 +80,27 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Clock } from '@element-plus/icons-vue'
 import MilkdownEditor from '../../components/MilkdownEditor.vue'
 import ViewToggles from '../../components/corecraft-web/ViewToggles.vue'
 import { loadShellData } from './useShellData'
 import { useImmersive } from './useImmersive'
+import { keywordFromRoute } from '../../utils/routeQuery'
 import TopicTypeSelect from './TopicTypeSelect.vue'
 import {
-  getTopics, getCategories,
+  getTopicIndex, getCategories,
   getUncategorizedCount, createTopic,
   UNCATEGORIZED
 } from './useCorecraftWebStore'
 
+const route = useRoute()
+
 // 全屏录入：整页只剩这一块输入区（见下面的 .is-immersive 规则）。
 // 和详情页、AppLayout 共用同一个判据 useImmersive()，状态在 URL 上。
 const immersive = useImmersive()
+
 // 工具栏显不显示，状态在本层——「简洁/完整」开关按钮就在下面那个动作行里，
 // 按钮和状态得是同一份。传下去用 :show-toolbar（**单向**：编辑器自己不持有这个状态，
 // 开关按钮也不在编辑器里）。
@@ -110,7 +114,9 @@ const draft = ref('')
 const editorKey = ref(0)
 const saving = ref(false)
 
-const topics = computed(() => getTopics())
+// 结构索引（全集，不含正文）—— 首页只要**条数**和"今天新增了几条"，
+// 一条正文都不需要（正文那 90 万字符是列表接口慢的真正原因）。
+const topics = computed(() => getTopicIndex())
 const categories = computed(() => getCategories())
 const topicCount = computed(() => topics.value.length)
 const uncategorizedCount = computed(() => getUncategorizedCount())
@@ -154,7 +160,7 @@ onMounted(async () => {
   // 这里不加 try/catch：壳先挂载，它成功了这一步必然命中缓存、不会失败；
   // 失败的状态由壳的侧边栏那格「加载失败 · 重试」统一承担（见 AppLayout.loadShell）。
   // 只等它把数据拉齐，不取返回值——问候语删了之后这一页已经没有 profile 要用。
-  await loadShellData()
+  await loadShellData(keywordFromRoute(route))
 })
 </script>
 

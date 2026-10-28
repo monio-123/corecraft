@@ -291,6 +291,7 @@ import CategoryRowMenu from '../../views/corecraft-web/CategoryRowMenu.vue'
 import CategoryTree from '../../views/corecraft-web/CategoryTree.vue'
 import { useTopicDrag } from '../../views/corecraft-web/useTopicDrag'
 import { loadShellData } from '../../views/corecraft-web/useShellData'
+import { keywordFromRoute } from '../../utils/routeQuery'
 import { useImmersive } from '../../views/corecraft-web/useImmersive'
 import {
   getChildCategories, hasChildCategories, categoriesState,
@@ -303,7 +304,8 @@ const router = useRouter()
 // 会话数据放 ref：localStorage 不是响应式的，直接读不会触发重渲染
 const session = ref({ menuTree: [], menuPaths: [], profile: {} })
 // 初值取自 URL：带着 ?q= 进来的（刷新 / 分享链接）框里就有那个词，见下面那段注释。
-const searchKeyword = ref(String(route.query.q || ''))
+// **关键词的读法只有一处**（utils/routeQuery.js），别在这儿再抄一遍 `route.query.q`。
+const searchKeyword = ref(keywordFromRoute(route))
 
 // 侧边栏收起状态。存 localStorage 而不是只放内存：收起是有代价的——目录树跟着一起看不见，
 // 一次偶然点错不该让下次打开还是收着的。
@@ -409,7 +411,7 @@ async function loadShell() {
   }
   // 业务数据在后面拉，不挡壳。store 的三个缓存都是 ref、组件是 computed，到位就自己刷新。
   try {
-    await loadShellData()
+    await loadShellData(keywordFromRoute(route))
   } catch {
     // 提示归 request.js（唯一提示出口），这里不重复弹；
     // 目录区自己有「加载失败」状态（见 store 的 categoriesState）。
@@ -464,7 +466,7 @@ watch(searchKeyword, (kw) => {
 function goSearchWith(raw, silent = false) {
   const kw = String(raw || '').trim()
   const query = { ...route.query, q: kw || undefined }
-  const same = String(route.query.q || '') === kw
+  const same = keywordFromRoute(route) === kw
   if (same) return
   if (silent) router.replace({ path: '/app/learn', query })
   else router.push({ path: '/app/learn', query })

@@ -145,11 +145,6 @@
           </div>
         </div>
       </div>
-      <!-- 内容：Milkdown WYSIWYG（ProseMirror 内核 + 可选工具栏，封装在 MilkdownEditor 内）
-           key=topic.id：切 topic 时强制重建编辑器。
-           keep-alive 同 route 名复用组件实例，MilkdownEditorBody 的 useEditor 只在 setup 时跑一次；
-           不重建 → 旧 editor 仍渲染旧 doc，新 markdown 传进来也只在 MilkdownEditor.vue 的 markdown ref 里，
-           不会更新到 ProseMirror 视图。 -->
       <!-- 内容框：白底卡片。**标题是框内第一行**（语雀那种"第一行就是标题"），
            不再是框外一个孤立的表单字段——框外那行 23px 粗体压在正文上方，
            整页看起来像一张详情表单，而不是一份文档。
@@ -158,10 +153,14 @@
       <div class="doc">
       <div class="content">
         <!-- 内容：Milkdown WYSIWYG（ProseMirror 内核 + 可选工具栏，封装在 MilkdownEditor 内）
-             key=topic.id：切 topic 时强制重建编辑器。
+             **没有 :key** —— 编辑器是**复用**的（2026-10-27 性能优化）：
+             每条知识点重建一整个 Milkdown（ProseMirror + 8 个插件 + 视图）要好几十秒的启动成本，
+             而点知识点本该是"看一眼正文"的动作。
+             换知识点时由 load() 调 `switchContent` 把新正文换进去（并清空撤销栈）。
+
              keep-alive 同 route 名复用组件实例，MilkdownEditorBody 的 useEditor 只在 setup 时跑一次；
              不重建 → 旧 editor 仍渲染旧 doc，新 markdown 传进来也只在 MilkdownEditor.vue 的 markdown ref 里，
-             不会更新到 ProseMirror 视图。
+             不会更新到 ProseMirror 视图 —— 所以换内容**必须**走 switchContent。
 
              标题走 #before-content 插槽递进去，于是框内顺序是
              「工具栏 → 标题 → 正文」——工具栏在框顶、标题是文档第一行，和语雀一致。
@@ -169,7 +168,6 @@
              才能拿到编辑器 ctx，搬出去就废了；反过来把标题递进来，顺序自然就对了。 -->
         <MilkdownEditor
           ref="editorRef"
-          :key="topic.id"
           v-model="editContent"
           :show-toolbar="toolbar"
           :category-tree="categoryTree"
@@ -235,14 +233,42 @@
         >
           <el-icon class="ask__grip__icon"><ArrowLeft /></el-icon>
         </div>
+        <!-- 头：**两种模式**。聊天态给一个「随堂测验」入口，测验态给一个「返回问答」——
+             标题跟着变，现在是什么模式一眼看得出来。 -->
         <div class="kb-drawer__head">
-          <span class="kb-drawer__title">AI 问答</span>
-          <button type="button" class="kb-icon-btn" aria-label="关闭" @click="askOpen = false">
-            <el-icon><Close /></el-icon>
-          </button>
+          <span class="kb-drawer__title">{{ quizOn ? '随堂测验' : 'AI 问答' }}</span>
+          <div class="kb-drawer__ops">
+            <button v-if="!quizOn" type="button" class="kb-text-btn" @click="startQuiz">
+              随堂测验
+            </button>
+            <button v-else type="button" class="kb-text-btn" @click="closeQuiz">返回问答</button>
+            <button type="button" class="kb-icon-btn" aria-label="关闭" @click="askOpen = false">
+              <el-icon><Close /></el-icon>
+            </button>
+          </div>
         </div>
 
         <div class="ask__body" ref="askBodyRef">
+          <!-- 随堂测验：考当前这条知识。**答题、判分、讲解用的是同一个答题器**
+               （考试页也是它），这里只负责出卷。 -->
+          <template v-if="quizOn">
+            <div v-if="quizPhase === 'loading'" class="kb-center">
+              <el-icon class="is-loading"><Loading /></el-icon>
+              <p>正在出题…</p>
+            </div>
+            <div v-else-if="quizPhase === 'error'" class="kb-center">
+              <p class="kb-error" :class="{ 'is-quiet': quizQuiet }">{{ quizError }}</p>
+              <el-button v-if="!quizQuiet" size="small" @click="startQuiz">重试</el-button>
+            </div>
+            <ExamRunner
+              v-else
+              :questions="quizQuestions"
+              :sections="quizSections"
+              :note="quizNote"
+              :topic-ids="quizTopicIds"
+            />
+          </template>
+
           <!-- 引导问题常驻在对话上方，**不是空态才出现**。它们是一键动作（一按就问），
                不是"没话说时才给的选择题"——挂在 v-else-if 上意味着问一轮就没了，
                想再用只能刷新页面重开。跟着对话一起滚，不占固定高度：
@@ -250,7 +276,7 @@
 
                问题来自配置树上的「引导问题」那组，改问题在系统配置里改，不用发版。
                拉不到就什么都不显示（后端返回空列表），不该为一个可有可无的列表报错。 -->
-          <div v-if="guideQuestions.length" class="ask__guide">
+          <div v-else-if="guideQuestions.length" class="ask__guide">
             <button
               v-for="q in guideQuestions"
               :key="q.key || q.label"
@@ -264,7 +290,7 @@
 
           <!-- 一轮问答 = 一个 .turn：提问气泡 + 思考过程 + 回答 + 复制。
                组内紧、组间松，一眼能看出哪句答哪句。 -->
-          <template v-if="messages.length">
+          <template v-else-if="messages.length">
             <div v-for="(m, i) in messages" :key="i" class="turn">
               <div class="bubble is-user">{{ m.question }}</div>
 
@@ -328,8 +354,9 @@
 
         <!-- 底部一个胶囊：左边是输入框，右下角依次是「用哪个 API」和发送/停止。
              发送和停止是**同一个动作的两种状态**（不在流 = 问，在流 = 中断），
-             所以合成一个圆钮：两个并排的按钮会把"能按哪个"这个问题推给用户。 -->
-        <div class="ask__foot">
+             所以合成一个圆钮：两个并排的按钮会把"能按哪个"这个问题推给用户。
+             测验态没有这一条：那儿是答题器自己在管。 -->
+        <div v-if="!quizOn" class="ask__foot">
           <div class="ask__composer">
             <!-- ⚠️ 必须写 submitAsk()，不能写 submitAsk。裸传函数名时 Vue 会把 KeyboardEvent
                  当第一个实参送进 submitAsk(questionKey = '') —— questionKey 就成了一个事件对象，
@@ -416,7 +443,7 @@ defineOptions({ name: 'AppTopicDetail' })
 import { ref, reactive, computed, nextTick, onMounted, onBeforeUnmount, onActivated, onDeactivated, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowDown, ArrowLeft, Close, Delete, MagicStick, Plus, Top, VideoPause } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowLeft, Close, Delete, Loading, MagicStick, Plus, Top, VideoPause } from '@element-plus/icons-vue'
 import KbAiIcon from '../../components/KbAiIcon.vue'
 import MilkdownEditor from '../../components/MilkdownEditor.vue'
 import ViewToggles from '../../components/corecraft-web/ViewToggles.vue'
@@ -425,6 +452,8 @@ import TopicOutline from './TopicOutline.vue'
 import TopicTitleInput from './TopicTitleInput.vue'
 import AiAdoptDialog from './AiAdoptDialog.vue'
 import AiEditDrawer from './AiEditDrawer.vue'
+import ExamRunner from './ExamRunner.vue'
+import { generatePaper, loadExamSpec, typesBadNote } from './exam'
 import { useImmersive } from './useImmersive'
 import TopicTypeSelect from './TopicTypeSelect.vue'
 import {
@@ -556,6 +585,11 @@ async function load() {
     }
     topic.value = t
     editContent.value = t.content || ''
+    // **编辑器是复用的**（不再每条知识点重建一个 Milkdown —— 重建一次要好几秒，
+    // 而点知识点本该是"看一眼正文"的动作）⇒ 正文得**主动换进去**。
+    // 外层改 v-model 不会更新 ProseMirror 的视图（见 MilkdownEditorBody 的注释）。
+    // 第一次进来时编辑器还没建出来（editorRef 是 null）⇒ 不用换，它自己会用新值建出来。
+    editorRef.value?.switchContent(t.content || '')
     editTags.value = (t.tags || []).map((tg) => tg.name)
     editTypeId.value = t.typeId ?? null
   } finally {
@@ -861,6 +895,97 @@ function cancelAsk() {
   askAbort?.abort()
 }
 
+// ==================== 随堂测验 ====================
+
+/**
+ * 随堂测验：**在这个抽屉里就地考当前这条知识**。
+ *
+ * 答题、判分、讲解走 `ExamRunner.vue`（**与考试页同一个组件**），
+ * 这里只管**出卷**：范围 = 当前这条，题量结构 = `ai.prompt.exam.quiz.types`。
+ *
+ * **零写入**：题目和作答都只在内存里（跟考试页一样），刷新就没了。
+ */
+const quizOn = ref(false)
+/** idle（还没开始）/ loading（出题中）/ error（出题失败）/ running（答题器接管） */
+const quizPhase = ref('idle')
+const quizQuestions = ref([])
+/** 题量结构（算分要用） */
+const quizSections = ref([])
+const quizNote = ref('')
+const quizError = ref('')
+/** 这一条是"中性结果"不是错误（「出不了题」= 内容太少，不是坏了） */
+const quizQuiet = ref(false)
+/** 测验用的那几项配置。**读一次就存着**，反复开测验不用每次都拉 */
+const quizSpec = ref(null)
+/** 出题中的中止器 */
+let quizAbort = null
+
+/** 判分时把哪些知识当材料：当前这条 */
+const quizTopicIds = computed(() => (topic.value ? [topic.value.id] : []))
+
+/**
+ * 开始随堂测验。
+ *
+ * **配置只读一次**（`loadExamSpec`）：测验的题量与范围都来自配置，
+ * 反复开测验时配置不会变，没必要每次都打一遍接口。
+ */
+async function startQuiz() {
+  if (quizPhase.value === 'loading') return
+  quizOn.value = true
+  quizPhase.value = 'loading'
+  quizError.value = ''
+  quizQuiet.value = false
+  quizNote.value = ''
+  quizQuestions.value = []
+  // 聊天那一轮如果还在流，先掐掉：一次只干一件事，
+  // 两个请求同时打过去只是白烧 token，用户在测验里也看不到那半截回答
+  askAbort?.abort()
+  quizAbort?.abort()
+  quizAbort = new AbortController()
+  try {
+    const spec = quizSpec.value || (quizSpec.value = await loadExamSpec())
+    const sections = spec.quizTypes.sections
+    if (!sections.length) throw new Error('没有可用题型')
+    quizSections.value = sections
+    // 出卷那段在 `exam.js` 的 `generatePaper()`，**与考试页共用**
+    const r = await generatePaper({
+      paper: spec.paper,
+      scope: spec.quizScope,
+      sections,
+      // 难度用配置的**默认档**（第一行）。测验没有出卷设置面板
+      level: spec.levels[0],
+      extra: '',
+      topicIds: quizTopicIds.value,
+      signal: quizAbort.signal
+    })
+    if (r.error) {
+      quizQuiet.value = r.quiet
+      quizError.value = r.error
+      quizPhase.value = 'error'
+      return
+    }
+    const bits = []
+    if (r.note) bits.push(r.note)
+    const bad = typesBadNote(spec.quizTypes.bad)
+    if (bad) bits.push(bad)
+    quizNote.value = bits.join('，')
+    quizQuestions.value = r.questions
+    quizPhase.value = 'running'
+  } catch (e) {
+    if (e?.name === 'AbortError') return
+    quizError.value = e?.message || '出题失败'
+    quizPhase.value = 'error'
+  }
+}
+
+/** 回到聊天（测验这一遍就作废：卷子只在内存里） */
+function closeQuiz() {
+  quizAbort?.abort()
+  quizOn.value = false
+  quizPhase.value = 'idle'
+  quizQuestions.value = []
+}
+
 const adoptOpen = ref(false)
 const adoptTurn = ref(null)
 // 包一层 computed 才是响应式的：getCategories() 只是读 categories.value，
@@ -1123,6 +1248,7 @@ watch(() => immersive.on, scheduleAlign)
 onBeforeUnmount(() => {
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null }
   if (statusTimer) { clearTimeout(statusTimer); statusTimer = null }
+  quizAbort?.abort()
 })
 </script>
 
@@ -1575,6 +1701,16 @@ onBeforeUnmount(() => {
   color: var(--cc-primary);
   border-color: var(--cc-primary);
 }
+/* ---------- 抽屉头的操作区（随堂测验入口 / 返回问答 + 关闭） ---------- */
+.kb-drawer__ops {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--sp-4);
+}
+/* ---------- 随堂测验：出题中 / 出题失败 ----------
+ * 这两条在 `assets/kb.css`（`.kb-center` / `.kb-error`）——
+ * 考试页用的是同一份，两边各写一遍会漂（原来图标字号就差 2px）。 */
 .ask__foot {
   flex: none;
   padding-top: var(--sp-10);

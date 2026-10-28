@@ -70,6 +70,8 @@ defineExpose({
   scrollToHeading: (id) => bodyRef.value?.scrollToHeading(id) ?? false,
   /** 整篇替换正文（AI 改写写回）。返回有没有替换成功 */
   replaceContent: (md) => bodyRef.value?.replaceContent(md) ?? false,
+  /** 换一条知识点：替换正文**并清空撤销栈**（复用编辑器时用它） */
+  switchContent: (md) => bodyRef.value?.switchContent(md) ?? false,
   /** markdown → ProseMirror doc（对比区复用编辑器的解析器，保证渲染与正文一致）。解析不了返回 null */
   docOf: (md) => bodyRef.value?.docOf(md) ?? null
 })

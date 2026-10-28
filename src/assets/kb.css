@@ -193,5 +193,31 @@
   --kb-verdict-tint: 12%;
 }
 
+/* ---------- 「进行中 / 出错」的居中块 ----------
+ * 出卷（考试页）和随堂测验（详情页抽屉）各有一处"正在出题…/出题失败"的居中块，
+ * 两个组件各写一份 scoped 规则，逐字符相同 —— **连图标字号都漂了**
+ * （考试页 30px、随堂测验 28px）。收到这里一份，两个组件引用。
+ * ⚠️ 名字带 kb- 前缀：这两个 class 不带壳限定，名字本身就是边界。 */
+.kb-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-12);
+  padding: var(--sp-16) 0;
+  color: var(--cc-text-3);
+  font-size: var(--text-sm);
+}
+.kb-center .is-loading {
+  font-size: 28px;
+  color: var(--cc-primary);
+}
+/* 「出不了题」是**空结果不是错误**：内容太少而已，不用错误色 */
+.kb-error {
+  color: var(--cc-danger);
+}
+.kb-error.is-quiet {
+  color: var(--cc-text-3);
+}
+
 /* 拖拽幽灵已回到 AppLayout 里的手写实现（原因见那里的注释）：
    SortableJS 的 fallback 会给克隆体写**行内** width/height 且每次移动重写，CSS 改不动。 */

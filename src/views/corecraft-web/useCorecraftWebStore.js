@@ -1,7 +1,7 @@
 import { reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  getTopicList, getTopicById, getTagList, getCategoryList,
+  getTopicList, getTopicIndex as apiGetTopicIndex, getTopicById, getTagList, getCategoryList,
   createTopic as apiCreateTopic, updateTopic as apiUpdateTopic, deleteTopic as apiDeleteTopic,
   createCategory as apiCreateCategory, renameCategory as apiRenameCategory,
   moveCategory as apiMoveCategory, deleteCategory as apiDeleteCategory,
@@ -15,13 +15,48 @@ import { createLoadSlot, loadOnce, resetSlot } from '../../utils/lazyLoad'
 // ==================== 内部状态 ====================
 
 /**
- * 四份缓存的"加载状态"槽。**共享在途请求**那套在 `utils/lazyLoad.js` 里，
- * 和 `utils/session.js`（会话引导）、`useAi.js`（AI 配置）是同一份实现 ——
- * 以前这三处各写各的，store 这四份**漏了**，于是壳和首页同一时刻各拉一遍，
- * 登录进来 topic/list、category/list、字典类型**各被拉了两次**。
+ * **结构索引**：全部知识点的轻量投影（id / 标题 / 目录 / 类型 / 标签 / 有无正文）。
+ *
+ * <p>**一条正文都不含**（2026-10-27 性能诊断）：正文是 TEXT 列，636 条加起来 90 万字符，
+ * JDBC 逐行读回它们要 4.4 秒（实测），而目录树、各处计数、筛选范围**一条正文都不需要**。
+ * ⇒ "全集"用这份（不碰 content 列，78ms），正文只在**要显示正文的那一页**里取。
+ *
+ * <p>它同时是**当前关键词下的全集** —— 关键词要搜正文，只有服务端能筛。
  */
-const topicMap = ref(new Map())
-const topicsSlot = createLoadSlot()
+const topicIndex = ref(new Map())
+const topicIndexSlot = createLoadSlot()
+/**
+ * 当前这份索引对应的关键词。**换了就是另一份数据**，必须重拉。
+ *
+ * <p>它是这份数据的**身份**的一部分（和"哪个账号的数据"同级），所以记住它：
+ * 两个调用方拿同一个关键词时不必各拉一次。
+ */
+let indexKeyword = null
+
+/**
+ * **当前页**的知识点（带正文）—— **不在这儿存**。
+ *
+ * <p>⚠️ 原来这里缓存了一份（`topicPage` 这个 Map），可**全项目没有一处读它**：
+ * 列表页渲染的是它自己的 `pageRecords`。两份"当前页"只有一份是活的 ⇒
+ * ① store 刷了、视图没刷 ⇒ **在列表页删掉一条知识点，卡片不消失**（得刷新页面）；
+ * ② 每次建/改/删都多打一次 `GET /kp/topic/list`，结果写进一个没人读的 Map。
+ *
+ * <p>⇒ **"当前页"归视图管**（它知道自己在第几页、筛了什么），
+ * store 只管"数据变没变"（见下面的 dataVersion）。
+ */
+
+/**
+ * **数据版本号**：知识点变了就 +1。
+ *
+ * <p>视图拿它当"该重拉这一页"的信号（`watch(getDataVersion, ...)`）。
+ * store 不再替视图缓存那一页 —— 它只负责说"变了"，怎么拉是视图的事。
+ */
+const dataVersion = ref(0)
+
+/** 数据版本号（视图 watch 它来重拉当前页） */
+export function getDataVersion() {
+  return dataVersion.value
+}
 
 // 标签缓存：{ name, count }。原本从 topicMap 聚合，要先 ensureTopicsLoaded 拉全部 topic。
 // 现在改成直接调 /kp/tag/list 拉全部 tag（含孤儿），不依赖全部 topic。
@@ -59,17 +94,20 @@ function normalizeCategory(c) {
   return { id: c.id, name: c.name, parentId: c.parentId || ROOT_CATEGORY }
 }
 
-// 四个缓存都是模块级的，只有整页刷新才会重建。换账号时不丢，B 会看到 A 的知识点/目录/标签。
+// 几个缓存都是模块级的，只有整页刷新才会重建。换账号时不丢，B 会看到 A 的知识点/目录/标签。
 // 登录态一变就全部作废：数据本身也要清，否则 loaded=false 但列表里还挂着旧账号的内容。
 onAuthChange(() => {
-  topicMap.value = new Map()
-  resetSlot(topicsSlot)
+  topicIndex.value = new Map()
+  resetSlot(topicIndexSlot)
+  indexKeyword = null
   allTags.value = []
   resetSlot(allTagsSlot)
   categories.value = []
   resetSlot(categoriesSlot)
   topicTypes.value = []
   resetSlot(topicTypesSlot)
+  // 数据换人了 ⇒ 视图手里那一页也是旧账号的 ⇒ 说一声，让它重拉。
+  dataVersion.value++
 })
 
 // ==================== 通用 helpers ====================
@@ -90,6 +128,18 @@ export const TOPIC_TYPE_DICT = 'kp_topic_type'
  * 认 value 不认 label：label 是显示名，管理员改个名代码就失效了。
  */
 export const TOPIC_TYPE_LEARN = 'learn'
+
+/**
+ * 目录树往下走的**层数上限**。**只有这一份**。
+ *
+ * <p>三处防环都用它：向上找祖先链（面包屑）、向下摊平（拖拽落点那棵树）、
+ * 向上数层数（侧边栏计数）。同一个"最多往下 10 层"的约定散在三个函数里，
+ * 改一处别的不知道。
+ *
+ * <p>⚠️ **它是兜底，不是防环本身**：数据被改坏出现环时，真正能终止的是
+ * 「已访问集合」那套（见 `getCategorySubtreeIds` / `flattenCategoryTree`）。
+ */
+const MAX_TREE_DEPTH = 10
 
 function parseJson(raw, fallback) {
   try {
@@ -115,6 +165,7 @@ function decodeTag(raw) {
 
 // ==================== 标准化 ====================
 
+/** 完整的一条知识点（**带正文**）：列表页的卡片、详情页的正文都用它。 */
 function normalizeTopic(item) {
   return {
     id: item.id,
@@ -130,47 +181,143 @@ function normalizeTopic(item) {
   }
 }
 
+/**
+ * 结构索引里的一条（**没有正文**）：只有"这条在哪、叫什么、属于什么、写了没有"。
+ *
+ * <p>`hasContent` 是"**有没有**正文"（布尔），不是正文本身 ——
+ * "这条还没写正文"要判的是这件事，而正文是几十万字符。
+ */
+function normalizeIndexEntry(item) {
+  return {
+    id: item.id,
+    title: item.title || '',
+    categoryId: item.categoryId ?? null,
+    typeId: item.typeId ?? null,
+    tags: parseJson(item.tags, []).map(decodeTag),
+    hasContent: !!item.hasContent,
+    createdAt: item.createTime || ''
+  }
+}
+
 // ==================== 知识点 ====================
 
-export async function ensureTopicsLoaded(force = false) {
-  await loadOnce(topicsSlot, force, async () => {
-    const res = await getTopicList()
+/**
+ * 载入**结构索引**（全集，不含正文）。
+ *
+ * @param {boolean} force 强制重拉（改完库要刷）
+ * @param {string} keyword 当前关键词。**关键词是这份数据的身份的一部分** ——
+ *        换了就得重拉，而且必须服务端筛：浏览器这边没有正文，筛不了正文。
+ */
+export async function ensureTopicIndexLoaded(force = false, keyword = indexKeyword || '') {
+  const kw = String(keyword || '').trim()
+  const changed = kw !== indexKeyword
+  if (!force && !changed && topicIndexSlot.state.value === 'ready') return getTopicIndex()
+  // 先记住新关键词：两个调用方（壳 / 列表页）拿同一个关键词时，
+  // 第二个会算成"没变" ⇒ 复用第一个的**在途**请求，不会打两遍接口。
+  if (changed) indexKeyword = kw
+  await loadOnce(topicIndexSlot, force || changed, async (isCurrent) => {
+    const res = await apiGetTopicIndex({ q: kw })
     const nextMap = new Map()
-    ;(res?.data || []).map(normalizeTopic).forEach((topic) => nextMap.set(topic.id, topic))
-    topicMap.value = nextMap
+    ;(res?.data || []).map(normalizeIndexEntry).forEach((t) => nextMap.set(t.id, t))
+    // **只有最新发起的那次才落缓存**：旧请求晚回来时它带的是**更早的库状态**
+    // （建骨架时那次索引请求被后面的写请求堵住，回来晚了 ⇒ 缓存倒退）。
+    if (isCurrent()) topicIndex.value = nextMap
     return nextMap
   })
-  return getTopics()
+  return getTopicIndex()
 }
 
-export function getTopics() {
-  return [...topicMap.value.values()].sort(
-    (a, b) => String(b.createdAt).localeCompare(String(a.createdAt))
-  )
+/**
+ * **现拉一份结构索引**（不进缓存、**不带关键词**）。
+ *
+ * <p>给"要拿全集"的场合用：**生成知识点**算范围时不能拿共享缓存那份 ——
+ * ① 它是**当前关键词下的**全集（列表页搜过东西时，生成范围就会少一批）；
+ * ② 它可能停在**旧快照**（2026-10-28 实测：建骨架途中发的那次索引请求晚回来，
+ * 把刚刷新的完整索引覆盖成"建到一半"的样子 ⇒ 74 条知识点从来没进过生成循环，
+ * 界面却显示"完成"）。
+ *
+ * <p>⇒ 生成范围**自己拉一份**，不靠任何缓存：这份数据只在这一刻用一次，
+ * 落进共享缓存反而会污染别人。
+ *
+ * @returns {Promise<Array>} 结构索引条目（id / 标题 / 目录 / 有无正文）
+ */
+export async function fetchTopicIndexFresh() {
+  const res = await apiGetTopicIndex({})
+  return (res?.data || []).map(normalizeIndexEntry)
 }
 
+/** 结构索引（全集，不含正文）。目录树、计数、筛选范围都用它。 */
+export function getTopicIndex() {
+  return [...topicIndex.value.values()]
+}
+
+/**
+ * 拉列表页的**一页**（带正文）。
+ *
+ * <p>**不缓存**：当前页是**视图的事**（它知道自己在第几页、筛了什么）。
+ * store 原来也缓存了一份（`topicPage`），可没人读它 ⇒ 反而每次改动都多打一次请求。
+ *
+ * @param {object} params { page, size, categoryIds, uncategorized, typeId, tag, keyword }
+ * @returns {{records: Array, total: number}}
+ */
+export async function loadTopicPage(params = {}) {
+  const res = await getTopicList(params)
+  const data = res?.data || {}
+  return {
+    records: (data.records || []).map(normalizeTopic),
+    total: Number(data.total || 0)
+  }
+}
+
+/**
+ * 按 id 取一条（**结构索引里的那份**：有标题/目录/类型/标签，**没有正文**）。
+ *
+ * <p>要正文走 {@link fetchTopic}（详情接口）或列表页那一页。
+ *
+ * <p>⚠️ **它是"按关键词筛过"的那份**（见 topicIndex 那段）⇒
+ * **它不是身份查询**：索引里查不到 ≠ 这条不存在。
+ * 要"这条现在的目录归属"这种**权威值**，走 {@link currentCategoryIdOf}。
+ */
 export function getTopic(id) {
-  return topicMap.value.get(Number(id)) || topicMap.value.get(id) || null
+  return topicIndex.value.get(Number(id)) || topicIndex.value.get(id) || null
 }
 
+/** 详情：一条完整知识点（带正文）。详情页专用。 */
 export async function fetchTopic(id) {
   const res = await getTopicById(id)
   if (!res?.data) return null
-  const topic = normalizeTopic(res.data)
-  const nextMap = new Map(topicMap.value)
-  nextMap.set(topic.id, topic)
-  topicMap.value = nextMap
-  return topic
+  return normalizeTopic(res.data)
+}
+
+/**
+ * 这条知识点**现在的**目录归属（**权威值**）。
+ *
+ * <p>⚠️ **不从结构索引里猜**：索引是**按关键词筛过的**，
+ * 猜不到就回填 null ⇒ 后端对 categoryId 是**无条件覆盖写** ⇒
+ * **这条知识点被移回「未归类」**（目录归属没了，而界面上看不出任何异常）。
+ *
+ * <p>⇒ 缓存里没有就问服务端（详情接口）。多一次请求，只在缓存没有时发生 ——
+ * 比"把归类清掉"划算得多。
+ */
+async function currentCategoryIdOf(id) {
+  const hit = getTopic(id)
+  if (hit) return hit.categoryId ?? null
+  const t = await fetchTopic(id)
+  return t?.categoryId ?? null
 }
 
 // 知识点变动之后刷缓存。**tagsChanged 必须由调用点老实说**：
-// 标签的 refCount 存在**另一份**缓存 allTags 里（来自 /kp/tag/list），刷 topicMap 刷不到它。
+// 标签的 refCount 存在**另一份**缓存 allTags 里（来自 /kp/tag/list），刷 topicIndex 刷不到它。
 // 之前三条路径（建 / 改 / 删知识点）都只刷了 topicMap，标签下拉里的计数于是永远是旧的，
 // 表现为"详情页移掉一个标签 → 返回列表 → 计数没变，得刷新页面"。
 // 收敛成一个函数，调用点只回答"这次动没动标签"，没动就不发那个多余请求。
 async function refreshAfterTopicChange(tagsChanged) {
-  await ensureTopicsLoaded(true)
+  // 索引（结构：目录/计数/范围）要刷。
+  await ensureTopicIndexLoaded(true)
   if (tagsChanged) await ensureAllTagsLoaded(true)
+  // **当前页（内容：正文/摘要）归视图管** ⇒ 这里只说"变了"。
+  // 视图 watch getDataVersion 来重拉那一页 —— store 不再替它缓存一份。
+  dataVersion.value++
 }
 
 /**
@@ -186,7 +333,7 @@ export async function createTopic(
   { title, content, tags, parentTopicId, categoryId, typeId },
   { refresh = true } = {}
 ) {
-  const beforeIds = new Set(getTopics().map((item) => item.id))
+  const beforeIds = new Set(getTopicIndex().map((item) => item.id))
   const encoded = encodeTags(tags)
   await apiCreateTopic({
     title: title || '',
@@ -201,7 +348,7 @@ export async function createTopic(
   if (!refresh) return null
   // 带标签建出来才会多出引用；不带标签建一条不碰 refCount
   await refreshAfterTopicChange(encoded.length > 0)
-  return getTopics().find((item) => !beforeIds.has(item.id)) || null
+  return getTopicIndex().find((item) => !beforeIds.has(item.id)) || null
 }
 
 /**
@@ -215,10 +362,13 @@ export async function createTopic(
 export async function updateTopic(id, patch, opts = {}) {
   // categoryId 的 null 有含义（未归类），跟"没传这个字段"不是一回事。
   // 后端对 categoryId 是无条件覆盖写（配合 updateStrategy = ALWAYS 支持置空），
-  // 所以没传时必须回填当前值，否则会被当成 null 误抹掉归类。
+  // 所以没传时必须回填**当前值**，否则会被当成 null 误抹掉归类。
+  //
+  // ⚠️ 回填的来源必须是**权威值**（currentCategoryIdOf）：结构索引是按关键词筛过的，
+  // 从那儿猜不到就回填 null ⇒ **这条知识点被移回「未归类」**，而界面上看不出任何异常。
   const categoryId = patch.categoryId !== undefined
     ? patch.categoryId
-    : (getTopic(id)?.categoryId ?? null)
+    : await currentCategoryIdOf(id)
   await apiUpdateTopic({
     id,
     title: patch.title,
@@ -284,7 +434,7 @@ export function getTopicTypes() {
 }
 
 export async function ensureTopicTypesLoaded(force = false) {
-  await loadOnce(topicTypesSlot, force, async () => {
+  await loadOnce(topicTypesSlot, force, async (isCurrent) => {
     // 字典编码 → 字典类型 id。取的是 sys_dict_type 那张表的行，不是硬编码的数字。
     const typeRes = await getDictTypeList({ code: TOPIC_TYPE_DICT })
     const dictType = (typeRes?.data || [])[0]
@@ -302,10 +452,12 @@ export async function ensureTopicTypesLoaded(force = false) {
       return undefined
     }
     const itemRes = await getDictItemList({ dictTypeId: dictType.id })
-    topicTypes.value = (itemRes?.data || [])
+    const next = (itemRes?.data || [])
       .filter((i) => i.enabled)
       .map((i) => ({ id: i.id, label: i.label, value: i.value }))
-    return topicTypes.value
+    // 只有最新发起的那次才落缓存（见 lazyLoad 的「版本号」）
+    if (isCurrent()) topicTypes.value = next
+    return next
   })
   return topicTypes.value
 }
@@ -346,12 +498,14 @@ export function getTopicTypeLabel(typeId) {
 }
 
 export async function ensureAllTagsLoaded(force = false) {
-  await loadOnce(allTagsSlot, force, async () => {
+  await loadOnce(allTagsSlot, force, async (isCurrent) => {
     const res = await getTagList()
     // /kp/tag/list 返回 { id, name, refCount }，store 统一暴露 { id, name, count }
     // id 留着：标签管理 dialog 改名/删除要按 id 调接口，不用再单独拉一份
-    allTags.value = (res?.data || []).map((t) => ({ id: t.id, name: t.name, count: t.refCount }))
-    return allTags.value
+    const next = (res?.data || []).map((t) => ({ id: t.id, name: t.name, count: t.refCount }))
+    // 只有最新发起的那次才落缓存（见 lazyLoad 的「版本号」）
+    if (isCurrent()) allTags.value = next
+    return next
   })
   return allTags.value
 }
@@ -394,7 +548,7 @@ export async function renameTag(tag) {
   // 后端按名字定位（KpTagRenameReq 只有 oldName / newName，没有 id）
   await apiRenameTag({ oldName: tag.name, newName: next })
   await ensureAllTagsLoaded(true)
-  await ensureTopicsLoaded(true)  // topic 上的 tags 字段带着旧名字，不刷就是脏的
+  await ensureTopicIndexLoaded(true)  // topic 上的 tags 字段带着旧名字，不刷就是脏的
   ElMessage.success('已更新')
   return true
 }
@@ -412,7 +566,7 @@ export async function confirmDeleteTag(tag) {
   }
   await apiDeleteTag(tag.id)
   await ensureAllTagsLoaded(true)
-  await ensureTopicsLoaded(true)
+  await ensureTopicIndexLoaded(true)
   ElMessage.success('已删除')
   return true
 }
@@ -452,11 +606,13 @@ export function getCategories() {
 }
 
 export async function ensureCategoriesLoaded(force = false) {
-  await loadOnce(categoriesSlot, force, async () => {
+  await loadOnce(categoriesSlot, force, async (isCurrent) => {
     const res = await getCategoryList()
     // /kp/category/list 返回 { id, name, parentId }；refCount 前端自己算（见 getCategoryCountMap）
-    categories.value = (res?.data || []).map(normalizeCategory)
-    return categories.value
+    const next = (res?.data || []).map(normalizeCategory)
+    // 只有最新发起的那次才落缓存（见 lazyLoad 的「版本号」）
+    if (isCurrent()) categories.value = next
+    return next
   })
   return categories.value
 }
@@ -486,8 +642,8 @@ export function hasChildCategories(id) {
 export function getCategoryPath(id) {
   const chain = []
   let cur = getCategory(id)
-  // 上限 10 层：数据被改坏出现环时不会把渲染卡死
-  while (cur && chain.length < 10) {
+  // 上限 MAX_TREE_DEPTH 层：数据被改坏出现环时不会把渲染卡死
+  while (cur && chain.length < MAX_TREE_DEPTH) {
     chain.unshift(cur)
     cur = getCategory(cur.parentId)
   }
@@ -512,22 +668,26 @@ export function getCategorySubtreeIds(id) {
 }
 
 /**
- * 一个「范围」下的知识点。
+ * 一个「范围」下的知识点（**结构索引里的那份，不含正文**）。
  *
  * <p>范围有三种：`ALL`（全部）、`UNCATEGORIZED`（待归类）、目录 id（**含整棵子树**）。
  *
  * <p>列表页筛出来的就是这个集合，考试的范围也必须是它 ⇒ **收在这里一份，两边共用**。
  * 各算一遍就是两套规则：目录一改，列表看到的和考的就对不上，**而界面上什么异常都看不到**。
+ *
+ * <p>⚠️ **列表页那一页的请求也用这条规则算出来的目录 id 列表**（`categoryIds`）——
+ * 服务端不自己算子树，就是为了让"列表筛出来的"和"这里算出来的"**永远是一批**。
  */
 export function topicsInScope(scope) {
+  const all = getTopicIndex()
   if (scope === UNCATEGORIZED) {
-    return getTopics().filter((t) => t.categoryId == null)
+    return all.filter((t) => t.categoryId == null)
   }
   if (scope === ALL) {
-    return getTopics()
+    return all
   }
   const ids = getCategorySubtreeIds(scope)
-  return getTopics().filter((t) => ids.has(t.categoryId))
+  return all.filter((t) => ids.has(t.categoryId))
 }
 
 /**
@@ -543,7 +703,7 @@ export function topicsInScope(scope) {
  * 「总览」是挂在父目录上的知识点，于是它和自己的子目录并排，一眼看得见。
  * 拖拽落点模式不给：那里每一行都是可投放的目录，多出来的叶子行只会挡住命中检测。
  *
- * seen + 10 层上限双重防环，数据被改坏出现环时不会把渲染卡死。
+ * seen + 层数上限双重防环，数据被改坏出现环时不会把渲染卡死。
  */
 export function flattenCategoryTree(roots, { withTopics = false } = {}) {
   const rows = []
@@ -551,7 +711,7 @@ export function flattenCategoryTree(roots, { withTopics = false } = {}) {
   // 知识点按目录分组：**一次遍历建表**，别在每个目录上全量扫一遍知识点
   const byCat = withTopics ? topicsByCategory() : new Map()
   const walk = (list, depth) => {
-    if (depth > 10) return
+    if (depth > MAX_TREE_DEPTH) return
     for (const c of list) {
       if (seen.has(c.id)) continue
       seen.add(c.id)
@@ -570,12 +730,12 @@ export function flattenCategoryTree(roots, { withTopics = false } = {}) {
  * <p>**只认直挂**：挂在子目录下的知识点在子目录那一层出现一次，不会重复出现两遍。
  *
  * <p>顺序按 id 升序 = 创建顺序 = 生成时的骨架顺序。
- * （`getTopics()` 是按创建时间倒序，而批量生成时一批条目的创建时间可能落在同一秒
- * ⇒ 那个序不稳，树上会随机跳。）
+ * （服务端那条列表是按创建时间倒序的，而批量生成时一批条目的创建时间可能落在同一秒
+ * ⇒ 那个序不稳，树上会随机跳。这里按 id 排就稳了。）
  */
 function topicsByCategory() {
   const byCat = new Map()
-  for (const t of getTopics()) {
+  for (const t of getTopicIndex()) {
     if (t.categoryId == null) continue
     const list = byCat.get(t.categoryId)
     if (list) list.push(t)
@@ -729,7 +889,7 @@ export function dndPick(topicId, anchorEl) {
 export async function dndPickTo(categoryId) {
   const topicId = dnd.topicId
   dndReset()
-  const topic = getTopics().find((t) => t.id === topicId)
+  const topic = getTopic(topicId)
   if (topic) await categorizeTopic(topic, categoryId)
 }
 
@@ -759,7 +919,7 @@ export async function dndDrop() {
     await moveCategory(catId, over)
     return
   }
-  const topic = getTopics().find((t) => t.id === topicId)
+  const topic = getTopic(topicId)
   if (topic) await categorizeTopic(topic, over)
 }
 
@@ -783,11 +943,11 @@ export function dndReset() {
  */
 export function getCategoryCountMap() {
   const counts = {}
-  for (const t of topicMap.value.values()) {
+  for (const t of topicIndex.value.values()) {
     if (t.categoryId == null) continue
-    // 沿祖先链逐层 +1。上限 10 层防环，坏数据不至于把渲染卡死。
+    // 沿祖先链逐层 +1。上限 MAX_TREE_DEPTH 层防环，坏数据不至于把渲染卡死。
     let cur = getCategory(t.categoryId)
-    for (let i = 0; cur && i < 10; i++) {
+    for (let i = 0; cur && i < MAX_TREE_DEPTH; i++) {
       counts[cur.id] = (counts[cur.id] || 0) + 1
       cur = getCategory(cur.parentId)
     }
@@ -798,7 +958,7 @@ export function getCategoryCountMap() {
 /** 未归类（categoryId 为 null）的条数 */
 export function getUncategorizedCount() {
   let n = 0
-  for (const t of topicMap.value.values()) {
+  for (const t of topicIndex.value.values()) {
     if (t.categoryId == null) n++
   }
   return n
@@ -831,7 +991,7 @@ export async function createCategory(name, parentId = ROOT_CATEGORY) {
  *
  * @param {Array} nodes 目录树
  * @param {number} parentId 挂在谁底下（0 = 挂根）。服务端按这个 id 定位父目录，
- *        并按**真实层数**校验深度（挂在第三层下面 = 新目录是第四层）。
+ *        **层数不限**（`kp_category` 是邻接表，层数只是数据 —— 见 `utils/outlineTree.js`）。
  * @returns {Array} 服务端返回的这批目录 `{ id, name, parentId }` ——
  *        知识点要挂到具体目录下，**id 才是身份**（名字会变、还可能撞名）。
  */
@@ -851,7 +1011,7 @@ export async function deleteCategory(id) {
   await apiDeleteCategory(id)
   // 目录下知识点回到了"未归类"，topic 缓存也得刷
   await ensureCategoriesLoaded(true)
-  await ensureTopicsLoaded(true)
+  await ensureTopicIndexLoaded(true)
 }
 
 /**
@@ -862,7 +1022,7 @@ export async function confirmDeleteCategory(c) {
   // 确认框得说清**会删掉什么**。级联删除不可逆，只说"知识点回到未归类"等于让人瞎点。
   const subtree = getCategorySubtreeIds(c.id)
   const kidCount = subtree.size - 1
-  const topicCount = getTopics().filter((t) => t.categoryId != null && subtree.has(t.categoryId)).length
+  const topicCount = getTopicIndex().filter((t) => t.categoryId != null && subtree.has(t.categoryId)).length
   const lines = [`确定删除「${c.name}」？`]
   if (kidCount > 0) {
     lines.push(`${kidCount} 个下级目录会一起删除。`)

@@ -27,7 +27,7 @@ const emit = defineEmits(['add', 'points', 'rename', 'removed'])
 // 用户 2026-10-23 定）。放在目录行上会让"考这个目录"和"考当前筛选"变成两件事。
 const ITEMS = [
   { command: 'add', label: '新增子目录' },
-  { command: 'points', label: '生成知识点' },
+  { command: 'points', label: '生成正文' },
   { command: 'rename', label: '重命名' },
   { command: 'delete', label: '删除目录', divided: true }
 ]

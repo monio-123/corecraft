@@ -6,6 +6,19 @@ export function getTopicList(params) {
   return request.get('/kp/topic/list', { params })
 }
 
+/**
+ * 结构索引：全部知识点的**轻量投影，不含正文**。
+ *
+ * <p>目录树（知识点那一层要显示标题）、各处按类型/标签分类计数 ——
+ * 这些都要"全集"，但一条正文都不需要。正文那 90 万字符是列表接口慢的真正原因
+ * （实测：读全文 4416ms / 不读正文 78ms）。
+ *
+ * @param {object} params { q } —— q 是关键词，**服务端筛**（正文匹配只有服务端能做）
+ */
+export function getTopicIndex(params) {
+  return request.get('/kp/topic/index', { params })
+}
+
 export function getTopicById(id) {
   return request.get(`/kp/topic/${id}`)
 }

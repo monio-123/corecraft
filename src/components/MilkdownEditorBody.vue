@@ -181,7 +181,7 @@ import { history } from '@milkdown/plugin-history'
 import { clipboard } from '@milkdown/plugin-clipboard'
 import { commonmark, linkSchema } from '@milkdown/preset-commonmark'
 import { gfm } from '@milkdown/preset-gfm'
-import { exitCode, selectAll } from 'prosemirror-commands'
+import { exitCode, joinBackward, selectAll } from 'prosemirror-commands'
 import { copyText } from '../utils/clipboard'
 import { uploadFile, fileUrl } from '../api/file'
 import { imageNodePlugin, imageResizeView } from './kbImageNode'
@@ -267,6 +267,45 @@ defineExpose({
   replaceContent(markdown) {
     if (!parseDoc(markdown)) return false
     get().action(replaceAll(markdown))
+    return true
+  },
+  /**
+   * **换一条知识点**：整篇替换正文，**并且清空撤销栈**。
+   *
+   * <p>和 `replaceContent` 的区别只有一处，但那一处很要紧：
+   * `replaceContent`（AI 改写写回）**故意留在撤销栈里** —— 用户按 Ctrl+Z 能退回去。
+   * 而换知识点**必须清栈**：编辑器是复用的（详情页不再每条重建一个 Milkdown），
+   * 栈不清的话 Ctrl+Z 会把**上一条知识点**的内容撤回来，
+   * 而自动保存那条链会把那份内容**写进当前这条** ⇒ 串内容。
+   *
+   * <p>**清栈怎么做的**（prosemirror-history 没有公开的 clear API）：
+   * 它的 apply 里有一条 `let historyTr = tr.getMeta(historyKey); if (historyTr) return historyTr.historyState`
+   * ⇒ 用 meta 塞一份**空的历史状态**进去就行；
+   * 而"空的历史状态"可以问插件自己要：`plugin.spec.state.init()`。
+   * ⚠️ **这条依赖 prosemirror 的内部结构** ⇒ 已在 Node 里验过
+   * （撤销深度 1 → 0、正文不变、undo 直接返回 false = 撤不动）。
+   * 哪天 prosemirror 改了这里，症状是「Ctrl+Z 能撤出上一条知识点」——
+   * 见到这个，先查这段 meta 还能不能生效。
+   */
+  switchContent(markdown) {
+    const doc = parseDoc(markdown)
+    if (!doc) return false
+    const view = getView()
+    if (!view) return false
+    // 换内容，**不进撤销栈**
+    const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, doc.content)
+    tr.setMeta('addToHistory', false)
+    // ⚠️ **换内容不许上报**：外层拿到新值会当成"用户改了正文" ⇒ 触发自动保存
+    // （把当前这条的正文又存一遍）。换知识点是**载入**，不是编辑。
+    suppressEmit = true
+    view.dispatch(tr)
+    // 同步回调已经跑完；再兜一个微任务（万一插件把回调推迟了）
+    Promise.resolve().then(() => { suppressEmit = false })
+    // 再把栈清空（上面的 meta 只是让这一次替换不进栈，旧的那一叠还在）
+    const plugin = view.state.plugins.find((p) => p.key.startsWith('history$'))
+    if (plugin) {
+      view.dispatch(view.state.tr.setMeta(plugin.spec.key, { historyState: plugin.spec.state.init() }))
+    }
     return true
   },
   /** markdown → ProseMirror doc（**不建视图**）。解析不了返回 null */
@@ -813,6 +852,111 @@ const linkInteractions = $prose((ctx) => {
 // 关键：本组件被 <MilkdownEditor> 包在 <MilkdownProvider> 子树中
 // Provider 的 setup 跑完后才进入本组件 setup → useEditor() inject ✓
 // 编辑器内部变化 → 通过 v-model 上抛给外层
+
+/**
+ * **换知识点时**把 `markdownUpdated` 的上报压住。
+ *
+ * <p>详情页复用同一个编辑器（不再每条知识点重建一个 Milkdown），
+ * 换知识点 = 把新正文**换进已有的编辑器**。
+ * 那一下也会触发 `markdownUpdated` ⇒ 外层拿到新值 ⇒ 当成"用户改了正文" ⇒
+ * **触发自动保存**（把当前这条的正文又存一遍，还多一个"已保存"状态跳动）。
+ *
+ * <p>换知识点是**载入**，不是编辑 ⇒ 不该上报。
+ */
+let suppressEmit = false
+
+/**
+ * 标题行首的「退格 / Delete」：**按语雀那套来**，不按 Milkdown 自带的那套。
+ *
+ * ## Milkdown 自带的是什么
+ *
+ * `@milkdown/preset-commonmark` 的 `headingKeymap` → `DowngradeHeading`
+ * （`shortcuts: ['Delete','Backspace']`）：**光标在标题行首时按退格 = 把标题降一级**
+ * （h3→h2→h1→段落），**不是"删掉这一行"**。
+ *
+ * ⇒ 空标题要按 3~5 次才回上一行（次数 = 层级数 + 1），而且**每按一次块类型就变一次**
+ * ⇒ 字号、行高、上下间距跟着变 ⇒ 症状是"光标竖线的大小和间距每次都不一样"
+ * （2026-10-27 用户实机报的）。
+ *
+ * ## 本项目要的行为（2026-10-27 用户定，参照语雀）
+ *
+ * | 情况 | 行为 |
+ * |---|---|
+ * | 标题是空的 | 删掉整块，光标落到上一行末尾 |
+ * | 上一行是空行 | 标题**上移一个位置**（与空行换位，仍是标题） |
+ * | 上一行有内容 | 标题**降级为普通正文**（内容不变，独立段落） |
+ *
+ * **下一行不参与判断。**
+ *
+ * ## 为什么「上一行是空行 ⇒ 上移」是这套的关键
+ *
+ * 上一行空着的时候，"往上移动"在用户心里是**"把这两块并到一起"**的意思 ——
+ * 并的是**上面那块有数据的**（也就是移动之后的上一行 = 没移动之前的上两行）。
+ * 所以这时候**不该降级**：标题保持标题、只是往上挪一格，挪完正好贴住那块数据。
+ *
+ * ## 挂在哪、为什么能抢在 milkdown 前面
+ *
+ * 挂 `editorViewOptionsCtx` 的 `handleKeyDown` ⇒ 进 `view._props`，
+ * prosemirror-view 查 props 的顺序是 `view._props → directPlugins → state.plugins`
+ * ⇒ **无条件第一个被查到**，比所有插件 keymap 都早（同文件里粘贴处理就是这么挂的）。
+ * **返回 false = 交回默认行为**（milkdown 的降级照旧生效，其它块一点不动）。
+ */
+function handleHeadingEdgeKey(view, event) {
+  if (event.key !== 'Backspace' && event.key !== 'Delete') return false
+  const { state } = view
+  const { $from, empty } = state.selection
+  if (!empty) return false
+  // 只管标题，而且只在标题**行首**（光标在文字中间时退格是删字，不归这里）
+  if ($from.parent.type.name !== 'heading') return false
+  if ($from.parentOffset !== 0) return false
+
+  // ① 空标题 ⇒ 删掉整块，光标落到上一行末尾。
+  //    joinBackward 对空块做的就是这件事（删块 + 把光标放到上一块末尾）。
+  if ($from.parent.content.size === 0) {
+    return joinBackward(state, view.dispatch, view)
+  }
+
+  const headingPos = $from.before()
+  const heading = state.doc.nodeAt(headingPos)
+  const prev = state.doc.resolve(headingPos).nodeBefore
+
+  // ② 上一行是空块 ⇒ 标题上移一个位置（和空行换位，仍是标题）
+  if (prev && prev.isTextblock && prev.content.size === 0) {
+    return moveHeadingUp(view, headingPos, heading, prev)
+  }
+
+  // ③ 上一行有内容 ⇒ 标题降级为普通正文（内容不变，独立段落）
+  const tr = state.tr.setNodeMarkup(headingPos, state.schema.nodes.paragraph)
+  view.dispatch(tr.scrollIntoView())
+  return true
+}
+
+/**
+ * 标题上移一个位置：和上一块**换位** —— 标题跑到上面那一行，原来那一行落到标题原来的位置。
+ *
+ * **为什么是"换位"而不是"合并"**：上一行是**空块**（判据见 handleHeadingEdgeKey）。
+ * 合并等于把标题的内容塞进那个空段落 ⇒ 标题就变成正文了 ⇒ 那不是要的行为。
+ * 换位保住了"标题仍是标题"，只把它挪高一格。
+ *
+ * ⚠️ **`Fragment.from` 必须传数组**：本项目装的 prosemirror-model 里
+ * `Fragment.from(nodes)` **只收一个参数**（`nodes.attrs` 存在就包成单节点 fragment），
+ * 写成 `Fragment.from(heading, prev)` 的话 **prev 会被静默丢掉** ——
+ * 结果就是「标题上去了、空段落没了」，而代码看起来完全正常。
+ * （这个坑是 2026-10-27 用 Node 复刻事务、打印 step.toJSON() 才抓到的：
+ * slice 里只有 heading、没有 paragraph。）
+ */
+function moveHeadingUp(view, headingPos, heading, prev) {
+  const { state } = view
+  const prevPos = headingPos - prev.nodeSize
+  const tr = state.tr
+  tr.delete(prevPos, headingPos + heading.nodeSize)
+  tr.insert(prevPos, Fragment.from([heading, prev]))
+  // 光标跟着标题走：标题现在从 prevPos 开始，内容起点 = prevPos + 1
+  tr.setSelection(TextSelection.near(tr.doc.resolve(prevPos + 1)))
+  view.dispatch(tr.scrollIntoView())
+  return true
+}
+
 const { get, loading } = useEditor((root) =>
   Editor.make()
     .config((ctx) => {
@@ -824,6 +968,12 @@ const { get, loading } = useEditor((root) =>
       // 切 topic 时需重建 MilkdownEditor（keep-alive 同 route 名不复用组件）才能让新内容生效。
       ctx.set(defaultValueCtx, props.modelValue)
       ctx.get(listenerCtx).markdownUpdated((mctx, markdown) => {
+        // **换知识点时不上报**（见 switchContent）：那是载入，不是用户编辑。
+        // 上报了外层会当成"用户改了正文" ⇒ 触发自动保存，把当前这条又存一遍。
+        if (suppressEmit) {
+          emitOutline()
+          return
+        }
         // 序列化出来的 markdown 可能**自己读不回来**（闭合的 `**` 紧跟字母时
         // CommonMark 闭不上，粗体会丢、`**` 变字面量）。修完再往外给。
         // 详见 utils/kbMarkdown.js 的说明。
@@ -935,7 +1085,10 @@ const { get, loading } = useEditor((root) =>
             )
           )
           return true
-        }
+        },
+        // 标题行首的退格 / Delete：按语雀那套（见 handleHeadingEdgeKey 的说明）。
+        // 放在 view._props 里 ⇒ 比 milkdown 自带的「降级标题」早一步。
+        handleKeyDown: handleHeadingEdgeKey
       }))
     })
     .use(listener)

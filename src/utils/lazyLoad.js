@@ -9,7 +9,7 @@ import { ref } from 'vue'
  * - `value`：最近一次真正拿到的数据（`state === 'ready'` 时有效）
  */
 export function createLoadSlot() {
-  return { state: ref('loading'), inflight: null, value: undefined }
+  return { state: ref('loading'), inflight: null, value: undefined, version: 0 }
 }
 
 /**
@@ -38,19 +38,33 @@ export function createLoadSlot() {
  *
  * @param {object} slot createLoadSlot() 出来的槽
  * @param {boolean} force 强制重来（改完库要刷缓存）—— 这时**不共享**在途的那次
- * @param {() => Promise<any>} run 取数 + 落数据
+ * @param {(isCurrent: () => boolean) => Promise<any>} run 取数 + 落数据。
+ *        **落数据前先问 `isCurrent()`**：见下面「版本号」那段。
  */
 export async function loadOnce(slot, force, run) {
   if (slot.state.value === 'ready' && !force) return slot.value
   if (slot.inflight && !force) return slot.inflight
+  // **版本号**：force 会起新的一次，旧的那次还在飞。
+  // 两次请求返回的**内容不一样**（旧的那次是"更早的库状态"），回来的**先后也不确定**
+  // —— 谁后回来谁覆盖，就会出现「缓存倒退」。
+  //
+  // ⚠️ 实测踩过（2026-10-28）：建骨架时顺手发的那次索引请求被后面 153 次写请求堵住，
+  // 回来晚了，把刚刷新的**完整**索引覆盖成**建到一半**的快照 ⇒ 生成知识点时
+  // 按这份快照算范围 ⇒ 74 条知识点**从来没进过生成循环**，界面却显示"完成"。
+  //
+  // ⇒ 规则：**只有最新发起的那次才允许落数据**。
+  const myVersion = ++slot.version
   const p = (async () => {
     slot.state.value = 'loading'
-    const v = await run()
-    slot.value = v
-    slot.state.value = v === undefined ? 'failed' : 'ready'
+    const v = await run(() => slot.version === myVersion)
+    // **只有最新那次才落缓存**（旧的那次回来只把值交给自己那次调用方，不碰缓存）
+    if (slot.version === myVersion) {
+      slot.value = v
+      slot.state.value = v === undefined ? 'failed' : 'ready'
+    }
     return v
   })().catch((e) => {
-    slot.state.value = 'failed'
+    if (slot.version === myVersion) slot.state.value = 'failed'
     throw e
   })
   // **只有"在途的还是自己"才清**。
@@ -71,4 +85,7 @@ export function resetSlot(slot) {
   slot.state.value = 'loading'
   slot.inflight = null
   slot.value = undefined
+  // **版本号也要推一格**：换账号时还在飞的那次请求，回来后不许把**上一个账号**的
+  // 数据写回缓存（它带的是旧账号的库状态）。
+  slot.version++
 }

@@ -72,17 +72,22 @@ function readCurrentId() {
  * 以前这里是手写的一份，store 那几份又漏了，于是壳和首页同一时刻各拉一遍接口。
  */
 export async function ensureAiConfigLoaded(force = false) {
-  return loadOnce(aiSlot, force, async () => {
+  return loadOnce(aiSlot, force, async (isCurrent) => {
     // 开关和列表是一次装载的：分开 await 会让首页多等一个 RTT
     const [configRes, endpointRes] = await Promise.all([fetchAiConfig(), fetchEndpoints()])
-    aiConfig.value = configRes?.data || { enabled: false }
-    aiEndpoints.value = endpointRes?.data || []
+    const config = configRes?.data || { enabled: false }
+    const endpoints = endpointRes?.data || []
+    // 只有最新发起的那次才落缓存（见 lazyLoad 的「版本号」）
+    if (isCurrent()) {
+      aiConfig.value = config
+      aiEndpoints.value = endpoints
+    }
     // 选中的那条可能已经被删了，兜回第一条能用的
-    if (!aiEndpoints.value.some((e) => e.id === currentEndpointId.value)) {
-      const first = aiEndpoints.value.find((e) => e.ready) || aiEndpoints.value[0]
+    if (!endpoints.some((e) => e.id === currentEndpointId.value)) {
+      const first = endpoints.find((e) => e.ready) || endpoints[0]
       useEndpoint(first ? first.id : null)
     }
-    return { config: aiConfig.value, endpoints: aiEndpoints.value }
+    return { config, endpoints }
   })
 }
 
@@ -134,10 +139,12 @@ export function useEndpoint(id) {
 const vendorSlot = createLoadSlot()
 
 export async function ensureAiVendorsLoaded(force = false) {
-  return loadOnce(vendorSlot, force, async () => {
+  return loadOnce(vendorSlot, force, async (isCurrent) => {
     const res = await fetchVendors()
-    aiVendors.value = res?.data || []
-    return aiVendors.value
+    const next = res?.data || []
+    // 只有最新发起的那次才落缓存（见 lazyLoad 的「版本号」）
+    if (isCurrent()) aiVendors.value = next
+    return next
   })
 }
 
@@ -178,6 +185,9 @@ export const currentEndpoint = computed(
  * @param onReasoning 每收到一段思考过程调用一次（**非思考模型不会触发**）
  * @param signal  传 AbortSignal 可以中途取消
  * @param questionKey 引导问题的短名（`key:contexts`）；用户自己敲的题不传
+ * @param endpointId **这次用哪个 API**。不传 = 用全局当前选中的那条；
+ *        传了就用传的（生成弹窗里可以临时换一个模型，不动全局选择）
+ * @param thinking 这次要不要关掉模型的思考（`false` = 关；不传 = 不干预）
  * @param material 这次要处理的素材（用户自己敲的一段文字）。不传 = 用这次指定的知识。
  *   给了就用给的，**两者不同时出现**——出题不必被锁在这条知识里
  * @param topicIds 这次处理**哪几条**知识（考一个目录时）。传了它就以它为准，topicId 忽略。
@@ -189,16 +199,22 @@ export const currentEndpoint = computed(
  */
 export async function ask(
   question,
-  { topicId, topicIds, material, history, onPrompt, onDelta, onReasoning, signal, questionKey } = {}
+  { topicId, topicIds, material, history, onPrompt, onDelta, onReasoning, signal, questionKey, endpointId, thinking } = {}
 ) {
   if (!aiEnabled.value) {
     throw new Error('AI 开关没打开')
   }
-  if (!currentEndpoint.value?.ready) {
+  // **这次用哪个 API**：显式指定的优先（生成弹窗里可以临时换一个模型），
+  // 否则用全局当前选中的那条。**两种都要先看配全没有**——
+  // 配不全的端点调过去只会得到一句「还没配全」。
+  const ep = endpointId != null
+    ? aiEndpoints.value.find((e) => e.id === endpointId)
+    : currentEndpoint.value
+  if (!ep?.ready) {
     throw new Error('还没选好 API')
   }
   return streamChat(
-    { topicId, topicIds, question, endpointId: currentEndpoint.value.id, questionKey, material, history: history || [] },
+    { topicId, topicIds, question, endpointId: ep.id, questionKey, material, history: history || [], thinking },
     { onPrompt, onDelta, onReasoning },
     signal
   )
@@ -211,10 +227,12 @@ export async function ask(
 const questionsSlot = createLoadSlot()
 
 export async function ensureAiQuestionsLoaded(force = false) {
-  return loadOnce(questionsSlot, force, async () => {
+  return loadOnce(questionsSlot, force, async (isCurrent) => {
     const res = await fetchQuestions()
-    aiQuestions.value = res?.data || []
-    return aiQuestions.value
+    const next = res?.data || []
+    // 只有最新发起的那次才落缓存（见 lazyLoad 的「版本号」）
+    if (isCurrent()) aiQuestions.value = next
+    return next
   })
 }
 

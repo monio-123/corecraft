@@ -29,7 +29,8 @@
  * 考试的五种题型。**这张表是全站唯一一份题型定义**。
  *
  * - `marks` = 模型在题头括号里会写的中文
- * - `kind`  = 这类题的形态：choice（有选项、答案是字母）/ fill（答案是词）/ open（没有唯一答案，判分交给 AI）
+ * - `kind`  = 这类题的形态：choice（有选项、答案是字母）/ judge（答案是「正确 / 错误」两个词之一）
+ *             / fill（答案是词）/ open（没有唯一答案，判分交给 AI）
  * - `multi` = 能不能多选（只有多选题能）
  *
  * ⚠️ **下面那些集合和判别函数全从这张表算出来**，不另抄一份名单 ——
@@ -39,6 +40,7 @@
 export const EXAM_TYPES = {
   single: { label: '单选题', marks: ['单选'], kind: 'choice' },
   multiple: { label: '多选题', marks: ['多选'], kind: 'choice', multi: true },
+  judge: { label: '判断题', marks: ['判断'], kind: 'judge' },
   blank: { label: '填空题', marks: ['填空'], kind: 'fill' },
   concept: { label: '概念题', marks: ['概念'], kind: 'open' },
   interview: { label: '面试题', marks: ['面试'], kind: 'open' }
@@ -54,6 +56,22 @@ const OPEN_EXAM_TYPES = new Set(typesOfKind('open'))
 
 /** 选择型：有选项、答案是选项下标 */
 const CHOICE_TYPES = new Set(typesOfKind('choice'))
+
+/** 判断型：答案只有「正确 / 错误」两个词，界面上就是两个按钮 */
+const JUDGE_TYPES = new Set(typesOfKind('judge'))
+
+/**
+ * 判断题的两个选项。**顺序 = 界面上的按钮顺序**（先正确后错误）。
+ *
+ * ⚠️ 这两个词也是**标准答案的写法**（模型写「答案：正确」），所以解析器认的
+ * 和这里是同一份 —— 改一处就改两处的地方不能分开放。
+ */
+export const JUDGE_CHOICES = ['正确', '错误']
+
+/** 这个题型是不是判断题 */
+export function isJudgeType(type) {
+  return JUDGE_TYPES.has(type)
+}
 
 const MARKS = Object.entries(EXAM_TYPES).flatMap(([value, t]) => t.marks.map((mark) => [mark, value]))
 const TYPE_BY_MARK = Object.fromEntries(MARKS)
@@ -198,6 +216,32 @@ const ANSWER = /^\s*(?:标准答案|正确答案|答案)\s*[:：]\s*(.*)$/
 const REF_ANSWER = /^\s*参考答案\s*[:：]\s*(.*)$/
 
 /**
+ * 判断题的标准答案。**只看开头**：模型可能写「答案：正确（因为…）」，
+ * 后面的解释不该让这道题被丢掉。
+ *
+ * ⚠️ 「对 / 错」「是 / 否」一并认下：判断题就那两个意思，
+ * 模型换个词写不该导致整道题被丢掉（其余题照常考）。
+ *
+ * ⚠️ **规范词从 `JUDGE_CHOICES` 取**（那才是判断题答案词的唯一一份）：
+ * 这里只补「同义写法」——模型换个词说，不该让整道题被丢掉。
+ */
+const JUDGE_ANSWER_TRUE = new RegExp(`^(${JUDGE_CHOICES[0]}|对|是)`)
+const JUDGE_ANSWER_FALSE = new RegExp(`^(${JUDGE_CHOICES[1]}|错|否)`)
+
+/**
+ * 判断题的答案 → 归一化成「正确 / 错误」；认不出来返回空串。
+ *
+ * <p>归一化后的词**从 `JUDGE_CHOICES` 取**——界面上的两个按钮和标准答案的写法
+ * 是同一份，改一处就得改两处的地方不能分开放。
+ */
+function judgeAnswerOf(text) {
+  const t = String(text || '').trim()
+  if (JUDGE_ANSWER_TRUE.test(t)) return JUDGE_CHOICES[0]
+  if (JUDGE_ANSWER_FALSE.test(t)) return JUDGE_CHOICES[1]
+  return ''
+}
+
+/**
  * 判分行。判定只有三个：**对 / 部分对 / 错**。
  *
  * 「正确 / 错误」是同一批词的另一种写法，一并收下（理由同上）。
@@ -236,6 +280,20 @@ const VERDICT = new RegExp(
 )
 
 const EXPLAIN = /^\s*讲解\s*[:：]\s*(.*)$/
+
+/**
+ * 模型明确说「出不了题」时写的那一行。
+ *
+ * <p>**它和"没解析出题目"是两件事**：
+ * 前者是内容太少（正常，宁缺毋滥），后者是模型没按规范写（异常）。
+ * 混成一句话，界面上就分不清该提示用户"再加点内容"还是"重试"。
+ */
+export const NO_PAPER = '出不了题'
+
+/** 这份卷子是不是模型明说「出不了题」 */
+export function isNoPaper(text) {
+  return String(text || '').includes(NO_PAPER)
+}
 
 /**
  * 解析出题结果。
@@ -406,6 +464,10 @@ export function describeAnswer(q, answer) {
   if (isFillType(q.type)) {
     return String(a.typed || '').trim() || '（未作答）'
   }
+  // 判断题：答的就是「正确 / 错误」两个词之一
+  if (isJudgeType(q.type)) {
+    return String(a.judge || '').trim() || '（未作答）'
+  }
   if (!a.picked?.length) return '（未作答）'
   return a.picked.map((i) => q.options[i]?.label || '').join('')
 }
@@ -443,6 +505,8 @@ function splitBlocks(text, headRe, ranges) {
 /** 一块 → 一道题。解析不出来返回 null（那题丢掉，其余照常） */
 function parsePaperBlock(block) {
   if (!block.type) return null
+  /** 判断题：没有选项、答案只有两个词。**先判出来，下面几处都要用** */
+  const isJudge = JUDGE_TYPES.has(block.type)
   const stem = []
   const options = []
   const points = []
@@ -452,7 +516,8 @@ function parsePaperBlock(block) {
     const line = raw.trim()
     if (!line) continue
     if (!inAnswer) {
-      const opt = line.match(OPTION)
+      // 判断题不认选项：题干里出现的「A. …」不该被当成选项行
+      const opt = isJudge ? null : line.match(OPTION)
       if (opt) {
         options.push({ label: opt[1], text: opt[2].trim() })
         continue
@@ -485,6 +550,10 @@ function parsePaperBlock(block) {
     // 答案只留字母：`答案：B` → `B`；`答案：AB` → `AB`
     answer = answer.replace(NON_OPTION_LETTER, '').toUpperCase()
     if (!answer || options.length < 2) return null
+  } else if (isJudge) {
+    // 判断题：答案必须归一化成「正确 / 错误」。认不出来就丢掉这道题（宁缺毋滥）
+    answer = judgeAnswerOf(answer)
+    if (!answer) return null
   } else if (isOpen) {
     const list = points.length ? points : answer ? [answer] : []
     if (!list.length) return null

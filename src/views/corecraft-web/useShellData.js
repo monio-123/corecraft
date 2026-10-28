@@ -1,6 +1,6 @@
 import { bootstrapSession } from '../../utils/session'
 import {
-  ensureTopicsLoaded, ensureCategoriesLoaded, ensureTopicTypesLoaded
+  ensureTopicIndexLoaded, ensureCategoriesLoaded, ensureTopicTypesLoaded
 } from './useCorecraftWebStore'
 import { ensureAiConfigLoaded } from './useAi'
 
@@ -22,13 +22,19 @@ import { ensureAiConfigLoaded } from './useAi'
  * 每一项都幂等（session 有 snapshot 短路、store 三个有 loaded 标志），
  * 所以壳和页面都调它不会打两次接口。
  *
+ * <p>⚠️ **keyword 是"结构索引"的一部分**：索引是"当前关键词下的全集"（关键词要搜正文，
+ * 只有服务端能筛）。所以启动时就得把 URL 上的关键词传进来 ——
+ * 否则带 `?q=` 进来的那一屏，侧边栏的条数是"不筛关键词"的数字，和列表里看到的对不上。
+ *
  * 返回会话快照（`{ menuTree, menuPaths, profile }`），调用方各取所需：
  * 壳要整份、首页只要 profile。硬塞成一份共享 state 反而多一层间接。
+ *
+ * @param {string} keyword 当前关键词（URL 的 `?q=`）
  */
-export async function loadShellData() {
+export async function loadShellData(keyword = '') {
   const [session] = await Promise.all([
     bootstrapSession(),
-    ensureTopicsLoaded(),
+    ensureTopicIndexLoaded(false, keyword),
     ensureCategoriesLoaded(),
     ensureTopicTypesLoaded(),
     // AI 配置也在这里拉：界面各处用 aiEnabled 控制 AI 入口显不显示，

@@ -37,7 +37,11 @@
       />
     </div>
 
+    <!-- 没正文时**不装成正常卡片**：写一句「未写正文」。
+         原来 `v-if="excerpt"` 整块不渲染 ⇒ 占位条目只剩个标题，
+         跟"加载失败"长得一模一样，用户分不清它到底写没写。 -->
     <p v-if="excerpt" class="card__excerpt">{{ excerpt }}</p>
+    <p v-else class="card__excerpt card__excerpt--empty">未写正文</p>
 
     <!-- 底部只剩标签，没有目录。目录不进卡片：目录一多，平铺的下拉列表就没法用了，
          归类和改类统一走"把卡片拖到右侧那棵树上"这一个动作。
@@ -258,6 +262,12 @@ const excerpt = computed(() => excerptOf(props.topic.content))
   -webkit-box-orient: vertical;
   overflow: hidden;
   word-break: break-word;
+}
+
+/* 没写正文的占位条目：同一行位置，弱一档的颜色 ——
+   它不是"坏了"，是"还没写"（所以不用错误色）。 */
+.card__excerpt--empty {
+  color: var(--cc-text-3);
 }
 
 .card__tags {

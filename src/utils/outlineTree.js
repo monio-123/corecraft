@@ -24,9 +24,14 @@
  * - 目录清单 = 有下级的节点（要建出来）
  * - 知识点清单 = 叶子（要写正文，挂在它**直接的那个目录**下）
  *
+ * 骨架**永远有知识点那层**（名字是结构的一部分）⇒「只要目录」不是这个格式的用法。
+ *
  * ## 层数
  *
- * 目录最深 4 层（和 `语言/java/基础/序列化` 一样深）。超了不能建。
+ * **不限层数**。树想多深就多深 —— 后端也不拦（`kp_category` 是邻接表，
+ * 层数只是数据；侧边栏的缩进撑不住是显示问题，不是数据问题）。
+ *
+ * 层数由**生成骨架时给模型的材料**决定（材料里写「层数上限：N」）。
  *
  * ## 挂载点
  *
@@ -41,9 +46,6 @@ const INDENT = 4
 
 /** 目录名最长 50（后端 `kp_category.name` 的列长，也是 DTO 上的 @Size） */
 export const MAX_NAME = 50
-
-/** 目录最深几层。**和后端 `MAX_IMPORT_DEPTH` 是同一条约定**，改一处要改另一处。 */
-export const MAX_DEPTH = 4
 
 /** 一次最多导多少个目录（和后端 `MAX_IMPORT_NODES` 同一条约定） */
 export const MAX_NODES = 300
@@ -134,19 +136,17 @@ export function parseOutlineTree(text) {
 }
 
 /**
- * 给树打标记：哪些是知识点（叶子）、哪些已经存在、哪些超过层数、默认勾不勾。
+ * 给树打标记：哪些是知识点（叶子）、哪些已经存在、默认勾不勾。
  *
  * @param {Array} forest `parseOutlineTree` 的结果
  * @param {Array} categories 现有目录 `[{ id, name, parentId }]`
- * @param {{id: number, depth: number}} mount 挂载点：`id` = 挂在谁底下（0 = 挂根），
- *        `depth` = 那个目录自己占几层（0 = 挂根）
- * @returns {Array} 每个节点多了 `exists` / `leaf` / `tooDeep` / `checked` / `depth`
+ * @param {{id: number}} mount 挂载点：`id` = 挂在谁底下（0 = 挂根）
+ * @returns {Array} 每个节点多了 `exists` / `leaf` / `checked` / `depth`
  */
-export function markOutline(forest, categories, mount = { id: 0, depth: 0 }) {
+export function markOutline(forest, categories, mount = { id: 0 }) {
   // 现有目录按「父 id → 名字 → id」索引
   const index = indexByParentName(categories)
   const mountId = Number(mount.id || 0)
-  const mountDepth = Number(mount.depth || 0)
   const walk = (nodes, parentKey, depth) =>
     (nodes || []).map((n) => {
       // 父目录在已有目录里（parentKey 是个 id）⇒ 判重名要看那个 id 底下的
@@ -155,22 +155,17 @@ export function markOutline(forest, categories, mount = { id: 0, depth: 0 }) {
       // 已存在 ⇒ 它的下级挂到**已有那个目录**底下（合并）；不存在 ⇒ 下级全是新的，不会有重名
       const children = walk(n.children, exists ? hit : null, depth + 1)
       const leaf = children.length === 0
-      // **层数只管目录**：知识点挂在目录下，不占目录的层数
-      // （"线程的调度策略"挂在第 4 层的目录下，它自己不是第 5 层目录）。
-      const tooDeep = !leaf && depth > MAX_DEPTH
       return {
         ...n,
         children,
         depth,
         exists,
         leaf,
-        tooDeep,
         // **默认全勾**：目录要建、知识点要写，两个都是"这批要的东西"。
-        // 超深的例外 —— 它建不了（叶子挂不到第 5 层以下的目录上）。
-        checked: !tooDeep
+        checked: true
       }
     })
-  return walk(forest, mountId, mountDepth + 1)
+  return walk(forest, mountId, 1)
 }
 
 /** 树里所有节点（打平） */
@@ -192,19 +187,18 @@ export function allNodes(marked) {
  * <p>这是**唯一的口径** —— 界面上"建什么 / 写什么"的统计、按钮能不能点、
  * 发给后端的目录结构、发给模型的知识点清单，全从这里出。
  *
- * <p>**只算真正会落库的那些**：没勾的节点不进计划，它们的超长/超深**不拦**任何人。
+ * <p>**只算真正会落库的那些**：没勾的节点不进计划，它们的超长**不拦**任何人。
  * 没勾的目录 ⇒ 整支（它的子目录 + 它的知识点）都不处理 —— 父目录不建，
  * 知识点挂哪儿去。
  *
  * @param {Array} marked `markOutline` 的结果
- * @param {number} baseDepth 挂载点自己占几层（0 = 挂根）
  * @returns {{
  *   dirs: Array, points: Array, orphan: Array, dirNodes: Map,
- *   dirCount: number, pointCount: number, depth: number,
- *   tooLong: Array, tooDeep: Array, skippedDeep: Array, tooMany: number
+ *   dirCount: number, pointCount: number,
+ *   tooLong: Array, tooMany: number
  * }}
  */
-export function importPlan(marked, baseDepth = 0) {
+export function importPlan(marked) {
   const points = []
   const orphan = []
   /** 目录路径 → 目录节点。写总览知识点时要知道这个目录下面有哪些章节。 */
@@ -213,7 +207,9 @@ export function importPlan(marked, baseDepth = 0) {
     const out = []
     for (const n of nodes || []) {
       const p = joinPath(path, n.name)
-      if (!n.children.length) {
+      // **是不是知识点**：判据在 `markOutline` 那儿定好了（`leaf`）——
+      // 这边只读，不再自己算一遍"没有下级就是知识点"。
+      if (n.leaf) {
         // 叶子 = 知识点：挂在 path 那个目录下。
         // 没有任何目录祖先 ⇒ 无处可挂（orphan），界面要说出来，不能静默丢。
         if (n.checked) {
@@ -222,9 +218,8 @@ export function importPlan(marked, baseDepth = 0) {
         }
         continue
       }
-      // 目录没勾 ⇒ 整支不要（它的子目录和它的知识点都不处理）；
-      // 超深 ⇒ 建不了，也不进计划（跟"没勾"一个待遇：计划里没有它）。
-      if (!n.checked || n.tooDeep) continue
+      // 目录没勾 ⇒ 整支不要（它的子目录和它的知识点都不处理）。
+      if (!n.checked) continue
       dirNodes.set(p, n)
       out.push({ name: n.name, children: build(n.children, p) })
     }
@@ -232,22 +227,16 @@ export function importPlan(marked, baseDepth = 0) {
   }
   const dirs = build(marked, '')
   let dirCount = 0
-  let depth = baseDepth
   const dirPaths = []
-  const walkDir = (list, d, path) => {
+  const walkDir = (list, path) => {
     for (const n of list) {
       const p = joinPath(path, n.name)
       dirCount += 1
-      if (d > depth) depth = d
       dirPaths.push({ name: n.name, path: p })
-      walkDir(n.children, d + 1, p)
+      walkDir(n.children, p)
     }
   }
-  walkDir(dirs, baseDepth + 1, '')
-  // **超深目录默认不勾**（建不了），所以要分成两种：
-  //   - 勾上了 ⇒ 要拦（按钮禁用：它建不出来）
-  //   - 没勾 ⇒ 跳过，但要告诉用户跳了几支（不许静默丢）
-  const deep = allNodes(marked).filter((n) => n.tooDeep)
+  walkDir(dirs, '')
   return {
     dirs,
     points,
@@ -255,11 +244,8 @@ export function importPlan(marked, baseDepth = 0) {
     dirNodes,
     dirCount,
     pointCount: points.length,
-    depth,
     // 目录名超长（列长 50）—— 知识点标题不受这个限（它落在 title 列，更长）
     tooLong: dirPaths.filter((d) => d.name.length > MAX_NAME),
-    tooDeep: deep.filter((n) => n.checked),
-    skippedDeep: deep.filter((n) => !n.checked),
     // **一次最多建多少个目录**：和后端 `MAX_IMPORT_NODES` 是同一条约定。
     // 后端会拒，但那已经是"点完创建"之后的事了 ⇒ 前端先拦一道，
     // 按钮禁用 + 说清楚超了多少（0 = 没超）。

@@ -93,18 +93,20 @@ export function listAiQuestions() {
  * @param topicIds 这次处理**哪几条**知识（考一个目录时）。传了它就以它为准，topicId 忽略
  * @param history 之前几轮 `[{question, answer}]`。**协议无状态，不回传模型就不记得**——
  *   后端不落库也拿不到，所以这份历史只能由抽屉交上来
+ * @param endpointId 用哪个 API 调。**不传就用全局当前选中的那个**（AI 设置里选的那条）
+ * @param thinking 这次要不要关掉模型的思考。`false` = 关；不传 = 不干预
  * @param signal 传 AbortSignal 可以中途取消
  * @returns {Promise<string>} 这次收到的**完整正文**
  */
 export async function streamChat(
-  { topicId, topicIds, question, endpointId, questionKey, material, history },
+  { topicId, topicIds, question, endpointId, questionKey, material, history, thinking },
   { onPrompt, onDelta, onReasoning } = {},
   signal
 ) {
   const res = await fetch('/api/ai/chat/stream', {
     method: 'POST',
     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ topicId, topicIds, question, endpointId, questionKey, material, history }),
+    body: JSON.stringify({ topicId, topicIds, question, endpointId, questionKey, material, history, thinking }),
     signal
   })
   // 这一层只在"还没开始流"时才可能失败（401 / 参数校验 / 后端开流前就抛了异常）。
@@ -131,6 +133,15 @@ export async function streamChat(
   // ⚠️ 只攒 `delta`（正文），**不攒 `reasoning`（思考过程）**：
   // 思考过程不是模型给的答案，混进去会污染解析器的输入。
   let full = ''
+  // **上游为什么停**（stop / length …）和**流有没有正常收尾** ——
+  // 这两件事决定内容是不是**截断的**。
+  //
+  // ⚠️ 截断以前是**静默**的：服务端超时（Spring MVC 的 async timeout，从请求开始算）
+  // 会直接结束响应，前端读到 EOF 就正常返回 ⇒ 界面显示"生成完了"，
+  // 库里那条知识却少了一截，**没有任何异常**。
+  // 现在两种截断都变成**报错**：① 上游说 length；② 流没收到 done 事件就断了。
+  let finishReason = ''
+  let sawDone = false
   for (;;) {
     const { done, value } = await reader.read()
     if (done) break
@@ -144,7 +155,14 @@ export async function streamChat(
       if (!payload) continue
       const evt = JSON.parse(payload)
       if (evt.error) throw new Error(evt.error)
-      if (evt.done) return full
+      if (evt.finish) finishReason = evt.finish
+      if (evt.done) {
+        sawDone = true
+        if (finishReason && finishReason !== 'stop') {
+          throw new Error(truncatedMessage(finishReason))
+        }
+        return full
+      }
       if (evt.prompt) onPrompt?.(evt.prompt)
       if (evt.reasoning) onReasoning?.(evt.reasoning)
       if (evt.delta) {
@@ -153,7 +171,19 @@ export async function streamChat(
       }
     }
   }
+  // 读到 EOF 却**没收到 done 事件** ⇒ 流被中途掐了（服务端超时 / 连接断了）⇒ 内容不完整。
+  if (!sawDone) throw new Error(truncatedMessage(''))
   return full
+}
+
+/**
+ * 截断时给用户看的那句话。**短、只说事实**（准则见 brove-shared §8）：
+ * 用户要知道的只有一件事 —— "这次的内容不全"。
+ */
+function truncatedMessage(reason) {
+  if (reason === 'length') return '可能没生成完（达到输出上限）'
+  if (!reason) return '可能没生成完（连接中断）'
+  return `可能没生成完（上游以 ${reason} 结束）`
 }
 
 async function readError(res) {

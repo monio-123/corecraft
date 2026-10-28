@@ -134,6 +134,25 @@ const PRESETS = [
     id: 'code',
     name: '代码块',
     md: '```java\nList<String> list = new ArrayList<>();\n```'
+  },
+  {
+    id: 'mermaid',
+    name: 'mermaid 图',
+    // **图 + 源码都在**：上面是画出来的图，下面是还能改的源码。
+    // 这是 mermaid 渲染层唯一的免登录自测面 —— 出问题先来这里（别去详情页，
+    // 那条路要登录、还要后端那条 DB 活着）。
+    md: '字节码与跨平台机制：\n\n```mermaid\ngraph LR\n    A[Java 源文件 .java] -->|javac 编译| B[字节码 .class]\n    B -->|JVM on Windows| C[Windows 运行]\n    B -->|JVM on Linux| D[Linux 运行]\n    B -->|JVM on macOS| E[macOS 运行]\n```\n\n图下面就是源码，可以直接改。'
+  },
+  {
+    id: 'mermaid-class',
+    name: 'mermaid 类图',
+    // **类图（classDiagram）**：讲"谁包含谁 / 谁实现谁"时最贴切的那种图。
+    // ⚠️ **两个坑写在下面，改的时候别踩**（2026-10-28 实测 mermaid 12.2）：
+    //   ① `cssClass` 的类名列表**必须整体加引号**（`cssClass "A,B" 名`）；
+    //      写成流程图那套 `class A,B 名` 直接语法错 ⇒ 整张图都画不出来。
+    //   ② classDiagram 走 **elk 布局引擎**（比流程图的 dagre 大，首次要下 ~3.4MB）。
+    // 这条预设是**免登录自测面**：类图画不出来时先来这里，别去详情页。
+    md: '集合框架里 List 的位置：\n\n```mermaid\nclassDiagram\n    class Iterable["Iterable（迭代器）"] {\n        <<interface>>\n    }\n    class Collection["Collection（单列集合）"] {\n        <<interface>>\n    }\n    class List["List（有序,可重复）"] {\n        <<interface>>\n        +add(E e) boolean\n        +remove(Object o) boolean\n    }\n    class ArrayList["ArrayList（数组实现）"]\n    class LinkedList["LinkedList（链表实现）"]\n    Iterable <|-- Collection : 继承\n    Collection <|-- List : 继承\n    List <|.. ArrayList : 实现\n    List <|.. LinkedList : 实现\n    classDef iface fill:#F8D7DA,stroke:#C77C8A,color:#2b2b2b\n    classDef impl fill:#D6E4F7,stroke:#6C8EBF,color:#2b2b2b\n    cssClass "Iterable,Collection,List" iface\n    cssClass "ArrayList,LinkedList" impl\n```\n\n图下面就是源码，可以直接改。'
   }
 ]
 
