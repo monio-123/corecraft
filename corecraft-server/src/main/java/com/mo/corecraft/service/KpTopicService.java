@@ -1,8 +1,12 @@
 package com.mo.corecraft.service;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.mo.corecraft.model.entity.KpTopic;
 import com.mo.corecraft.model.query.KpTopicQuery;
 import com.mo.corecraft.model.req.KpTopicCreateReq;
 import com.mo.corecraft.model.req.KpTopicUpdateReq;
+import com.mo.corecraft.model.resp.KpTopicIndexResp;
 import com.mo.corecraft.model.resp.KpTopicResp;
 
 import java.util.Collection;
@@ -11,7 +15,29 @@ import java.util.Map;
 
 public interface KpTopicService {
 
-    List<KpTopicResp> selectTopicList(KpTopicQuery query);
+    /**
+     * 列表页的知识点：**分页**返回，**带正文**。
+     *
+     * <p>为什么不一次返回全部（2026-10-27 性能诊断）：content 是 TEXT 列，
+     * 636 条加起来 90 万字符，**JDBC 逐行读回它们要 4.4 秒**（实测）——
+     * 侧边栏和列表页都等不起。分页一页 20 条只要 0.34 秒。
+     *
+     * <p>筛选条件（目录范围 / 类型 / 标签 / 关键词）都在 {@link KpTopicQuery} 里，
+     * **服务端筛** —— 浏览器那份轻量索引没有正文，筛不了正文。
+     */
+    IPage<KpTopicResp> selectTopicPage(Page<KpTopic> page, KpTopicQuery query);
+
+    /**
+     * 结构索引：全部知识点，**不含正文**（只有 id / 标题 / 目录 / 类型 / 标签 / 有无正文）。
+     *
+     * <p>目录树要在知识点那一层显示标题、各处要按类型/标签/有无正文分类计数 ——
+     * 这些都要"全集"，但**一条正文都不需要**。实测读全文 4416ms、不读正文 78ms。
+     *
+     * @param keyword 关键词（标题 + 正文都搜）；空 = 不筛。
+     *               **带关键词时返回的是"关键词下的全集"** —— 浏览器那边按它算分面计数，
+     *               数字才和"点进去看到多少条"对得上。
+     */
+    List<KpTopicIndexResp> selectTopicIndex(Long userId, String keyword);
 
     /**
      * 按 id 取一条知识点，**按 userId 收敛到本人**。

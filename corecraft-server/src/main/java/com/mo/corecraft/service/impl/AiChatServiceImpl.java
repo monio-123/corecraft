@@ -46,7 +46,7 @@ import com.mo.corecraft.service.AiChatService.AiDeltaSink;
 @RequiredArgsConstructor
 public class AiChatServiceImpl implements AiChatService {
 
-    private static final AiDelta EMPTY_DELTA = new AiDelta("", "", "");
+    private static final AiDelta EMPTY_DELTA = AiDelta.of("", "", "");
 
     /**
      * 引导问题的键前缀：值在 sys_config（user_id=0 = 系统级），名字在配置树上。
@@ -128,12 +128,14 @@ public class AiChatServiceImpl implements AiChatService {
         deltaSink.accept(AiDelta.ofPrompt(readable(messages)));
 
         httpExecutor.doPostStream(AiEndpoint.chatUrlOf(endpoint.getBaseUrl()), headers,
-                JsonUtils.toJsonString(requestBody(endpoint, messages)),
+                JsonUtils.toJsonString(requestBody(endpoint, messages, req.getThinking())),
                 line -> {
-                    AiDelta delta = extractDelta(line);
-                    if (StringUtils.isNotEmpty(delta.reasoning()) || StringUtils.isNotEmpty(delta.content())) {
-                        deltaSink.accept(AiDelta.of(delta.reasoning(), delta.content()));
-                    }
+                    // **空帧不用在这里滤**：controller 逐字段判空
+                    // （prompt / reasoning / content / finish 各判一次），
+                    // 空帧到了那儿什么也发不出去。
+                    // 原来这里还多包了一层 `AiDelta.of(...)` —— 三个参数逐一相同，
+                    // 包出来的对象跟 `delta` 一模一样（prompt 恒为空串）。
+                    deltaSink.accept(extractDelta(line));
                 });
     }
 
@@ -145,10 +147,17 @@ public class AiChatServiceImpl implements AiChatService {
      * <p>顺序是刻意的 —— model / stream / messages 是这套调用自己的契约，
      * 用户在自定义参数里写它们也不算数（后写的盖掉先写的）。
      * 其余字段（temperature、思考开关……）原样带过去。
+     *
+     * @param thinking 这次要不要关掉模型的思考（{@code false} = 关；其它 = 不干预）
      */
-    private Map<String, Object> requestBody(AiEndpoint endpoint, List<Map<String, String>> messages) {
+    private Map<String, Object> requestBody(AiEndpoint endpoint, List<Map<String, String>> messages, Boolean thinking) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.putAll(endpoint.params().custom());
+        // **关思考**：厂商无关的一个写法（2026-10-26 实测 deepseek / dashscope 都认它）。
+        // 放在端点自定义参数**之后** ⇒ 这一次的勾选盖过端点自己配的那份。
+        if (Boolean.FALSE.equals(thinking)) {
+            body.put("thinking", Map.of("type", "disabled"));
+        }
         body.put("model", endpoint.getModel());
         body.put("stream", true);
         body.put("messages", messages);
@@ -466,14 +475,14 @@ public class AiChatServiceImpl implements AiChatService {
         switch (ctxName) {
             case "categories" -> {
                 var list = kpCategoryService.listCategories(userId);
-                if (list != null && !list.isEmpty()) {
+                if (!list.isEmpty()) {
                     ctx.append("\n\n现有目录清单（缩进表示层级，越深离顶层越远）：\n")
                             .append(categoryTree(list));
                 }
             }
             case "tags" -> {
                 var list = kpTagService.listTags(userId);
-                if (list != null && !list.isEmpty()) {
+                if (!list.isEmpty()) {
                     ctx.append("\n\n现有标签清单：\n").append(
                             list.stream().map(t -> t.getName()).filter(StringUtils::isNotBlank)
                                     .map(n -> "- " + n).reduce((a, b) -> a + "\n" + b).orElse(""));
@@ -567,6 +576,10 @@ public class AiChatServiceImpl implements AiChatService {
      *
      * 空行、`[DONE]`、只带 role 的首帧都返回空增量。
      *
+     * **还读 `choices[0].finish_reason`**：上游为什么停。`length` = 撞了输出上限 ⇒
+     * **内容是截断的** —— 这个信息必须送到前端去，否则用户拿到的是一段"看着完整"的残篇。
+     * （2026-10-27 加：之前静默截断，界面和库里都看不出少了东西。）
+     *
      * **解析失败让它抛出去**：流已经开始了，悄悄吞掉只会让用户对着一个说到一半突然停住的
      * 回答发呆。抛出去由 controller 发一个 error 事件，前端能明确显示"出错了"。
      */
@@ -578,10 +591,12 @@ public class AiChatServiceImpl implements AiChatService {
         if (payload.isEmpty() || "[DONE]".equals(payload)) {
             return EMPTY_DELTA;
         }
-        JsonNode delta = JsonUtils.readTree(payload).path("choices").path(0).path("delta");
+        JsonNode choice = JsonUtils.readTree(payload).path("choices").path(0);
+        JsonNode delta = choice.path("delta");
         // 字段没有 / 是 null ⇒ JsonUtils.text 给 null，这里落成空串（这一层要的是"没有增量"）
-        return new AiDelta("",
+        return AiDelta.of(
                 StringUtils.defaultString(JsonUtils.text(delta, "reasoning_content")),
-                StringUtils.defaultString(JsonUtils.text(delta, "content")));
+                StringUtils.defaultString(JsonUtils.text(delta, "content")),
+                StringUtils.defaultString(JsonUtils.text(choice, "finish_reason")));
     }
 }

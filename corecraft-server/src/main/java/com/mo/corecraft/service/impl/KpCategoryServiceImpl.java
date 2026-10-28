@@ -18,7 +18,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -28,15 +27,6 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class KpCategoryServiceImpl implements KpCategoryService {
-
-    /**
-     * 导入的目录树最深几层。
-     *
-     * <p>**和前端那处是同一条约定**（前端的预览也会拦）—— 改一处要改另一处。
-     * 为什么限着：目录树最深 4 层是这套体系一直的用法（`语言/java/基础/序列化`），
-     * 再深的树侧边栏和面包屑都撑不住。
-     */
-    private static final int MAX_IMPORT_DEPTH = 4;
 
     /** 一次最多导多少个目录。防的是"贴了一整本书进来"那种量。 */
     private static final int MAX_IMPORT_NODES = 300;
@@ -79,45 +69,32 @@ public class KpCategoryServiceImpl implements KpCategoryService {
             throw new CoreCraftException(ResultCodeEnum.FAIL,
                     "一次最多创建 " + MAX_IMPORT_NODES + " 个目录，这批有 " + total + " 个");
         }
-        // 挂载点自己占几层（顶层目录 = 1）。挂到第三层下面 = 新目录是第四层。
-        int baseDepth = depthOf(mountId, userId);
+        // 挂载点必须在本人的目录树里（否则能把目录挂到别人的树上去）。
+        requireMount(mountId, userId);
         // 建好的目录（含合并复用的已有目录）—— 调用方靠 id 把知识点挂上去。
         List<KpCategoryResp> built = new ArrayList<>();
         for (KpCategoryImportNode node : req.getNodes()) {
-            importNode(node, mountId, baseDepth + 1, userId, built);
+            importNode(node, mountId, userId, built);
         }
         return built;
     }
 
     /**
-     * 某个目录在整棵体系里占几层：**顶层目录 = 1**，挂在它下面 = 2。
+     * 挂载点必须在本人的目录树里。**顶层（ROOT）没有归属问题**，直接过。
      *
-     * <p>**层数是绝对的**（从根算），不是这批树里的相对层数 ——
-     * 侧边栏和面包屑撑不住的是绝对层数，相对层数算不出"挂到第三层下面"是不是超了。
+     * <p>不属于本人的 id 一律当"不存在"—— 不报错说"那是别人的目录"，
+     * 那种报错等于告诉别人"这个 id 存在"。
      *
-     * <p>顺带做了归属校验：不在本人目录树里的 id 一律当"不存在"，
-     * 否则能把目录挂到别人的树上去。查一次全量目录就够了（一次导入只算一次）。
+     * <p>⚠️ 归属校验**只有 {@link #require} 这一处**：挂载点、父目录、改名、移动、删除
+     * 问的都是同一句话——"这个目录存在且是本人的"。
+     * 原来这里自己又实现了一遍（全量捞出来扫一遍 + 错误码还是 FAIL），
+     * 改归属规则时要记得改两个地方。
      */
-    private int depthOf(Long categoryId, Long userId) {
+    private void requireMount(Long categoryId, Long userId) {
         if (categoryId == null || KpCategory.ROOT_ID.equals(categoryId)) {
-            return 0;
+            return;
         }
-        Map<Long, Long> parentOf = new HashMap<>();
-        for (KpCategory c : kpCategoryRepository.listByUserId(userId)) {
-            parentOf.put(c.getId(), c.getParentId());
-        }
-        if (!parentOf.containsKey(categoryId)) {
-            throw new CoreCraftException(ResultCodeEnum.FAIL, "挂载目录不存在");
-        }
-        int depth = 0;
-        Long cur = categoryId;
-        // 上溯到根。上限 MAX_IMPORT_DEPTH + 1 层：再深就已经超了，
-        // 多算一层是为了让 importNode 把"超层"这条错误报出来。
-        while (cur != null && !KpCategory.ROOT_ID.equals(cur) && depth <= MAX_IMPORT_DEPTH) {
-            depth++;
-            cur = parentOf.get(cur);
-        }
-        return depth;
+        require(categoryId, userId, "挂载目录不存在");
     }
 
     /**
@@ -173,12 +150,8 @@ public class KpCategoryServiceImpl implements KpCategoryService {
      * <p>每建一个就记进 {@code built}：调用方要拿 id 把知识点挂到具体目录下。
      * **合并复用的已有目录也记**（它的 id 就是知识点要挂的地方）。
      */
-    private void importNode(KpCategoryImportNode node, Long parentId, int depth, Long userId,
+    private void importNode(KpCategoryImportNode node, Long parentId, Long userId,
                             List<KpCategoryResp> built) {
-        if (depth > MAX_IMPORT_DEPTH) {
-            throw new CoreCraftException(ResultCodeEnum.FAIL,
-                    "目录最多 " + MAX_IMPORT_DEPTH + " 层，「" + node.getName() + "」已经超了");
-        }
         Long id = createOne(node.getName(), parentId, userId, true);
         KpCategoryResp row = toResp(id, node.getName().trim(), parentId);
         built.add(row);
@@ -186,7 +159,7 @@ public class KpCategoryServiceImpl implements KpCategoryService {
             return;
         }
         for (KpCategoryImportNode child : node.getChildren()) {
-            importNode(child, id, depth + 1, userId, built);
+            importNode(child, id, userId, built);
         }
     }
 

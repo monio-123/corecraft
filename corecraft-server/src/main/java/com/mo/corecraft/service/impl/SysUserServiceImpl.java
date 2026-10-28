@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mo.corecraft.config.cache.CacheKeys;
 import com.mo.corecraft.config.cache.CacheManagerFacade;
 import com.mo.corecraft.config.security.resource.SecurityUser;
+import com.mo.corecraft.exception.CoreCraftException;
 import com.mo.corecraft.model.entity.SysUser;
 import com.mo.corecraft.model.query.SysUserQuery;
 import com.mo.corecraft.model.req.SysUserCreateReq;
@@ -30,6 +31,14 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+/**
+ * 用户管理。
+ *
+ * <p>**业务失败一律抛 `CoreCraftException`，不抛裸 `RuntimeException`**：
+ * 它带 `resultCode`，全局异常处理器的**专用分支**返回「业务码 + 提示」；
+ * 裸异常只能落到那个"什么异常都接"的兜底分支 —— 提示也能回去，
+ * 但不带业务码（两种写法当前前端看到的提示一样，分类不同）。
+ */
 public class SysUserServiceImpl implements SysUserService{
 
     /**
@@ -78,14 +87,14 @@ public class SysUserServiceImpl implements SysUserService{
     @Override
     public void assignUserRole(Long userId, Long roleId) {
         if (userId == null) {
-            throw new RuntimeException("用户ID不能为空");
+            throw new CoreCraftException("用户ID不能为空");
         }
         SysUser user = sysUserRepository.entityById(userId);
         if (user == null) {
-            throw new RuntimeException("用户不存在");
+            throw new CoreCraftException("用户不存在");
         }
         if (roleId != null && sysRoleRepository.entityById(roleId) == null) {
-            throw new RuntimeException("角色不存在");
+            throw new CoreCraftException("角色不存在");
         }
         sysUserRoleRepository.saveUserRole(userId, roleId);
         CacheManagerFacade.delete(CacheKeys.SECURITY_USER_RECORD, user.getUsername());
@@ -126,12 +135,12 @@ public class SysUserServiceImpl implements SysUserService{
         String newPassword = req.getNewPassword();
         String confirmPassword = req.getConfirmPassword();
         if (!StringUtils.equals(newPassword, confirmPassword)) {
-            throw new RuntimeException("新密码和确认密码不一致");
+            throw new CoreCraftException("新密码和确认密码不一致");
         }
         SecurityUser user = requireCurrentUser();
         SysUser entity = sysUserRepository.entityById(user.getUserId());
         if (entity == null || !passwordEncoder.matches(oldPassword, entity.getPassword())) {
-            throw new RuntimeException("旧密码错误");
+            throw new CoreCraftException("旧密码错误");
         }
         entity.setPassword(passwordEncoder.encode(newPassword));
         sysUserRepository.update(entity);
@@ -150,7 +159,7 @@ public class SysUserServiceImpl implements SysUserService{
     @Override
     public String uploadCurrentUserAvatar(MultipartFile file) {
         if (file == null || file.isEmpty()) {
-            throw new RuntimeException("头像文件不能为空");
+            throw new CoreCraftException("头像文件不能为空");
         }
         String avatarPath = API_PREFIX + fileStorage.put(
                 SecurityUtil.getUserId(), "avatars", file);
@@ -182,7 +191,7 @@ public class SysUserServiceImpl implements SysUserService{
     private SecurityUser requireCurrentUser() {
         SecurityUser user = SecurityUtil.getUser();
         if (!user.isAuthenticated()) {
-            throw new RuntimeException("未获取到当前登录用户");
+            throw new CoreCraftException("未获取到当前登录用户");
         }
         return user;
     }

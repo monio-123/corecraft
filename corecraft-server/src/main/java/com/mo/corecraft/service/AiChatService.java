@@ -35,12 +35,13 @@ public interface AiChatService {
      *
      * @param req 提问参数。material 决定这次处理哪份素材（空 = 这条知识自己的正文）；
      *            endpointId 的归属和配齐情况由 AiEndpointService 校验；history 为空 = 第一轮
-     * @param deltaSink 收到一个事件。三种可能（靠哪个字段非空区分）：
+     * @param deltaSink 收到一个事件。四种可能（靠哪个字段非空区分）：
      *                  <ul>
      *                    <li><b>prompt</b>  —— 开流前发一次，完整提交给模型的消息；</li>
      *                    <li><b>reasoning</b> —— 思考过程增量（**只有思考型模型才给**，
      *                        deepseek-flash 这类非思考模型恒为空串）；</li>
-     *                    <li><b>content</b> —— 正文增量。</li>
+     *                    <li><b>content</b> —— 正文增量；</li>
+     *                    <li><b>finishReason</b> —— 收尾时才有（上游说"为什么停了"）。</li>
      *                  </ul>
      *                  用一个 sink 而不是三个回调，是因为它们本来就是同一条流上的三种帧，
      *                  拆成三个参数只会让调用方多写两行。
@@ -49,15 +50,29 @@ public interface AiChatService {
      */
     void stream(Long userId, AiChatReq req, AiDeltaSink deltaSink) throws IOException;
 
-    /** 一帧。三个字段里 prompt 是一次性的，reasoning / content 是连续增量的 */
-    record AiDelta(String prompt, String reasoning, String content) {
+    /**
+     * 一帧。四个字段里 prompt 是一次性的，reasoning / content 是连续增量的，
+     * finishReason 是**收尾时才有**的（上游说"为什么停了"）。
+     *
+     * @param finishReason 上游的结束原因（OpenAI 兼容协议里是 {@code choices[0].finish_reason}）：
+     *                     {@code stop} = 正常写完；{@code length} = **撞了输出上限，内容是截断的**。
+     *                     空串 = 上游没给。
+     */
+    record AiDelta(String prompt, String reasoning, String content, String finishReason) {
 
         public static AiDelta ofPrompt(String prompt) {
-            return new AiDelta(prompt, "", "");
+            return new AiDelta(prompt, "", "", "");
         }
 
-        public static AiDelta of(String reasoning, String content) {
-            return new AiDelta("", reasoning, content);
+        /**
+         * 一帧增量。
+         *
+         * <p>⚠️ **没有"不带 finishReason"的重载**：那种重载会把 finishReason 静默置空，
+         * 而"撞了输出上限"这个信息**丢了界面上还看不出来**（内容是截断的，
+         * 用户以为拿到的是完整的一段）。要发增量就把 finishReason 一起带上。
+         */
+        public static AiDelta of(String reasoning, String content, String finishReason) {
+            return new AiDelta("", reasoning, content, finishReason);
         }
     }
 

@@ -9,7 +9,7 @@ import java.util.List;
 
 @Getter
 @Setter
-public class KpTopicResp {
+public class KpTopicResp implements Taggable {
 
     private Long id;
 

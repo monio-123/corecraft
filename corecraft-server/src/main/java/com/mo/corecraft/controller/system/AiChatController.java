@@ -8,6 +8,7 @@ import com.mo.corecraft.utils.SecurityUtil;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -38,8 +39,17 @@ import java.util.concurrent.Executors;
 @RequiredArgsConstructor
 public class AiChatController {
 
-    /** 一次问答 5 分钟够用了；不给上限的话卡死的连接会一直占着线程和文件描述符 */
-    private static final long TIMEOUT_MS = 5 * 60 * 1000L;
+    /**
+     * 一次问答最多允许多久（毫秒）。
+     *
+     * <p>**做成配置**（{@code app.ai.chat-timeout-ms}，默认 30 分钟）：写死 5 分钟的时候，
+     * "模型想得久 + 输出得长"（出卷、写正文、生成骨架）就会**静默截断** ——
+     * 流直接结束，界面上看着"生成完了"，内容却少了一截。
+     * SseEmitter 的超时是**从请求开始算**的（不是 idle 超时），模型思考 3 分钟 + 输出 3 分钟
+     * 就已经超了。
+     */
+    @Value("${app.ai.chat-timeout-ms:1800000}")
+    private long chatTimeoutMs;
 
     private final AiChatService aiChatService;
 
@@ -66,7 +76,7 @@ public class AiChatController {
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter chat(@Validated @RequestBody AiChatReq req) {
         Long userId = SecurityUtil.getUserId();
-        SseEmitter emitter = new SseEmitter(TIMEOUT_MS);
+        SseEmitter emitter = new SseEmitter(chatTimeoutMs);
 
         executor.execute(() -> {
             try {
@@ -79,6 +89,11 @@ public class AiChatController {
                     }
                     if (StringUtils.isNotEmpty(delta.content())) {
                         send(emitter, Map.of("delta", delta.content()));
+                    }
+                    // **上游为什么停**（stop / length …）。前端靠它知道内容是不是**截断**的 ——
+                    // 没有这个信息，撞了输出上限也看不出来（界面和库里都像"生成完了"）。
+                    if (StringUtils.isNotEmpty(delta.finishReason())) {
+                        send(emitter, Map.of("finish", delta.finishReason()));
                     }
                 });
                 send(emitter, Map.of("done", true));

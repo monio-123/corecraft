@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.mo.corecraft.mapper.KpTopicMapper">
+
+    <!--
+      知识点的**结构索引**：轻量投影，**一条正文都不取**。
+
+      为什么单独一条 SQL（而不是查实体再把 content 丢掉）：
+      content 是 TEXT 列，636 条加起来 90 万字符。**JDBC 把 TEXT 逐行读回 JVM**
+      才是列表接口慢的真正原因（实测：读全文 4416ms / 不读正文 78ms）。
+      MyBatis-Plus 的实体查询会把整行取回来，**投影**才能真的不碰那一列。
+
+      has_content 在 SQL 里算（LENGTH(content) > 0）：
+      "这条还没写正文"要判的是**有没有**，而正文本身是几十万字符。
+      ⚠️ **用 COALESCE 包一层**：content 可空，而 LENGTH(NULL) 是 NULL、
+      NULL > 0 还是 NULL ⇒ 正文为 NULL 的行会落成 null（不是 false），
+      同一个字段出现两种空值形态，契约声明的却是布尔。
+
+      q（关键词）在**服务端**筛：正文匹配要看到正文，浏览器里那份轻量索引没有正文，
+      筛不了 —— 这也是为什么索引接口带 q：它就是"当前关键词下的全集"。
+    -->
+    <select id="selectIndex" resultType="com.mo.corecraft.model.resp.KpTopicIndexResp">
+        select id, title, category_id, type_id, create_time, (COALESCE(LENGTH(content), 0) &gt; 0) as has_content
+        from kp_topic
+        where user_id = #{userId}
+        <!-- ⚠️ **逻辑删除必须自己写**：MyBatis-Plus 只给它自己生成的 SQL 加 is_delete = 0，
+             手写 SQL 不吃那一套。漏了的话索引里会混着已删的知识点
+             （实测库里 is_delete=1 有 55 条，目录树会显示它们、计数也会多 55）。 -->
+        and is_delete = 0
+        <if test="q != null and q != ''">
+            and (title like concat('%', #{q}, '%') or content like concat('%', #{q}, '%'))
+        </if>
+        order by id
+    </select>
+
+</mapper>

@@ -84,6 +84,22 @@ public class AiChatReq {
      */
     private List<Turn> history;
 
+    /**
+     * 这次要不要**关掉模型的思考**。
+     *
+     * <p>{@code false} = 关（请求体里带 {@code {"thinking":{"type":"disabled"}}}）；
+     * {@code true} 或不给 = **不干预**（用模型/端点自己的默认）。
+     *
+     * <p>**为什么由后端翻译、而不是让前端直接传厂商的参数**：厂商的写法不一样
+     * （deepseek 是 {@code thinking.type}，dashscope 是 {@code enable_thinking}），
+     * 而这一种写法**两个都认**（2026-10-26 实测）⇒ 前端不必知道厂商是谁，
+     * 后端也不必为每个厂商写一张适配表。
+     *
+     * <p>⚠️ 不干预 ≠ 一定开着：端点自己配的「自定义参数」里若带了关思考的参数，
+     * 那一档仍然生效（这里不跟它对着干）。要改端点默认，去 AI 设置里改。
+     */
+    private Boolean thinking;
+
     /** 一轮历史。question 是界面上显示的那句，answer 是模型当时的完整回答 */
     @Getter
     @Setter
