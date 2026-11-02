@@ -529,18 +529,19 @@ function fold(node) {
   collapsed.value = next
 }
 
-/** 有下级的节点（折叠箭头只给它） */
-function branches(nodes, out = []) {
-  for (const n of nodes || []) {
-    if (n.children.length) out.push(n)
-    branches(n.children, out)
-  }
-  return out
-}
-
-/** 默认只展开第一层：树再大也不铺满一屏 */
+/**
+ * 默认只展开第一层：树再大也不铺满一屏。
+ *
+ * <p>节点打平用 `outlineTree` 的 `allNodes`（**只有那一份遍历**），
+ * 不在这里再写一份"走一遍树"的。
+ */
 function collapseDefault() {
-  collapsed.value = new Set(branches(marked.value).filter((n) => n.depth >= 2))
+  // **只收有下级的**：折叠箭头只画给有下级的节点（模板里 `v-if="r.node.children.length"`），
+  // 知识点那些叶子收不收都一样 —— 但塞进 `collapsed` 会把它们的 aria-label
+  // 从「收起」翻成「展开」（那个按钮还在，只是没有箭头）。
+  collapsed.value = new Set(
+    allNodes(marked.value).filter((n) => n.depth >= 2 && n.children.length)
+  )
 }
 
 // ---------------- 第 1 步：出骨架 ----------------
@@ -682,7 +683,7 @@ function pathOfDir(id) {
 /**
  * 这批要写的知识点（**现拉一份全集索引**再筛）。
  *
- * <p>**为什么不用共享缓存那份**（`topicsInScope`）：
+ * <p>**为什么不用共享缓存那份**（store 的 `getTopicIndex`）：
  * ① 那份是**当前关键词下的全集** —— 列表页搜过东西时，生成范围会少一批；
  * ② 它可能停在**旧快照**：2026-10-28 实测，建骨架途中顺手发的那次索引请求被后面
  * 一百多次写请求堵住、回来晚了，把刚刷新的完整索引覆盖成"建到一半"的样子
@@ -699,17 +700,20 @@ async function fetchScopeTopics(catIds) {
 }
 
 /**
- * 这棵子树的上下文：标题清单（模型标 [[标记]] 用）+ 目录链接的合法集合。
+ * 这批的上下文：标题清单（模型标 [[标记]] 用）+ 目录链接的合法集合。
+ *
+ * <p>**只有一份构造器** —— 两个入口（给现成目录写 / 写刚建好的这一批）
+ * 拿到的上下文形状必须一样，不然两处材料就会长得不一样。
  *
  * <p>**从库里现取，不从骨架取** —— 正文是**另一次**生成的，骨架那会儿已经不在内存里了。
- * 子树范围用 store 那份 `getCategorySubtreeIds`（**进目录 = 看整棵子树**，规则只有一份）。
+ *
+ * @param {Set<number>} dirIds 这批知识点可能挂着的目录 id
+ *        （**含整棵子树**：给现成目录写时是 `getCategorySubtreeIds` 那份，
+ *        写刚建好的这一批时是这批新目录的 id —— 规则只有一份，在 store 里）
  */
-async function buildScope(cat) {
-  const dirIds = getCategorySubtreeIds(cat.id)
+async function makeScope(dirIds) {
   const topics = await fetchScopeTopics(dirIds)
   return {
-    catId: cat.id,
-    dirName: cat.name,
     dirIds,
     topics,
     /** 目录全路径（"MySQL/1. 架构/1.1 连接"）—— 材料里的"目录"用它，
@@ -717,27 +721,6 @@ async function buildScope(cat) {
     pathOf: pathOfDir,
     /** 材料里那份《全部知识点》清单（模型能标的名字就这些） */
     allPoints: topics.map((t) => ({ dirPath: pathOfDir(t.categoryId), title: t.title }))
-  }
-}
-
-/**
- * **这批新树**的上下文（写正文用）。
- *
- * <p>范围 = **这批刚建出来的目录**（`ids` 是骨架路径 → 目录 id 的映射）。
- * 骨架可能有**多棵根**（粘贴路径能粘多棵）⇒ 把这批目录的 id 全收进来。
- *
- * <p>每篇正文各自的"下级章节"由 `groupByCategory` **按目录**给（更准，也更省材料）。
- *
- * @param {Map<string, number>} ids 目录路径 → 目录 id（`resolveDirIds` 的结果）
- */
-async function buildBatchScope(ids) {
-  const dirIds = new Set(ids.values())
-  const topics = await fetchScopeTopics(dirIds)
-  return {
-    topics,
-    allPoints: topics.map((t) => ({ dirPath: pathOfDir(t.categoryId), title: t.title })),
-    dirIds,
-    pathOf: pathOfDir
   }
 }
 
@@ -783,7 +766,9 @@ async function build() {
     // **上下文从库里现取**（结构刚落库）⇒ 标题清单、目录链接集合都是最新的。
     // ⚠️ 这一步**现拉一份索引**，不拿 store 的共享缓存：那份可能停在旧快照
     // （2026-10-28 实测：少算 74 条 ⇒ 界面显示"完成"，实际有一半没写）。
-    batch.value = await buildBatchScope(ids)
+    // 范围 = **这批刚建出来的目录**（骨架路径 → 目录 id 的映射）——
+    // 骨架可能有**多棵根**（粘贴路径能粘多棵）⇒ 把这批目录的 id 全收进来。
+    batch.value = await makeScope(new Set(ids.values()))
     // **通知外面刷新**：目录树和知识点列表都变了
     emit('done')
     // 结构建好 ⇒ 进「正文」那一步（写哪几个、要不要标签 / 关联，由那一步定）
@@ -846,12 +831,16 @@ async function startPackContent() {
 async function startPoints() {
   const cat = props.category
   if (!cat?.id) return
-  const scope = await buildScope(cat)
+  // 范围 = **这棵子树**（进目录 = 看整棵子树，规则只有一份，在 store 的 getCategorySubtreeIds）
+  const scope = await makeScope(getCategorySubtreeIds(cat.id))
   const pending = scope.topics.filter((t) => !t.hasContent)
   if (pending.length) {
     await runGroups(groupByCategory(pending, scope), scope)
   } else {
-    await runGroups([{ dirId: cat.id, dirName: cat.name, titles: [], topicIds: [], kids: kidsOf(cat.id) }], scope)
+    // ⚠️ **目录名给全路径**（跟上面分组那条一样）：材料里那段「目录：…」和
+    // 完成页那一行，两处口径必须一样 —— 不然同一个目录在一条链路上是全路径、
+    // 在另一条链路上是单名，模型看到的目录对不上。
+    await runGroups([{ dirId: cat.id, dirName: scope.pathOf(cat.id), titles: [], topicIds: [], kids: kidsOf(cat.id) }], scope)
   }
 }
 

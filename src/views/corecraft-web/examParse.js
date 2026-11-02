@@ -506,7 +506,7 @@ function splitBlocks(text, headRe, ranges) {
 function parsePaperBlock(block) {
   if (!block.type) return null
   /** 判断题：没有选项、答案只有两个词。**先判出来，下面几处都要用** */
-  const isJudge = JUDGE_TYPES.has(block.type)
+  const isJudge = isJudgeType(block.type)
   const stem = []
   const options = []
   const points = []

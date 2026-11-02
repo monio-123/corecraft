@@ -186,7 +186,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ArrowDown, EditPen, Loading, MagicStick } from '@element-plus/icons-vue'
 import {
   ensureTopicIndexLoaded, ensureCategoriesLoaded, ensureAllTagsLoaded,
-  loadTopicPage, getTopicIndex, getCategory, getCategories, topicsInScope,
+  loadTopicPage, getTopicIndex, getCategory, getCategories, scopeMatcher,
   getCategorySubtreeIds, getDataVersion,
   getAllTags, confirmDeleteTopic, encodeTag, UNCATEGORIZED, ALL,
   getTopicTypes, getTopicTypeLabel, resolveTopicTypeId
@@ -408,13 +408,16 @@ function matchTag(t) {
  * 不靠额外的子目录区块。（原来这里写的是"靠卡片上的目录 chip"，
  *  那个 chip 早就撤掉了，注释和代码对不上。）
  *
- * **范围怎么算只有一份**（store 的 `topicsInScope`）：列表筛出来的这批，
+ * **范围怎么算只有一份**（store 的 `scopeMatcher`）：列表筛出来的这批，
  * 和考试要考的必须是同一批。各算一遍，目录一改就可能对不上——**而且界面上什么异常都看不到**。
+ *
+ * <p>**不自己再算一遍子树**：以前这里是"先算出范围内的知识点、再拿它们的 id
+ * 集合去过滤知识点"——同一棵子树过滤两遍。现在直接问"这条在不在范围内"。
  */
-const scopeIds = computed(() => new Set(topicsInScope(categoryFilter.value).map((t) => t.id)))
+const scopeMatch = computed(() => scopeMatcher(categoryFilter.value))
 
 function matchCategory(t) {
-  return scopeIds.value.has(t.id)
+  return scopeMatch.value(t)
 }
 
 // ⚠️ **关键词这一维没有本地谓词了**：它**已经在服务端应用过了** ——
@@ -459,11 +462,9 @@ function countBy(dimensions, extra) {
   ).length
 }
 
-// 原子谓词。算哪个维度的数字，就挑**除它以外**的那几个交给 countBy。
+// 原子谓词就是上面那三个（`matchCategory` / `matchType` / `matchTag`）：
+// 算哪个维度的数字，就挑**除它以外**的那几个交给 countBy。
 // **不含关键词**：关键词已经在服务端应用了（索引就是"关键词下的全集"）。
-const mCategory = (t) => matchCategory(t)
-const mType = (t) => matchType(t)
-const mTag = (t) => matchTag(t)
 
 // 标签清单**直接算，不存快照**。
 // 原来是 `ref([])` + refresh() 里 `tagList.value = [...getAllTags()].sort(...)`，那是一次性拷贝——
@@ -477,23 +478,23 @@ const tagList = computed(() =>
   getAllTags()
     .map((tag) => ({
       ...tag,
-      count: countBy([mCategory, mType], (t) => hasTag(t, tag.name))
+      count: countBy([matchCategory, matchType], (t) => hasTag(t, tag.name))
     }))
     .sort((a, b) => b.count - a.count)
 )
 
 // 目录这一维在筛选条上常驻两个值：全部 / 待归类。选中某个具体目录时它们照常显示——
 // 数字答的是"假如点它会得到多少"，这正是换维度该给的提示。
-const allCount = computed(() => countBy([mType, mTag]))
+const allCount = computed(() => countBy([matchType, matchTag]))
 const uncategorizedCount = computed(() =>
-  countBy([mType, mTag], (t) => t.categoryId == null)
+  countBy([matchType, matchTag], (t) => t.categoryId == null)
 )
 
 // 类型下拉每项的数字
 const typeCountMap = computed(() => {
   const counts = new Map()
   for (const ty of topicTypes.value) {
-    counts.set(ty.id, countBy([mCategory, mTag], (t) => typeIdOf(t) === ty.id))
+    counts.set(ty.id, countBy([matchCategory, matchTag], (t) => typeIdOf(t) === ty.id))
   }
   return counts
 })

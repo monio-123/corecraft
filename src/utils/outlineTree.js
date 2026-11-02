@@ -193,7 +193,7 @@ export function allNodes(marked) {
  *
  * @param {Array} marked `markOutline` 的结果
  * @returns {{
- *   dirs: Array, points: Array, orphan: Array, dirNodes: Map,
+ *   dirs: Array, points: Array, orphan: Array,
  *   dirCount: number, pointCount: number,
  *   tooLong: Array, tooMany: number
  * }}
@@ -201,8 +201,6 @@ export function allNodes(marked) {
 export function importPlan(marked) {
   const points = []
   const orphan = []
-  /** 目录路径 → 目录节点。写总览知识点时要知道这个目录下面有哪些章节。 */
-  const dirNodes = new Map()
   const build = (nodes, path) => {
     const out = []
     for (const n of nodes || []) {
@@ -220,7 +218,6 @@ export function importPlan(marked) {
       }
       // 目录没勾 ⇒ 整支不要（它的子目录和它的知识点都不处理）。
       if (!n.checked) continue
-      dirNodes.set(p, n)
       out.push({ name: n.name, children: build(n.children, p) })
     }
     return out
@@ -241,7 +238,6 @@ export function importPlan(marked) {
     dirs,
     points,
     orphan,
-    dirNodes,
     dirCount,
     pointCount: points.length,
     // 目录名超长（列长 50）—— 知识点标题不受这个限（它落在 title 列，更长）

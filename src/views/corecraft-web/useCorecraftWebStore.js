@@ -668,26 +668,28 @@ export function getCategorySubtreeIds(id) {
 }
 
 /**
- * 一个「范围」下的知识点（**结构索引里的那份，不含正文**）。
+ * 一个「范围」的判据（**只有这一份规则**）。
  *
  * <p>范围有三种：`ALL`（全部）、`UNCATEGORIZED`（待归类）、目录 id（**含整棵子树**）。
  *
- * <p>列表页筛出来的就是这个集合，考试的范围也必须是它 ⇒ **收在这里一份，两边共用**。
+ * <p>列表页筛出来的就是这个范围，考试要考的就必须是它 ⇒ **收在这里一份，两边共用**。
  * 各算一遍就是两套规则：目录一改，列表看到的和考的就对不上，**而界面上什么异常都看不到**。
  *
  * <p>⚠️ **列表页那一页的请求也用这条规则算出来的目录 id 列表**（`categoryIds`）——
  * 服务端不自己算子树，就是为了让"列表筛出来的"和"这里算出来的"**永远是一批**。
+ *
+ * <p>**给谓词，不给条目列表**：要的是"这条在不在范围内"，一条一条判就够 ——
+ * 先算出范围内的条目、再拿它们的 id 去过滤条目，同一棵子树要过滤两遍。
+ *
+ * @param {string|number} scope `ALL` / `UNCATEGORIZED` / 目录 id
+ * @returns {(t: object) => boolean} 这条知识点在不在这个范围里
  */
-export function topicsInScope(scope) {
-  const all = getTopicIndex()
-  if (scope === UNCATEGORIZED) {
-    return all.filter((t) => t.categoryId == null)
-  }
-  if (scope === ALL) {
-    return all
-  }
+export function scopeMatcher(scope) {
+  if (scope === ALL) return () => true
+  if (scope === UNCATEGORIZED) return (t) => t.categoryId == null
+  // **子树只算一次**：谓词一条一条判就是几百次调用，每次重算子树是几百次遍历。
   const ids = getCategorySubtreeIds(scope)
-  return all.filter((t) => ids.has(t.categoryId))
+  return (t) => ids.has(t.categoryId)
 }
 
 /**

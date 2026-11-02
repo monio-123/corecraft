@@ -42,7 +42,7 @@
         </div>
 
         <!-- 判断题：答案只有两个词，界面就是两个按钮（没有选项行） -->
-        <div v-else-if="isJudge(curQ.type)" class="qjudge">
+        <div v-else-if="isJudgeType(curQ.type)" class="qjudge">
           <button
             v-for="c in JUDGE_CHOICES"
             :key="c"
@@ -57,7 +57,7 @@
         </div>
 
         <el-input
-          v-else-if="isFill(curQ.type)"
+          v-else-if="isFillType(curQ.type)"
           v-model="curAnswer.typed"
           :disabled="phase !== 'ready'"
           placeholder="填答案"
@@ -435,10 +435,6 @@ const counts = computed(() => {
 function questionOf(no) {
   return props.questions.find((q) => q.no === no) || null
 }
-
-/** 题型判断的三个出口（模板里直接调） */
-const isFill = isFillType
-const isJudge = isJudgeType
 </script>
 
 <style scoped>
