@@ -9,10 +9,14 @@
 --   2. TRUNCATE sys_permission（菜单本体）
 --   3. 插默认配置：系统管理 GROUP + 4 MENU（shell=admin）
 --   4. 为 admin role（默认 id=1）分配系统管理权限
---   5. 插默认配置：corecraft-web GROUP + 2 MENU（shell=app）
+--   5. 插默认配置：corecraft-web GROUP + 1 MENU（shell=app）
 --   6. 为 admin role 分配 corecraft-web 权限
 -- 注：知识点详情（app/topic/:id）不做菜单项——详情是"记录"的延伸操作，从记录页卡片点进，
 -- 不需要独立菜单入口；登录即可访问，不挂 sys_permission
+-- 注：知识点列表（app/learn）**也没有菜单项**（2026-11-02 撤掉）：
+--   它点进去是全体知识点平铺，没有方向。真正要它的地方是
+--   「从目录进去 / 首页当天新增·待归类」——那些入口不走菜单。
+--   ⇒ 侧边栏顶部不再有 nav 块（首页入口进了品牌区）。
 -- 保留：sys_user / sys_role / sys_dict 等基础数据不动
 --
 -- meta.shell（2026-10-03 新增）——决定菜单项渲染在哪个壳里：
@@ -89,15 +93,15 @@ VALUES (NULL, 'corecraft-web', '知识库', 3, 1, 'GROUP', '{"icon":"MagicStick"
 
 SET @corecraft_web_group_id = LAST_INSERT_ID();
 
--- 业务界面下的 MENU 节点（"详情"从记录页卡片进入，不做独立菜单入口）
+-- 业务界面下的 MENU 节点（"详情"从记录页卡片进入，不做独立菜单入口；
+-- "知识点列表" 2026-11-02 撤掉了 —— 它的入口是侧边栏目录和首页那几张卡）
 INSERT INTO sys_permission (parent_id, code, name, sort, is_enabled, type, meta, create_time, update_time, is_delete)
 VALUES
-(@corecraft_web_group_id, 'corecraft-web:home', '首页', 1, 1, 'MENU', '{"path":"/app","icon":"House","shell":"app"}', NOW(), NOW(), 0),
-(@corecraft_web_group_id, 'corecraft-web:learn', '随手记', 2, 1, 'MENU', '{"path":"/app/learn","icon":"EditPen","shell":"app"}', NOW(), NOW(), 0);
+(@corecraft_web_group_id, 'corecraft-web:home', '首页', 1, 1, 'MENU', '{"path":"/app","icon":"House","shell":"app"}', NOW(), NOW(), 0);
 
 -- corecraft-web 权限
 INSERT INTO sys_role_permission (role_id, permission_id, create_time, update_time, is_delete)
 SELECT @admin_role_id, id, NOW(), NOW(), 0
 FROM sys_permission
-WHERE code IN ('corecraft-web', 'corecraft-web:home', 'corecraft-web:learn')
+WHERE code IN ('corecraft-web', 'corecraft-web:home')
 AND is_delete = 0;

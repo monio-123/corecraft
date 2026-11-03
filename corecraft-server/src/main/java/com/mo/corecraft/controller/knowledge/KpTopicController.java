@@ -30,9 +30,12 @@ public class KpTopicController {
     /**
      * 列表页的知识点：**分页**返回，带正文。
      *
-     * <p>筛选项（目录范围 / 类型 / 标签 / 关键词）都在 {@link KpTopicQuery} 里，服务端筛。
+     * <p>筛选项（目录范围 / 类型 / 标签 / 关键词 / 时间区间）都在 {@link KpTopicQuery} 里，服务端筛。
      * 目录范围传的是**一串目录 id**（子树由前端算好）——「选中一个目录 = 看整棵子树」
      * 这条规则只有前端那一份，后端再实现一遍就成了两套规则。
+     *
+     * <p>时间区间（{@code createdFrom} / {@code createdTo}）也是前端算好传过来的 ——
+     * 它是**列表页的范围**（今天 / 本周 / 本月），分页在服务端 ⇒ 这两个条件必须在服务端。
      */
     @RequestMapping(value = "list", method = RequestMethod.GET)
     public ResultResp<IPage<KpTopicResp>> list(KpTopicQuery query,

@@ -30,6 +30,12 @@ public class KpTopicRepository extends AbstractRepository<KpTopic, KpTopicQuery,
                 .when(!onlyUncategorized && hasCategoryIds,
                         (w, q) -> w.in(KpTopic::getCategoryId, q.getCategoryIds()))
                 .ifNotNull(query.getTypeId(), (w, typeId) -> w.eq(KpTopic::getTypeId, typeId))
+                // 时间区间（列表页的「今天 / 本周 / 本月」范围）。
+                // 起止由前端按本地时区算好传过来 ⇒ 两端口径一致，不会差一天。
+                // ⚠️ **前端那边还有一份同口径的筛选**（结构索引上按 createTime 自己筛，
+                // 用来算分面数字）⇒ 两边算出来的起止必须是同一对值，否则数字会和条数对不上。
+                .ifNotNull(query.getCreatedFrom(), (w, from) -> w.ge(KpTopic::getCreateTime, from))
+                .ifNotNull(query.getCreatedTo(), (w, to) -> w.le(KpTopic::getCreateTime, to))
                 // 标签：EXISTS 子查询。关联表 + 标签表 join 一次，
                 // 比"先查 tagId 再 IN 查 topic"少一次往返。
                 .ifNotBlank(query.getTag(), (w, tag) -> w.exists(

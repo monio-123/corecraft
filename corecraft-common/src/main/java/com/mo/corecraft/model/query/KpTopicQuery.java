@@ -3,7 +3,9 @@ package com.mo.corecraft.model.query;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.Setter;
+import org.springframework.format.annotation.DateTimeFormat;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Getter
@@ -37,6 +39,25 @@ public class KpTopicQuery {
 
     /** 标签名 */
     private String tag;
+
+    /**
+     * 时间的下界（**含**）：`yyyy-MM-dd HH:mm:ss`。空 = 不限。
+     *
+     * <p>**为什么是本地墙钟时间（不带时区）**：前端按**本地时区**算好起止再传过来
+     * （"今天" = 本地 00:00:00 起），库里 {@code create_time} 存的也是本地墙钟时间
+     * ⇒ 两端比的是同一个东西，**不会因为时区换算差一天**。
+     *
+     * <p>⚠️ **分面计数走的是结构索引，不是这个参数** —— 索引那条 SQL 不吃时间筛选，
+     * 前端在索引那份数据上自己按 {@code createTime} 筛。两边口径必须一样
+     * （前端那个算出来的起止就是这里收的同一对值）⇒ 否则"下拉里的数字"和
+     * "点进去看到的条数"会漂，而**界面上什么异常都看不到**。
+     */
+    @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private LocalDateTime createdFrom;
+
+    /** 时间的上界（含）：`yyyy-MM-dd HH:mm:ss`。空 = 不限。 */
+    @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private LocalDateTime createdTo;
 
     /**
      * 关键词：标题和正文都搜。

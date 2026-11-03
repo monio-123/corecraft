@@ -72,6 +72,9 @@ DEALLOCATE PREPARE stmt;
 --   OpenAI     api.openai.com/v1
 --   硅基流动   api.siliconflow.cn/v1
 --   火山方舟   ark.cn-beijing.volces.com/api/v3
+--   小米 MiMo  api.xiaomimimo.com/v1（2026-11-02 加；OpenAI 兼容，
+--             官方同时兼容 Anthropic 格式；模型项不预置，靠「更新」现拉
+--             —— 小米的 GET /v1/models 实测存在）
 --
 -- ⚠️ **只有 DeepSeek 官方明确有 GET /models**；别的厂商的 OpenAI 兼容
 --    能不能列模型没逐个核过 ⇒ 「刷新」失败时不要清空已有清单（代码里就是这么做的），
@@ -84,7 +87,8 @@ INSERT INTO `sys_dict_type` (`code`, `name`, `remark`, `is_enabled`) VALUES
 ('ai_vendor_minimax',    'MiniMax',               'https://api.minimax.chat/v1',                  1),
 ('ai_vendor_openai',     'OpenAI',                'https://api.openai.com/v1',                    1),
 ('ai_vendor_siliconflow','硅基流动 SiliconFlow',  'https://api.siliconflow.cn/v1',                 1),
-('ai_vendor_volcengine', '火山方舟（豆包）',      'https://ark.cn-beijing.volces.com/api/v3',     1);
+('ai_vendor_volcengine', '火山方舟（豆包）',      'https://ark.cn-beijing.volces.com/api/v3',     1),
+('ai_vendor_xiaomi',     '小米 MiMo',              'https://api.xiaomimimo.com/v1',                 1);
 
 
 -- ---------------------------------------------------------------------------
@@ -120,10 +124,15 @@ FROM information_schema.columns
 WHERE table_schema = DATABASE() AND table_name = 'ai_endpoint' AND column_name = 'params';
 -- 期望：1
 
--- 4.2 厂商类型 8 个
+-- 4.2 厂商类型 9 个（2026-11-02 加了小米 MiMo ⇒ 8 → 9）
 SELECT COUNT(*) AS vendor_types FROM `sys_dict_type`
 WHERE `code` LIKE 'ai_vendor\_%' AND `is_delete` = 0;
--- 期望：8
+-- 期望：9
+
+-- 4.2.1 小米那行的地址对不对
+SELECT code, name, remark FROM `sys_dict_type`
+WHERE `code` = 'ai_vendor_xiaomi';
+-- 期望：1 行，name=小米 MiMo，remark=https://api.xiaomimimo.com/v1
 
 -- 4.3 DeepSeek 型号 2 个
 SELECT COUNT(*) AS deepseek_models FROM `sys_dict_item` i
