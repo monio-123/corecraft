@@ -58,9 +58,10 @@ const routes = [
         path: 'learn',
         name: 'AppLearn',
         component: () => import('../views/corecraft-web/AppLearnView.vue'),
-        // 侧边栏显示的名字来自 sys_permission.name（本条 code=corecraft-web:learn），
-        // 两边要同步改：菜单名在管理后台改（附 SQL 见 resources/db/_archive），
-        // 这里改的是顶栏标题 / tab 标题，只靠前端这一处匹配不到。
+        // 这一页**没有菜单项**了（2026-11-02 撤掉 sys_permission 里的
+        // 'corecraft-web:learn'）：它点进去是全体知识点平铺、没有方向，
+        // 入口改成「侧边栏目录 / 首页当天新增·待归类」。
+        // 顶栏 / tab 标题只剩这一处（菜单名已经没有了，两边不用再同步）。
         meta: { title: '知识点' }
       },
       {

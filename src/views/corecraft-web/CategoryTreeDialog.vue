@@ -1,19 +1,21 @@
 <template>
   <el-dialog
     :model-value="modelValue"
-    :title="mode === 'points' ? '生成正文' : '生成知识包'"
+    :title="mode === 'points' ? '写知识点' : '生成主题'"
     width="640px"
     :close-on-click-modal="false"
     @update:model-value="close"
   >
-    <!-- pack 模式四步：主题 → 骨架 → 正文 → 完成。
-         **骨架那步只落结构**（目录 + 知识点占位：title 有、content 空）；
-         写正文是**下一步**的事（那一步再选要不要标签 / 要不要知识点关联）。
-         points 模式只有一步：写正文。 -->
+    <!-- pack 模式四步：主题 → 目录 → 知识点 → 完成。
+         **每一步的名字就是它产出的是什么**（目录 / 知识点）——
+         抽象词（「骨架」「正文」）在界面上没有对应物，用户得在脑子里翻译一遍。
+         **目录那步只落结构**（目录 + 知识点占位：title 有、content 空）；
+         写内容是**下一步**的事（那一步再选要不要标签 / 要不要知识点关联）。
+         points 模式只有一步：写知识点。 -->
     <el-steps v-if="mode === 'pack'" :active="step" simple class="steps">
       <el-step title="主题" />
-      <el-step title="骨架" />
-      <el-step title="正文" />
+      <el-step title="目录" />
+      <el-step title="知识点" />
       <el-step title="完成" />
     </el-steps>
 
@@ -26,12 +28,14 @@
 
       <template v-if="source === 'ai'">
         <div class="field">
-          <label class="field__label">目录名称</label>
-          <el-input v-model="topic" placeholder="如：MySQL" @keyup.enter="generateOutline" />
+          <label class="field__label">主题名称</label>
+          <!-- 示例**不带技术栈的味道**：这是个通用学习平台，
+               示例给成「MySQL」会让人以为它只服务技术类主题。 -->
+          <el-input v-model="topic" placeholder="如：中国近代史" @keyup.enter="generateOutline" />
         </div>
         <div class="field">
           <label class="field__label">补充说明</label>
-          <el-input v-model="extra" type="textarea" :rows="3" placeholder="如：面向开发、面向考试" />
+          <el-input v-model="extra" type="textarea" :rows="3" placeholder="如：面向初学者" />
         </div>
         <!-- **层数上限**：目录最多几层（0 = 不限）。只管 AI 生成的骨架，
              粘贴的树是用户自己写的，本来就多深都行。 -->
@@ -49,23 +53,22 @@
           v-model="text"
           type="textarea"
           :rows="8"
-          placeholder="操作系统
-├── 进程与线程
-│   ├── 进程与线程的区别
-│   └── 线程的调度策略
-└── 内存管理
-    └── 虚拟内存的工作原理"
+          placeholder="主题
+├── 模块一
+│   ├── 知识点一
+│   └── 知识点二
+└── 模块二
+    └── 知识点三"
         />
       </template>
     </section>
 
-    <!-- 第 2 步：骨架。**目录 = 有下级的节点，知识点 = 叶子**，两件事都在这棵树里 -->
+    <!-- 第 2 步：目录。**目录 = 有下级的节点，知识点 = 叶子**，两件事都在这棵树里 -->
     <section v-else-if="at.skeleton" class="pane">
       <div class="sum">
         <span>将建 {{ plan.dirCount }} 个目录</span>
-        <span v-if="plan.pointCount">· 生成 {{ plan.pointCount }} 个知识点</span>
-        <!-- **正文在下一步写** ⇒ 这里先说清要写多少篇（这一批要花的时间） -->
-        <span v-if="plan.pointCount">· 写 {{ plan.pointCount }} 篇正文</span>
+        <!-- 叶子是**知识点占位**（标题有、内容空）⇒ 内容在下一步写 -->
+        <span v-if="plan.pointCount">· {{ plan.pointCount }} 个知识点待写</span>
       </div>
       <p v-if="plan.tooLong.length" class="warn">{{ plan.tooLong.length }} 个目录名超过 {{ MAX_NAME }} 字</p>
       <p v-if="plan.tooMany" class="warn">一次最多创建 {{ MAX_NODES }} 个目录，这批有 {{ plan.tooMany }} 个</p>
@@ -101,13 +104,13 @@
       </div>
     </section>
 
-    <!-- 正文那一步：pack 模式写「刚建好的这一批」，points 模式给「一个现成目录」写 -->
+    <!-- 知识点那一步：pack 模式写「刚建好的这一批」，points 模式给「一个现成目录」写 -->
     <section v-else-if="at.points" class="pane">
       <!-- 还没开始：pack 先说清写多少、让用户选两个开关；
            points 先让用户看清"要给哪个目录写"，再点开始（写一堆知识是不可逆的） -->
       <template v-if="!started">
         <div v-if="mode === 'pack'" class="opts">
-          <p class="opts__sum">将写 {{ result.points }} 篇正文</p>
+          <p class="opts__sum">将写 {{ result.points }} 个知识点</p>
           <div class="opts__row">
             <!-- **两个开关只在这一步出现**：生成目录那步看不到它们。 -->
             <el-checkbox v-model="withTags" class="opt">
@@ -120,7 +123,7 @@
             </el-checkbox>
           </div>
         </div>
-        <p v-else class="done">给「{{ category?.name }}」写正文</p>
+        <p v-else class="done">给「{{ category?.name }}」写知识点</p>
       </template>
       <template v-else>
         <p class="prog">
@@ -156,7 +159,7 @@
       </div>
       <!-- **没写完**（被停了 / 有几条失败）⇒ 告诉用户还能接着写 -->
       <p v-if="mode === 'pack' && result.points > result.written" class="pane__hint">
-        没写完的可在目录「⋯ → 生成正文」里接着写
+        没写完的可在目录「⋯ → 写知识点」里接着写
       </p>
     </section>
 
@@ -190,12 +193,12 @@
             :disabled="!topic.trim()"
             @click="generateOutline"
           >
-            生成骨架
+            生成目录
           </el-button>
           <el-button v-else-if="at.theme" type="primary" size="small" :disabled="!text.trim()" @click="parseOutline">
             解析
           </el-button>
-          <!-- 骨架那步的按钮是「下一步」：**这一步建结构，下一步才写正文** -->
+          <!-- 目录那步的按钮是「下一步」：**这一步建结构，下一步才写知识点** -->
           <el-button
             v-if="at.skeleton"
             type="primary"
@@ -219,12 +222,12 @@
 
 <script setup>
 /**
- * 生成知识包：**主题 → 目录骨架 → 逐目录写知识点**。
+ * 生成主题：**主题 → 目录 → 逐目录写知识点**。
  *
- * ## 为什么是两步（骨架先、知识点后）
+ * ## 为什么是两步（目录先、知识点后）
  *
  * 一次调用出不了几十篇正文（那是几万 token 的输出，硬要它一次吐，它会重复、
- * 写空、越写越水）。所以：**先出骨架**（目录 + 每个目录的知识点标题），
+ * 写空、越写越水）。所以：**先出目录**（目录 + 每个目录的知识点标题），
  * **再对着标题写正文**。标题先定下来，写正文时才不会跑题、不会重复。
  *
  * ## 这棵树同时是两份清单
@@ -236,12 +239,12 @@
  *
  * ## 两种模式
  *
- * - `pack`（侧边栏入口）：主题 → 骨架 → **正文** → 完成（**四步是固定的**）。
- *   骨架那步**只落结构**（目录 + 每个目录的知识点标题占位），点「下一步」建完结构
- *   就进「正文」那步 —— 那一步再选**要不要标签 / 要不要知识点关联**，然后写正文。
+ * - `pack`（侧边栏入口）：主题 → 目录 → **知识点** → 完成（**四步是固定的**）。
+ *   目录那步**只落结构**（目录 + 每个目录的知识点标题占位），点「下一步」建完结构
+ *   就进「知识点」那步 —— 那一步再选**要不要标签 / 要不要知识点关联**，然后写正文。
  *   ⇒ 标题先定下来，写正文时才不会跑题、不会重复；中断了可以在目录的
- *   「⋯ → 生成正文」里接着写（**只写还没写正文的那几条**）。
- * - `points`（目录「⋯」入口）：目录是现成的，直接给它写正文。
+ *   「⋯ → 写知识点」里接着写（**只写还没写正文的那几条**）。
+ * - `points`（目录「⋯」入口）：目录是现成的，直接给它写知识点。
  *   材料里带上**这个目录现有的子目录**，模型就知道哪些领域已经有人管了。
  *
  * ## 后端几乎不用改
@@ -262,7 +265,7 @@ import {
   ensureTopicTypesLoaded,
   getCategories,
   getChildCategories,
-  getCategoryPath,
+  categoryNameChain,
   getCategorySubtreeIds,
   fetchTopicIndexFresh,
   topicTypeIdByValue,
@@ -345,8 +348,8 @@ const thinking = ref(true)
  * **默认都开着**（= 现在的行为）。关掉哪一个，那一项的工作就一点不做：
  * 标签不调模型；关联不给模型"可标的名字清单"，它就不会写标记。
  *
- * <p>⚠️ **只有 pack 模式露这两个开关**：用户改的是「生成知识包」这一步的流程，
- * 目录「⋯ → 生成正文」那个入口保持原样（标签和关联照做）。
+ * <p>⚠️ **只有 pack 模式露这两个开关**：用户改的是「生成主题」这一步的流程，
+ * 目录「⋯ → 写知识点」那个入口保持原样（标签和关联照做）。
  */
 const withTags = ref(true)
 const withLinks = ref(true)
@@ -384,9 +387,9 @@ const at = computed(() => {
     // points 模式：目录是现成的，它的一步就是"写正文"
     return { theme: false, skeleton: false, points: step.value === 0, done: step.value === 1 }
   }
-  // pack 模式：主题(0) → 骨架(1) → 正文(2) → 完成(3)
-  // **四步是固定的**：骨架那步点「下一步」建完结构就进正文那步，
-  // 不再由一个勾选决定"有没有正文那一步"。
+  // pack 模式：主题(0) → 目录(1) → 知识点(2) → 完成(3)
+  // **四步是固定的**：目录那步点「下一步」建完结构就进知识点那步，
+  // 不再由一个勾选决定"有没有知识点那一步"。
   return {
     theme: step.value === 0,
     skeleton: step.value === 1,
@@ -677,7 +680,7 @@ function groupByCategory(list, scope) {
  * <p>**只有这一处拼**：材料里的"目录"、知识点清单里的 dirPath 都用它。
  */
 function pathOfDir(id) {
-  return joinPath('', getCategoryPath(id).map((c) => c.name).join('/'))
+  return categoryNameChain(id).join('/')
 }
 
 /**
@@ -819,7 +822,7 @@ async function startPackContent() {
 }
 
 /**
- * points 模式：给一个**现成目录**写正文（目录「⋯ → 生成正文」）。
+ * points 模式：给一个**现成目录**写知识点（目录「⋯ → 写知识点」）。
  *
  * <p>**两条分支，同一个入口**：
  * ① 这棵子树里有**还没写正文的知识点**（骨架落库时留的占位）⇒ 按标题逐条写
@@ -1025,7 +1028,7 @@ function titleIdMap(topics) {
  *
  * <p>**为什么要重试**：模型接口的瞬时错误很多（限流 / 断流 / 网关超时）——
  * 实测「8.3 政府会计报告」那一次就是流里回了 error，整目录空着，用户还得自己
- * 去那个目录点「⋯ → 生成知识点」重跑一遍。**重问一次就好** ⇒ 别让一个目录
+ * 去那个目录点「⋯ → 写知识点」重跑一遍。**重问一次就好** ⇒ 别让一个目录
  * 因为一次抖动就空在那儿。
  *
  * <p>**只重试一次**：连续两次还失败，基本是配置 / 额度 / 内容本身的问题，
@@ -1201,7 +1204,7 @@ function stop() {
   font-size: var(--text-sm);
   color: var(--cc-text-2);
 }
-/* 正文那步的两个开关：装在一个盒子里 ⇒ 一眼看出"这一步要选什么"，
+/* 知识点那步的两个开关：装在一个盒子里 ⇒ 一眼看出"这一步要选什么"，
    不像散在下面的表单那样不知道是干什么的。
    勾选用 el-checkbox 的**默认插槽**：名字和说明都在 label 里 ⇒ 点文字也能勾上。 */
 .opts {

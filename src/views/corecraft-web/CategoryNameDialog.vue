@@ -52,13 +52,19 @@ const isRename = computed(() => props.mode === 'rename')
 
 const title = computed(() => {
   if (isRename.value) return `重命名「${props.parentLabel}」`
-  return props.parentLabel ? '新建子目录' : '新建目录'
+  // 建在哪**写在标题里**：原来它藏在 placeholder 里 —— 那个框是输入框、
+  // 不是说明文字，父目录名放在那儿等于把它藏起来了。
+  return props.parentLabel ? `在「${props.parentLabel}」下新建子目录` : '新建目录'
 })
 
-const placeholder = computed(() => {
-  if (isRename.value) return '目录名'
-  return props.parentLabel ? `在「${props.parentLabel}」下新建子目录` : '目录名，如 Java / 面试准备'
-})
+/**
+ * placeholder 只说**这是什么**，不给业务示例。
+ *
+ * <p>原来的示例是「如 Java / 面试准备」—— 那是个技术面试的备考工具，
+ * 而这是个**通用学习平台** ⇒ 示例给成任何具体方向都会替用户预设了学什么。
+ * 留下的「绪论」是**中性的章节名**，只示范"名字大概这么写"，不带任何学科。
+ */
+const placeholder = '目录名，如：绪论'
 
 function reset() {
   name.value = props.initialName

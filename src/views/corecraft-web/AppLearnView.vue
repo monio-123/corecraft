@@ -10,16 +10,46 @@
          就往浏览历史里塞一条。 -->
     <CategoryCrumbs
       :category-id="currentCategoryId"
-      :min-level="2"
+      :min-level="1"
+      root-label="全部"
       @pick="setCategoryFilter"
     />
 
     <!-- 筛选：一行，不再两排 chip 糊满屏 -->
     <div class="bar">
       <div class="bar__cats">
-        <button class="pill" :class="{ 'is-on': categoryFilter === ALL }" @click="setCategoryFilter(ALL)">
-          全部 {{ allCount }}
-        </button>
+        <!-- 时间范围：默认「最近」（不限时间，但列表按新的在前 —— 服务端本来就是这个顺序）。
+             ⚠️ **目录维度不再占药丸位**：选目录走侧边栏（那儿才是目录的入口），
+             「全部目录」= 没选中任何目录的**默认态** —— 是个状态，不该长成可点的东西
+             （原来那个「全部 N」药丸点进去是 317 条平铺，谁点它呀）。
+             下拉里每一项带条数：数字答的是"我选了它会看到多少"。 -->
+        <el-popover
+          v-model:visible="rangePanelVisible"
+          :width="200"
+          trigger="click"
+          placement="bottom-end"
+          :teleported="false"
+        >
+          <template #reference>
+            <button class="pill pill--filter" :class="{ 'is-on': timeRange !== DEFAULT_RANGE }">
+              <span class="pill__label">{{ rangeLabel(timeRange) }}</span>
+              <el-icon class="pill__caret"><ArrowDown /></el-icon>
+            </button>
+          </template>
+          <div class="tagpanel">
+            <button
+              v-for="r in TIME_RANGES"
+              :key="r.kind"
+              class="tagpanel__item"
+              :class="{ 'is-on': timeRange === r.kind }"
+              @click="pickRange(r.kind)"
+            >
+              <span class="tagpanel__name">{{ r.label }}</span>
+              <span class="tagpanel__count">{{ rangeCounts.get(r.kind) || 0 }}</span>
+            </button>
+          </div>
+        </el-popover>
+
         <button
           class="pill"
           :class="{ 'is-on': categoryFilter === UNCATEGORIZED }"
@@ -36,13 +66,13 @@
           AI 归类 {{ scopedTopics.length }}
         </button>
 
-        <!-- 出卷：考**当前筛选出来的这些**（默认 = 全部）。
+        <!-- 考试：考**当前筛选出来的这些**（默认 = 全部）。
              范围只有这一种：屏幕上筛出什么就考什么。⚠️ **未归类的条目不参与**——
              待归类不是目录（用户 2026-10-23 定），里面也是没整理过的东西。
              正文不由前端带过去：只给 id 列表，服务端自己按 id 捞（归属按登录态收）。 -->
         <button v-if="showExam" class="pill pill--ai" @click="openExam">
           <el-icon><EditPen /></el-icon>
-          出卷 {{ examScope.length }}
+          考试 {{ examScope.length }}
         </button>
 
         <!-- 类型也收进下拉，和标签并排。同一把尺子：90% 的时候想看全部，
@@ -193,7 +223,8 @@ import {
 } from './useCorecraftWebStore'
 import { aiEnabled } from './useAi'
 import { openExamTab } from './exam'
-import { keywordFromRoute } from '../../utils/routeQuery'
+import { keywordFromRoute, rangeFromRoute } from '../../utils/routeQuery'
+import { TIME_RANGES, DEFAULT_RANGE, rangeLabel, rangeBounds, withinRange, isRangeKind } from '../../utils/timeRange'
 import CategoryCrumbs from './CategoryCrumbs.vue'
 import TopicCard from './TopicCard.vue'
 import TagRowMenu from './TagRowMenu.vue'
@@ -251,8 +282,41 @@ const categoryFilter = ref(readCategoryQuery(route.query.category))
 const keyword = computed(() => keywordFromRoute(route))
 
 function setCategoryFilter(key) {
+  // null = 面包屑的根（「全部」）⇒ 清除目录筛选。
   // 值为 undefined 的 query 会被 vue-router 直接删掉，"全部"就是不带 category 参数
-  router.replace({ path: route.path, query: { ...route.query, category: key === ALL ? undefined : key } })
+  const v = key == null ? ALL : key
+  router.replace({ path: route.path, query: { ...route.query, category: v === ALL ? undefined : v } })
+}
+
+/**
+ * 时间范围（不限 / 今天 / 本周 / 本月）。
+ *
+ * <p>和目录筛选一样**真相源是 URL**（`?range=`）：这一页只有这一个写方，
+ * 但它得能刷新不丢、能分享 ⇒ 写 URL，本地 ref 只是镜像。
+ *
+ * <p>⚠️ **口径只有一份**（utils/timeRange.js）：发给服务端的起止、分面数字、
+ * 首页的「今日新增」都从那儿算 —— 三处各算一遍的话，数字会和条数对不上，
+ * **而界面上什么异常都看不到**。
+ */
+const rangePanelVisible = ref(false)
+const timeRange = ref(rangeFromRoute(route))
+
+/** 当前时间窗的起止（不限时间 = null）。 */
+const timeBounds = computed(() => rangeBounds(timeRange.value))
+
+/** 这条在不在当前的时间窗里。 */
+function matchTime(t) {
+  return withinRange(t.createdAt, timeBounds.value)
+}
+
+function pickRange(kind) {
+  const next = isRangeKind(kind) ? kind : DEFAULT_RANGE
+  // 不限时间就是"不带 range 参数"（vue-router 会把 undefined 的 query 删掉）
+  router.replace({
+    path: route.path,
+    query: { ...route.query, range: next === DEFAULT_RANGE ? undefined : next }
+  })
+  rangePanelVisible.value = false
 }
 
 /**
@@ -308,6 +372,13 @@ function buildPageParams() {
     params.uncategorized = true
   } else if (categoryFilter.value !== ALL) {
     params.categoryIds = [...getCategorySubtreeIds(categoryFilter.value)].join(',')
+  }
+  // **时间范围必须在服务端**：分页是服务端做的，前端筛完再发就没有分页可言。
+  // 起止由前端按本地时区算好（utils/timeRange.js）⇒ 和后端、和分面数字同一口径。
+  const bounds = timeBounds.value
+  if (bounds) {
+    params.createdFrom = bounds.from
+    params.createdTo = bounds.to
   }
   if (typeFilter.value != null) params.typeId = typeFilter.value
   if (tagFilter.value) params.tag = tagFilter.value
@@ -445,6 +516,31 @@ function matchType(t) {
 // ==================== 分面计数 ====================
 
 /**
+ * 当前筛选条件（目录 ∧ 类型 ∧ 标签）下、落在时间窗里的那些。
+ *
+ * <p>**唯一一份入口**：当前范围（考试 / AI 归类）、时间下拉里的条数都从它出 ——
+ * 各算一遍的话，数字会和条数对不上，**而界面上什么异常都看不到**。
+ *
+ * <p>⚠️ **时间这一维在索引上自己筛**（索引那条 SQL 不吃时间条件）——
+ * 但用的是**同一对起止**（服务端那条也是它）⇒ 口径一致。
+ */
+function topicsInScope(bounds) {
+  return allTopics.value.filter(
+    (t) => withinRange(t.createdAt, bounds) && matchCategory(t) && matchType(t) && matchTag(t)
+  )
+}
+
+/**
+ * 时间下拉里每一项的条数：**排除时间这一维自己**，只用其它维度已生效的条件去数
+ * （和下面的分面计数同一条规矩）。
+ */
+const rangeCounts = computed(() => {
+  const out = new Map()
+  for (const r of TIME_RANGES) out.set(r.kind, topicsInScope(rangeBounds(r.kind)).length)
+  return out
+})
+
+/**
  * 算某一维度的数字时**排除自己那一维**，只用其它维度已生效的条件去数。
  *
  * 原来这四个数字全是全库计数：类型下拉走 `getTopicTypeCountMap()`、标签下拉用后端
@@ -454,11 +550,13 @@ function matchType(t) {
  * 规则只有一条：**某维度的数字 = 其它维度已生效条件下的条数**。自己那一维必须排除，
  * 否则已经选了「笔记」之后类型下拉里就只剩「笔记」有数，想切回去都看不见别人的数量。
  *
+ * ⚠️ **时间窗是公共条件**（不是任何一个维度的"自己"）⇒ 每个数字都在时间窗内算。
+ *
  * 纯 computed，不发请求：复杂度是 `维度数 × 知识点数`，17 条还是几千条都无所谓。
  */
 function countBy(dimensions, extra) {
   return allTopics.value.filter(
-    (t) => (extra ? extra(t) : true) && dimensions.every((d) => d(t))
+    (t) => matchTime(t) && (extra ? extra(t) : true) && dimensions.every((d) => d(t))
   ).length
 }
 
@@ -483,9 +581,8 @@ const tagList = computed(() =>
     .sort((a, b) => b.count - a.count)
 )
 
-// 目录这一维在筛选条上常驻两个值：全部 / 待归类。选中某个具体目录时它们照常显示——
+// 目录这一维在筛选条上只留「待归类」一个值（选目录走侧边栏）。
 // 数字答的是"假如点它会得到多少"，这正是换维度该给的提示。
-const allCount = computed(() => countBy([matchType, matchTag]))
 const uncategorizedCount = computed(() =>
   countBy([matchType, matchTag], (t) => t.categoryId == null)
 )
@@ -500,16 +597,14 @@ const typeCountMap = computed(() => {
 })
 
 /**
- * 当前筛选条件下的**全集**（结构索引那份）：目录 ∧ 类型 ∧ 标签。
+ * 当前筛选条件下的**全集**（结构索引那份）：目录 ∧ 类型 ∧ 标签 ∧ 时间。
  *
  * <p>它是"这一屏筛出来的所有条目"，不是"这一页显示的那几条"——
  * 考试要考的是全部，AI 归类要处理的是全部，分面计数要数的也是全部。
  */
-const scopedTopics = computed(() =>
-  allTopics.value.filter((t) => matchCategory(t) && matchType(t) && matchTag(t))
-)
+const scopedTopics = computed(() => topicsInScope(timeBounds.value))
 
-// ==================== 出卷 ====================
+// ==================== 考试 ====================
 
 /**
  * 能考的那些：**当前筛选结果里排除未归类的，再排除还没写正文的**。
@@ -525,11 +620,11 @@ const examScope = computed(() =>
   scopedTopics.value.filter((t) => t.categoryId != null && t.hasContent)
 )
 
-/** 出卷入口的显示条件：有东西可考（和「AI 归类」一样，AI 关了就不画这个按钮） */
+/** 考试入口的显示条件：有东西可考（和「AI 归类」一样，AI 关了就不画这个按钮） */
 const showExam = computed(() => aiEnabled.value && examScope.value.length > 0)
 
 /**
- * 去出卷：**在当前浏览器开一个新标签页**。
+ * 去考试：**在当前浏览器开一个新标签页**。
  *
  * <p>范围 = 当前筛选出来的那些（见 `examScope`）。名字带过去，考试页顶栏显示它。
  *
@@ -633,6 +728,12 @@ watch(() => route.query.category, (c) => {
   categoryFilter.value = readCategoryQuery(c)
 })
 
+// 时间范围同理：URL 是真相源，本地 ref 只是镜像（写方只有筛选条那个下拉）。
+watch(() => route.query.range, () => {
+  if (!onLearnRoute.value) return
+  timeRange.value = rangeFromRoute(route)
+})
+
 /**
  * 筛选条件变了 → 重拉这一页。
  *
@@ -642,7 +743,7 @@ watch(() => route.query.category, (c) => {
  * 关键词一变索引就得跟着重拉 —— 不拉的话侧边栏的条数还是"不筛关键词"的那份。
  * 关键词没变时它是空操作（store 认得"这份就是当前的"）。
  */
-watch([categoryFilter, typeFilter, tagFilter, keyword], () => {
+watch([categoryFilter, typeFilter, tagFilter, keyword, timeRange], () => {
   // ⚠️ 关键词是**直接从 URL 读**的 ⇒ 离开这一页时它会变成空（详情页的 URL 里没有 ?q=）。
   // 那一瞬间**不是**"用户清了搜索词"，是"这一页暂时不在眼前" ⇒ 不在这儿发请求。
   if (!onLearnRoute.value) return

@@ -32,19 +32,22 @@
       </div>
     </section>
 
-    <!-- 概览。四张里**只有前两张是入口**，用 RouterLink（不是 div onclick）：
+    <!-- 概览。四张里**只有两张是入口**，用 RouterLink（不是 div onclick）：
          语义上就是链接，右键复制链接 / 中键新标签页 / 读屏器念得出来，全是白送的。
          后两张是纯数字，去处本来就在同一个壳里：
          「目录」= 侧边栏那棵树（只显示一级，这里给的是全量统计）；
-         「今日新增」是全局的一个数，不指向本屏任何一块（原先指向的「最近记录」面板已删，
-         见 #123）。用户明确说四张卡先不动、入口收敛的事后面单独议。
+         「知识点」原来也跳 `/app/learn` —— 那是**全部知识点平铺**，点进去没有方向
+         （2026-11-02 定的：那个入口已经撤掉了，这一格改成纯统计）。
+         「今日新增」原来是**死数字**（点不动），现在跳列表页的「今天」范围 ——
+         它是全局的一个数，不指向本屏任何一块（原先指向的「最近记录」面板已删，见 #123）。
+         用户明确说四张卡先不动、入口收敛的事后面单独议 —— **这一轮就是那次"后面单独议"**。
          "能不能点"只靠 hover 的边框变化 + 手型表达，**不加静态装饰**——
          四个数字并排摆着，给不动的两张也画个箭头只会把真正能点的那两张淹掉。 -->
     <section class="stats">
-      <RouterLink class="stat stat--link" :to="{ path: '/app/learn' }">
+      <div class="stat">
         <div class="stat__num">{{ topicCount }}</div>
         <div class="stat__label">知识点</div>
-      </RouterLink>
+      </div>
       <div class="stat">
         <div class="stat__num">{{ categories.length }}</div>
         <div class="stat__label">目录</div>
@@ -56,10 +59,13 @@
         <div class="stat__num">{{ uncategorizedCount }}</div>
         <div class="stat__label">待归类</div>
       </RouterLink>
-      <div class="stat">
+      <RouterLink
+        class="stat stat--link"
+        :to="{ path: '/app/learn', query: { range: 'today' } }"
+      >
         <div class="stat__num">{{ todayCount }}</div>
         <div class="stat__label">今日新增</div>
-      </div>
+      </RouterLink>
     </section>
 
     <!-- 今日待复习：**只留入口**（2026-10-22 撤旧自测题时留下的）。
@@ -88,6 +94,7 @@ import ViewToggles from '../../components/corecraft-web/ViewToggles.vue'
 import { loadShellData } from './useShellData'
 import { useImmersive } from './useImmersive'
 import { keywordFromRoute } from '../../utils/routeQuery'
+import { rangeBounds, withinRange } from '../../utils/timeRange'
 import TopicTypeSelect from './TopicTypeSelect.vue'
 import {
   getTopicIndex, getCategories,
@@ -121,22 +128,20 @@ const categories = computed(() => getCategories())
 const topicCount = computed(() => topics.value.length)
 const uncategorizedCount = computed(() => getUncategorizedCount())
 
-// 今日新增。原来恒为 0 的原因是**日期格式对不上**：
-//   `new Date().toDateString()` 返回的是英文的 "Tue Oct 06 2026"，切前 10 位得到
-//   "Tue Oct 06 "，而 store 里 createdAt（后端 createTime 归一化过来的，yyyy-MM-dd HH:mm:ss）
-//   切前 10 位是 "2026-10-06" —— 两者永远不相等。
-//   注意字段名没错，`normalizeTopic` 已经把 createTime 映射成 createdAt 了。
+// 今日新增。**口径与列表页的「今天」完全同一份**（utils/timeRange.js）：
+// 以前这里自己拼日期键（`new Date().toDateString()` 切前 10 位 ⇒ "Tue Oct 06 "，
+// 跟库里 "2026-10-06" 永远不相等 ⇒ 恒为 0），现在是**同一对起止**，
+// 首页这张卡上的数 = 列表页「今天」那一屏的条数。
 //
-// 日期键**本地拼**而不是 toISOString()：后者是 UTC，东八区凌晨 0~8 点会把当天
+// ⚠️ **日期键本地拼**而不是 toISOString()：后者是 UTC，东八区凌晨 0~8 点会把当天
 // 算成前一天，"今日新增"会在刚过完零点时莫名其妙归零。
-function dateKey(d) {
-  const p = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
-}
-
-const todayCount = computed(
-  () => topics.value.filter((t) => String(t.createdAt || '').slice(0, 10) === dateKey(new Date())).length
-)
+//
+// ⚠️ **过了零点不会自己变**：结构索引是模块级缓存（不跨天刷新）⇒ 这个数跟着一起旧，
+// F5 才更新 —— 与全站其它数据的口径一致，不在这里另开一条刷新路径。
+const todayCount = computed(() => {
+  const bounds = rangeBounds('today')
+  return topics.value.filter((t) => withinRange(t.createdAt, bounds)).length
+})
 
 
 

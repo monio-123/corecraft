@@ -2,7 +2,7 @@
   <!-- 收起时侧边栏宽度归零，.app-main 是 flex:1 会自动铺满。
        目录也跟着一起看不见——按约定不额外做目录入口，要切目录就点顶栏这个按钮展开。 -->
   <div class="app-shell" :class="{ 'is-side-collapsed': sideCollapsed }">
-    <!-- 左侧栏：品牌 + 导航 + 目录。沉浸模式下整个不渲染（它就是"壳"的一部分）。
+    <!-- 左侧栏：品牌 + 目录。沉浸模式下整个不渲染（它就是"壳"的一部分）。
 
          `@click="closeCascade"` 挂**整条侧边栏**而不是目录行：#111 之后遮罩只盖主区
          （`left: var(--w-side)`，因为侧边栏还得留着当拖拽落点区），"点侧边栏也收树"
@@ -14,27 +14,16 @@
          - `›` 展开/收起的是它自己（#108：展开和进入是两件事）
          - `⋯` 只开菜单、不关树（#108：用户可能只是看了一眼菜单又缩回去） -->
     <aside v-if="!immersive.on" class="app-side" @click="closeCascade">
-      <div class="app-side__brand">
+      <!-- 品牌区 = **首页入口**（2026-11-02）。
+           导航块整个撤掉之后侧边栏只剩"目录"这一件事，而"回首页"总得有个地方放 ——
+           品牌区是全站唯一的固定位置，放这儿最不占地方（原来它只是个静态标题）。
+           用 RouterLink 而不是 div onclick：语义上就是链接，右键复制 / 新标签页都是白送的。 -->
+      <RouterLink class="app-side__brand" to="/app" aria-label="首页">
         <div class="app-side__logo">Bro</div>
         <div class="app-side__name">知识库</div>
-      </div>
+      </RouterLink>
 
-      <nav class="app-nav">
-        <RouterLink
-          v-for="item in navItems"
-          :key="item.id"
-          :to="item.path"
-          class="app-nav__item"
-          :class="{ 'is-active': isActive(item.path) }"
-        >
-          <el-icon v-if="getIconComponent(item.icon)" class="app-nav__icon">
-            <component :is="getIconComponent(item.icon)" />
-          </el-icon>
-          <span>{{ item.name }}</span>
-        </RouterLink>
-      </nav>
-
-      <!-- 目录：常驻侧边栏，只放一级。
+      <!-- 目录：常驻侧边栏，只放一级（**过滤时例外**，见下面那个输入框）。
            层级不在这里常驻——264px 撑不住缩进，而层级只在两件事上才需要被看见：
            放东西（拖拽浮出完整树）和进深层（点 › 展开整棵子树）。
 
@@ -47,29 +36,69 @@
         data-cat-root
         :class="{ 'is-drop': dnd.over === ROOT_CATEGORY && dnd.overOk, 'is-bad': dnd.live && dnd.over === ROOT_CATEGORY && !dnd.overOk }"
       >
-        <div class="app-side__section-title">
-          <span>目录</span>
-          <!-- 一个入口：**生成知识包**（主题 → 目录骨架 → 逐目录写知识点）。
-               生成的目录自成一体、放在第一层；挂到哪、怎么挪，用户自己在侧边栏拖。
-               为什么叫"生成"不叫"导入"：这套体系还没长出来的时候，"生成"才是
-               用户真正缺的那件事（"导入"的前提是先有东西可导）。 -->
-          <el-tooltip content="生成知识包" placement="right">
-            <button class="app-side__add" aria-label="生成知识包" @click="openTreeDialog">
-              <el-icon><MagicStick /></el-icon>
-            </button>
-          </el-tooltip>
-          <el-tooltip content="新建一级目录" placement="right">
-            <button class="app-side__add" aria-label="新建一级目录" @click="openCreate(ROOT_CATEGORY, '')">＋</button>
-          </el-tooltip>
-        </div>
-        <div v-if="rootCategories.length" class="app-cats">
+        <!-- 目录过滤 + 框内右侧的两个操作（2026-11-03 晚）。
+             **原来这上面还有一行「目录」抬头**（caption + 两个按钮）—— 删掉了：
+             分区名这一层是多余的，搜索框自己就说明了这块是什么
+             （placeholder「过滤目录」），两个操作收进框内右侧 ⇒ 侧边栏上面省一行。
+
+             输入框**常驻**（不靠"用户开始打字"才出现 —— 那等于没法打字：
+             空的时候就没框，用户连敲哪儿都不知道）。就这一行的位置，
+             换来"110 个目录里三秒找到那一个"。
+
+             ⚠️ **不用 el-input 的 clearable**：Element Plus 里 showClear 为真时
+             **整个 suffix slot 被清除图标顶掉**（input2.mjs：showClear 分支
+             只渲染清除图标、不渲染 slot）⇒ 用户打了字、鼠标又在框上时，
+             两个操作按钮就消失 ⇒ 清除按钮自己收进 suffix，位置固定不跳。 -->
+        <el-input
+          v-model="catFilter"
+          class="app-cats__filter"
+          placeholder="过滤目录"
+        >
+          <template #prefix><el-icon><Search /></el-icon></template>
+          <template #suffix>
+            <span class="app-side__ops-row">
+              <!-- 清除：只在有字时出现，但**位置留着**（v-show）——
+                   否则一打字，后面的图标就往左跳一下。 -->
+              <el-tooltip content="清空" placement="right">
+                <button
+                  v-show="catFilter"
+                  class="app-side__op-btn"
+                  aria-label="清空"
+                  @click="catFilter = ''"
+                >
+                  <el-icon><CircleClose /></el-icon>
+                </button>
+              </el-tooltip>
+              <!-- 一个入口：**生成主题**（主题 → 目录结构 → 逐目录写知识点）。
+                   生成的目录自成一体、放在第一层；挂到哪、怎么挪，用户自己在侧边栏拖。
+                   为什么叫"生成"不叫"导入"：这套体系还没长出来的时候，"生成"才是
+                   用户真正缺的那件事（"导入"的前提是先有东西可导）。 -->
+              <el-tooltip content="生成主题" placement="right">
+                <button class="app-side__op-btn" aria-label="生成主题" @click="openTreeDialog">
+                  <el-icon><MagicStick /></el-icon>
+                </button>
+              </el-tooltip>
+              <el-tooltip content="新建目录" placement="right">
+                <button
+                  class="app-side__op-btn"
+                  aria-label="新建目录"
+                  @click="openCreate(ROOT_CATEGORY, '')"
+                >
+                  <el-icon><Plus /></el-icon>
+                </button>
+              </el-tooltip>
+            </span>
+          </template>
+        </el-input>
+
+        <div v-if="visibleCats.length" class="app-cats">
           <RouterLink
-            v-for="c in rootCategories"
+            v-for="c in visibleCats"
             :key="c.id"
             :to="categoryLink(c.id)"
             class="app-cats__item"
             :class="{
-              'is-on': isCurrentRoot(c.id),
+              'is-on': isCurrentCategory(c.id),
               'is-drop': dnd.over === c.id && dnd.overOk,
               'is-bad': dnd.live && dnd.over === c.id && !dnd.overOk
             }"
@@ -78,7 +107,12 @@
             :draggable="false"
             @pointerdown="onCatPointerDown"
           >
-            <span class="app-cats__name">{{ c.name }}</span>
+            <span class="app-cats__label">
+              <span class="app-cats__name">{{ c.name }}</span>
+              <!-- 祖先路径**只在过滤时出现**：平时只有一级目录，路径是废话；
+                   过滤出来的可能是第三层，光看名字认不出是哪一棵。 -->
+              <span v-if="filtering" class="app-cats__trail">{{ trailOf(c.id) }}</span>
+            </span>
             <span class="app-cats__count">{{ categoryCounts[c.id] || 0 }}</span>
             <CategoryRowMenu :category="c" @add="(c) => openCreate(c.id, c.name)" @rename="openRename" @points="openPointsDialog" />
             <!-- 展开子树的入口。**没有下级就不给箭头**：弹出来是个空壳，
@@ -97,13 +131,14 @@
         </div>
         <!-- ⚠️ **「没有目录」这句话只在真的加载完之后才成立**。
              加载中就说它，是句假话（用户明明有目录），看着像"目录被清空了"。
-             所以分「加载中」「加载失败」「真的没有」三种情况。 -->
+             所以分「加载中」「加载失败」「过滤没命中」「真的没有」四种情况。 -->
         <p v-else-if="categoriesState === 'loading'" class="app-side__empty">加载中…</p>
         <p v-else-if="categoriesState === 'failed'" class="app-side__empty">加载失败</p>
+        <!-- 过滤没命中 ≠ 没有目录：目录都在，是用户写的词没匹配上。
+             两种情况说同一句话的话，用户会以为自己的目录被删了。 -->
+        <p v-else-if="filtering" class="app-side__empty">没有匹配</p>
         <p v-else class="app-side__empty">没有目录</p>
       </div>
-
-      <div class="app-side__spacer"></div>
 
       <!-- 底部：用户。**会话拉失败时这一格换成「加载失败 + 重试」**——
            位置不变、文案如实说、按钮形态不变，只是从"谎称未登录"变成"让你重来一次"。
@@ -265,8 +300,8 @@
     :initial-id="nameDialog.initialId"
     />
 
-    <!-- 知识包生成：主题 → 目录骨架 → 逐目录写知识点。
-         也可以从某个目录的「⋯」进"生成知识点"（目录现成，只写内容）。 -->
+    <!-- 生成主题：主题 → 目录骨架 → 逐目录写知识点。
+         也可以从某个目录的「⋯」进"写知识点"（目录现成，只写内容）。 -->
     <CategoryTreeDialog
       v-model="treeDialog.visible"
       :mode="treeDialog.mode"
@@ -278,9 +313,8 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter, RouterLink, RouterView } from 'vue-router'
-import { Search, Setting, Expand, Fold, Refresh, ArrowRight, MagicStick } from '@element-plus/icons-vue'
+import { Search, Setting, Expand, Fold, Refresh, ArrowRight, MagicStick, Plus, CircleClose } from '@element-plus/icons-vue'
 import { categoryLink, topicLink } from '../../utils/categoryNav'
-import { flattenShellNav, getIconComponent } from '../../utils/menu'
 import { hasAdminMenus, bootstrapSession, sessionState, sessionProfile } from '../../utils/session'
 import { applyUiPrefs, clearUiPrefs } from '../../utils/uiPrefs'
 import UserMenu from '../UserMenu.vue'
@@ -295,14 +329,13 @@ import { keywordFromRoute } from '../../utils/routeQuery'
 import { useImmersive } from '../../views/corecraft-web/useImmersive'
 import {
   getChildCategories, hasChildCategories, categoriesState,
-  getCategoryCountMap, dnd, dndReset, ROOT_CATEGORY
+  getCategoryCountMap, dnd, dndReset, ROOT_CATEGORY,
+  flattenCategoryTree, categoryNameChain
 } from '../../views/corecraft-web/useCorecraftWebStore'
 
 const route = useRoute()
 const router = useRouter()
 
-// 会话数据放 ref：localStorage 不是响应式的，直接读不会触发重渲染
-const session = ref({ menuTree: [], menuPaths: [], profile: {} })
 // 初值取自 URL：带着 ?q= 进来的（刷新 / 分享链接）框里就有那个词，见下面那段注释。
 // **关键词的读法只有一处**（utils/routeQuery.js），别在这儿再抄一遍 `route.query.q`。
 const searchKeyword = ref(keywordFromRoute(route))
@@ -363,16 +396,48 @@ const nameDialog = reactive({
   initialId: null
 })
 
-const navItems = computed(() =>
-  flattenShellNav('app', session.value.menuTree, session.value.menuPaths)
-)
 // 侧边栏只渲染一级（parentId = 0），层级交给 hover 级联
 const rootCategories = computed(() => getChildCategories(ROOT_CATEGORY))
 const categoryCounts = computed(() => getCategoryCountMap())
 
+/**
+ * 目录过滤（2026-11-02）。**这是侧边栏自己的状态**，不进 URL ——
+ * 它是"在哪找"的操作，不是"看的是什么"的范围（范围进 URL 才能分享）。
+ *
+ * <p>过滤时**把全树里命中的目录都捞出来**（不限层级）：侧边栏平时只放一级，
+ * 可目录有 110 个、最深五层 —— 平时按层级找，过滤时按名字找。
+ */
+const catFilter = ref('')
+const filtering = computed(() => catFilter.value.trim().length > 0)
+
+const filteredCats = computed(() => {
+  const kw = catFilter.value.trim().toLowerCase()
+  if (!kw) return []
+  // flattenCategoryTree 是 store 那份**前序**扁平行：父目录排在子目录前面，
+  // 同一份推导（祖先链 / 防环 / 层数上限）不在这儿另写一遍。
+  return flattenCategoryTree(rootCategories.value)
+    .filter((r) => r.kind === 'cat' && r.c.name.toLowerCase().includes(kw))
+    .map((r) => r.c)
+})
+
+/** 侧边栏这一块显示哪些目录：平时一级，过滤时命中项。**两种形态共用一套行模板。 */
+const visibleCats = computed(() => (filtering.value ? filteredCats.value : rootCategories.value))
+
+/**
+ * 一行的祖先路径（"计算机网络 / 3. 网络协议"）。**不含自己那截** ——
+ * 自己那截就是行首的目录名，重复一遍是废话。
+ *
+ * <p>祖先链由 store 那份 {@link categoryNameChain} 给（侧边栏和生成弹窗共用一份推导）。
+ */
+function trailOf(id) {
+  const chain = categoryNameChain(id)
+  return chain.slice(0, -1).join(' / ')
+}
+
 const childrenOf = (id) => getChildCategories(id)
 const hasKids = (id) => hasChildCategories(id)
-const isCurrentRoot = (id) => Number(route.query.category) === id
+/** 当前路由选中的目录。过滤时列表里可能有深层目录，所以它认的不只是"一级" */
+const isCurrentCategory = (id) => Number(route.query.category) === id
 
 // 有管理后台菜单的（超管）才给"管理后台"入口。判据与 Layout 的 hasAppShell 共用 hasAdminMenus
 // —— 原来这里自己写了一遍 `menuPaths.some(p => !p.startsWith('/app'))`，和 session.js 里的
@@ -405,7 +470,11 @@ async function loadShell() {
   // 失败不用这里自己记会话那份：**sessionState**（utils/session.js，两个壳共用）已经记了 ——
   // 侧边栏那一格就是看它决定显示「加载失败 + 重试」还是用户菜单。
   try {
-    session.value = await bootstrapSession()
+    // **会话结果这一份不再存进本地 ref**：导航块撤掉之后，侧边栏没有任何地方
+    // 读菜单树 / 菜单路径了（`session` 那个 ref 只剩写、没有读，是块死状态）。
+    // 但 bootstrapSession() 本身**必须调** —— 它顺手把菜单路径和权限写进
+    // localStorage（hasAdminMenus / hasAppMenus 从那儿读）。
+    await bootstrapSession()
   } catch {
     return
   }
@@ -441,11 +510,6 @@ function onKeydown(e) {
 }
 onMounted(() => window.addEventListener('keydown', onKeydown))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
-
-function isActive(path) {
-  if (path === '/app') return route.path === '/app'
-  return route.path.startsWith(path)
-}
 
 // 搜索：写 `?q=`，**保留已有的其它 query**（`category` 等）。
 // 原来是 `push({ query: { q: kw } })` —— 只带 q，别的全丢：在「某个目录」下搜一句，
@@ -546,7 +610,7 @@ function openRename(c) {
 }
 
 /**
- * 打开知识包生成弹窗（主题 → 骨架 → 逐目录写知识点）。
+ * 打开生成主题弹窗（主题 → 骨架 → 逐目录写知识点）。
  *
  * <p>生成的目录**自成一体、放在第一层**：挂到哪、怎么挪层级，用户自己在侧边栏拖。
  */
@@ -558,7 +622,7 @@ function openTreeDialog() {
 }
 
 /**
- * 给某个**现成的目录**写知识点（目录行「⋯」→「生成知识点」）。
+ * 给某个**现成的目录**写知识点（目录行「⋯」→「写知识点」）。
  *
  * <p>材料里会带上这个目录现有的子目录 ⇒ 模型知道哪些领域已经有人管了，
  * 不会把该属于子目录的内容写在这里。
@@ -725,11 +789,16 @@ onBeforeUnmount(() => {
   border-right-width: 0;
 }
 
+/* 品牌区 = 首页入口（RouterLink 渲染成 <a>）。
+   `text-decoration` / `color` 得自己写：全局 reset 只清了 margin/padding，
+   <a> 的下划线和浏览器默认的链接蓝还在（.app-cats__item 当年也是单独补的这两条）。 */
 .app-side__brand {
   display: flex;
   align-items: center;
   gap: var(--sp-10);
-  padding: 0 var(--sp-8) var(--sp-13);
+  padding: 0 var(--sp-8) var(--sp-12);
+  text-decoration: none;
+  color: inherit;
 }
 .app-side__logo {
   width: var(--ctl-md);
@@ -750,40 +819,17 @@ onBeforeUnmount(() => {
   letter-spacing: var(--ls-tight);
 }
 
-.app-nav {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-}
-.app-nav__item {
-  display: flex;
-  align-items: center;
-  gap: var(--side-gap);
-  padding: var(--side-py) var(--side-px);
-  border-radius: var(--radius);
-  color: var(--cc-text-2);
-  font-size: var(--text-xl);
-  text-decoration: none;
-  transition: var(--cc-transition);
-}
-.app-nav__item:hover {
-  background: var(--cc-surface-2);
-  color: var(--cc-text-1);
-}
-.app-nav__item.is-active {
-  background: var(--cc-primary-soft);
-  color: var(--cc-primary);
-  font-weight: 500;
-}
-.app-nav__icon {
-  font-size: var(--text-2xl);
-}
-
+/* 目录区**吃满剩余高度**（2026-11-02）：原来 `.app-cats` 顶着 40vh 上限，
+   目录少的时候下方空一大片、目录多的时候在一个小窗口里滚。
+   现在侧边栏只有"一个滚动条"，高度随视口自适应。
+   ⚠️ margin-top 从 --sp-4 提到 --sp-12（2026-11-03 晚）：上面那行
+   「目录」抬头删掉了，这段留白要由这里补上 —— 不然输入框会贴着品牌区。 */
 .app-side__section {
-  margin-top: var(--sp-14);
+  margin-top: var(--sp-12);
   display: flex;
   flex-direction: column;
   min-height: 0;
+  flex: 1;
 }
 /* 拖着一个目录时，这一整块是"移成一级目录"的落点。
    和树上那两套（蓝=能放 / 红=不能放）用同一组色，别搞出第二套视觉语言。 */
@@ -797,35 +843,59 @@ onBeforeUnmount(() => {
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
-.app-side__section-title {
-  display: flex;
+/* 框内右侧那一排操作（清除 / 生成主题 / 新建目录）。 */
+.app-side__ops-row {
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 var(--side-px) var(--side-py);
-  font-size: var(--text-md);
-  color: var(--cc-text-3);
-  font-weight: 500;
+  gap: var(--sp-2);
 }
-.app-side__add {
+/* 框内的图标按钮：**比框外那个小一号**（--text-base + 2px padding）——
+   它们是"输入框的一部分"，不是独立控件；跟框外同尺寸会抢戏。
+   三个按钮**必须同规格**：以前同一个位置上是文字「＋」（18px 全角加号）
+   和一个 SVG 图标（14px）—— 大小和笔画都不一样，并排放像没对齐。
+   现在都用 el-icon（同一个字号、同一套描边），只差形状。 */
+.app-side__op-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   background: transparent;
   color: var(--cc-text-3);
   cursor: pointer;
-  font-size: var(--text-2xl);
+  font-size: var(--text-base);
   line-height: 1;
-  padding: 0 var(--sp-4);
+  padding: var(--sp-2);
   border-radius: var(--radius-xs);
+  transition: var(--cc-transition);
 }
-.app-side__add:hover {
+.app-side__op-btn:hover {
   color: var(--cc-primary);
   background: var(--cc-primary-soft);
+}
+/* 目录过滤框。外观跟顶栏那个搜索框**同一组**（同一个圆角、同一个底色）——
+   全站两个输入框长成两个样，看着像两个不同功能。
+   字号**跟目录名同一档**（--text-base）：输入框和下面的列表是同一类东西
+   （一个装目录名、一个筛目录名），字号差一档就会看着像两个控件。 */
+.app-cats__filter {
+  margin-bottom: var(--sp-6);
+}
+.app-cats__filter :deep(.el-input__wrapper) {
+  border-radius: var(--radius-xl);
+  box-shadow: none;
+  background: var(--cc-surface-2);
+}
+.app-cats__filter :deep(.el-input__inner) {
+  font-size: var(--text-base);
 }
 .app-cats {
   display: flex;
   flex-direction: column;
   gap: var(--side-list-gap);
   overflow-y: auto;
-  max-height: 40vh;
+  /* 吃满目录区剩下的高度（min-height:0 是让 overflow 生效的前提：
+     flex 项的默认 min-height:auto 会被内容顶开，滚动条就永远不出现）。 */
+  flex: 1;
+  min-height: 0;
 }
 .app-cats__item {
   display: flex;
@@ -867,15 +937,39 @@ onBeforeUnmount(() => {
   background: var(--cc-danger-soft);
   color: var(--cc-danger-deep);
 }
-/* 名字吃掉全部剩余宽度，数字和图标才贴到同一条右边上。
-   不给名字 flex 的话，space-between 会把余量均分给三个子元素——
-   "JAVA 7" 的 7 贴着名字、"计算机网络 2" 的 2 却被推到更右，两列对不齐。 */
-.app-cats__name {
+/* 目录名 + 祖先路径（过滤时才出现路径）。**两者必须贴在一起**：
+   名字和它的路径分得老远，就成了两段互不相干的信息。 */
+.app-cats__label {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-6);
+}
+/* 名字吃掉全部剩余宽度，数字和图标才贴到同一条右边上。
+   不给名字 flex 的话，space-between 会把余量均分给几个子元素——
+   "JAVA 7" 的 7 贴着名字、"计算机网络 2" 的 2 却被推到更右，两列对不齐。
+
+   ⚠️ 这里是 `0 1 auto` 而不是 `1`：加了祖先路径之后，名字要是还"吃掉全部宽度"，
+   路径就被顶到行尾、和名字隔开一大段。0 1 auto = 按内容宽排、空间不够才压缩。 */
+.app-cats__name {
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* 祖先路径：辅助信息，压到 text-4 那一档。
+   `max-width: 50%` 是给名字让路 —— 路径再长也不能把名字挤没。 */
+.app-cats__trail {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  color: var(--cc-text-4);
 }
 /* 右对齐 + 最小宽度：一位数和两位数右边沿对齐，图标那一列也不会左右跳。
    数量跟「⋯」和展开箭头共用行上的 --row-tools，悬停/聚焦这一行才露出来。
@@ -892,8 +986,8 @@ onBeforeUnmount(() => {
 .app-cats__expand {
   display: inline-flex;
   align-items: center;
-  /* border/background 这两条和同文件的 .app-side__add（＋）、RowMenu 的
-     .row-menu__btn（⋯）是**同一组**：全局 reset 只清了 margin/padding，
+  /* border/background 这两条和同文件的 .app-side__op-btn（框内那三个）、
+     RowMenu 的 .row-menu__btn（⋯）是**同一组**：全局 reset 只清了 margin/padding，
      没清 border（base.css 的 `* { margin: 0; padding: 0 }`）。漏了的话
      `<button>` 的默认边框就露成一个黑框——2026-10-07 实机截图就是这个。 */
   border: none;
@@ -915,10 +1009,6 @@ onBeforeUnmount(() => {
   margin: 0;
   font-size: var(--text-md);
   color: var(--cc-text-4);
-}
-
-.app-side__spacer {
-  flex: 1;
 }
 
 .app-side__user {

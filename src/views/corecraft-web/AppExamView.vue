@@ -10,9 +10,9 @@
 
         <div class="exam__ops">
           <!-- 答题与判分的过程、分数环都在答题器里（**这一块只有两个页面级的按钮**）：
-               答完了才给"重新出卷 / 回到目录"。 -->
+               答完了才给"重新生成 / 回到目录"。 -->
           <template v-if="phase === 'running' && runnerPhase === 'done'">
-            <el-button @click="backToSettings">重新出卷</el-button>
+            <el-button @click="backToSettings">重新生成</el-button>
             <el-button type="primary" @click="backToTopic">
               {{ categoryId ? '回到目录' : '回到列表' }}
             </el-button>
@@ -23,10 +23,10 @@
 
     <!-- ==================== 主体 ==================== -->
     <main class="exam__body">
-      <!-- ========== 出卷设置 ========== -->
+      <!-- ========== 考试设置 ========== -->
       <section v-if="phase === 'idle'" class="setup">
         <header class="setup__head">
-          <h2 class="setup__title">出卷设置</h2>
+          <h2 class="setup__title">考试设置</h2>
           <span class="setup__scope">{{ scopeText }}</span>
         </header>
 
@@ -43,7 +43,7 @@
                 <span class="stepper__num">{{ s.count }}</span>
                 <button type="button" class="stepper__btn" :disabled="s.count >= MAX_COUNT" @click="bump(i, 1)">+</button>
               </div>
-              <!-- 分值 = 这道题值多少分。**出卷时就定好**，跟着这张卷子走。 -->
+              <!-- 分值 = 这道题值多少分。**生成试卷时就定好**，跟着这张卷子走。 -->
               <el-input-number
                 v-model="s.score"
                 :min="MIN_SCORE"
@@ -83,18 +83,18 @@
             :disabled="!total"
             @click="generate"
           >
-            出卷
+            生成试卷
           </el-button>
         </div>
       </section>
 
-      <!-- ========== 出卷中 ========== -->
+      <!-- ========== 生成中 ========== -->
       <div v-else-if="phase === 'loading'" class="kb-center">
         <el-icon class="is-loading"><Loading /></el-icon>
-        <p>正在出卷…</p>
+        <p>正在生成试卷…</p>
       </div>
 
-      <!-- ========== 出卷失败 ========== -->
+      <!-- ========== 生成失败 ========== -->
       <div v-else-if="phase === 'error'" class="kb-center">
         <p class="kb-error" :class="{ 'is-quiet': quiet }">{{ error }}</p>
         <el-button v-if="!quiet" @click="generate">重试</el-button>
@@ -127,23 +127,23 @@
  * ## 考哪一批知识：URL 说了算
  *
  * `/exam?ids=1,2,3&name=…&cat=…` —— 这次就考这几条。
- * **唯一入口是列表页筛选条上的「出卷」**（范围 = 当前筛选出来的那些，未归类的不算）：
+ * **唯一入口是列表页筛选条上的「考试」**（范围 = 当前筛选出来的那些，未归类的不算）：
  * `ids` = 这批知识的 id，`name` = 范围的名字（目录名或「全部」），
  * `cat` = 选了目录时的目录 id（考完退回那个目录的列表页）。
  *
  * **正文由服务端按 id 自己捞**（AiChatReq.topicIds）：前端不传正文，
  * 归属也由服务端按登录态收 —— 与这个项目"客户端不能指定把哪段文本当上下文"的老规矩一致。
  *
- * ## 出卷参数：配置给默认值，用户在页面上改
+ * ## 考试参数：配置给默认值，用户在页面上改
  *
  * 规范模板 / 题量结构（题型·道数·分值）/ 难度档位 / 附加要求，四样都在系统配置里
- * （`ai.prompt.exam.*`），本页读它们当默认值，用户可以改完再出卷。
+ * （`ai.prompt.exam.*`），本页读它们当默认值，用户可以改完再生成。
  * **题量结构是一份数据**，同时喂「拼给模型的题量结构」和「解析器按它推题号→题型」⇒ 两边不会错位。
  * 详见 `exam.js`。
  *
  * ## 四个状态
  *
- * 出卷设置 → 出卷中 → 答题 → 判分中 → 看结果。
+ * 考试设置 → 生成中 → 答题 → 判分中 → 看结果。
  * **判分之前一个字的对错都不显示**——边做边看答案是自测题，不是考试。
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
@@ -184,8 +184,8 @@ const categoryId = computed(() => {
 })
 
 /**
- * 页面阶段：**只管出卷这一段**。答题与判分归答题器（`ExamRunner`）管。
- * idle（出卷设置）/ loading（出卷中）/ error（出卷失败）/ running（答题器接管）
+ * 页面阶段：**只管生成试卷这一段**。答题与判分归答题器（`ExamRunner`）管。
+ * idle（考试设置）/ loading（生成中）/ error（生成失败）/ running（答题器接管）
  */
 const phase = ref('idle')
 const error = ref('')
@@ -199,7 +199,7 @@ const note = ref('')
 /** 答题器内部的阶段（ready / grading / done）—— 顶栏要据此换按钮 */
 const runnerPhase = ref('ready')
 
-/** ========== 出卷设置（默认值来自系统配置） ========== */
+/** ========== 考试设置（默认值来自系统配置） ========== */
 const sections = ref([])
 /** 每种题型的**默认分值**（来自配置）。新加一种题型时用它兜底 */
 const defaultScores = ref({})
@@ -214,7 +214,7 @@ const scopeRule = ref('')
 /** 配置有问题时的一句话提示（比如题型没认出来） */
 const specWarning = ref('')
 
-/** 出卷中的中止器：离开页面就掐掉，别让请求在后台继续烧 token */
+/** 生成中的中止器：离开页面就掐掉，别让请求在后台继续烧 token */
 let abort = null
 
 onMounted(async () => {
@@ -248,7 +248,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => abort?.abort())
 
-// ==================== 出卷设置 ====================
+// ==================== 考试设置 ====================
 
 /**
  * 计划题数与计划满分：**都从 `sections` 算**（同一份设置、两道口径）。
@@ -280,13 +280,13 @@ function bump(i, d) {
   s.count = Math.min(MAX_COUNT, Math.max(MIN_COUNT, s.count + d))
 }
 
-// ==================== 出卷 ====================
+// ==================== 生成试卷 ====================
 
 /**
- * 出卷。**走现成的问答通道**，提示词是前端拼的
+ * 生成试卷。**走现成的问答通道**，提示词是前端拼的
  * （题量结构 + 出题范围 + 模板 + 难度 + 附加要求）。
  *
- * 出卷那段（拼 prompt / 问模型 / 解析 / 空卷分流）在 `exam.js` 的 `generatePaper()`，
+ * 生成试卷那段（拼 prompt / 问模型 / 解析 / 空卷分流）在 `exam.js` 的 `generatePaper()`，
  * **与详情页随堂测验共用**；这里只管本页的阶段状态。
  *
  * 题目解析不出来时**不整卷作废**：能解析几道算几道（见 `examParse.js`）。
@@ -321,12 +321,12 @@ async function generate() {
     phase.value = 'running'
   } catch (e) {
     if (e?.name === 'AbortError') return
-    error.value = e?.message || '出卷失败'
+    error.value = e?.message || '生成试卷失败'
     phase.value = 'error'
   }
 }
 
-/** 回到出卷设置（重新出一份） */
+/** 回到考试设置（重新出一份） */
 function backToSettings() {
   phase.value = 'idle'
   error.value = ''
@@ -426,7 +426,7 @@ function backToTopic() {
   padding: var(--sp-15) var(--sp-15) var(--sp-16);
 }
 
-/* ---------- 出卷设置 ---------- */
+/* ---------- 考试设置 ---------- */
 .setup {
   padding: var(--sp-13);
   background: var(--cc-surface);
@@ -596,7 +596,7 @@ function backToTopic() {
   }
 }
 
-/* ---------- 出卷中 / 失败 ----------
+/* ---------- 生成中 / 失败 ----------
  * 这两条在 `assets/kb.css`（`.kb-center` / `.kb-error`）——
  * 详情页随堂测验用的是同一份，两边各写一遍会漂（原来图标字号就差 2px）。 */
 

@@ -3,6 +3,14 @@
        两处调用方（列表页筛选态、知识点详情页）共用这一个组件，导航动作由 @pick 交给各自决定
        （列表页要 replace 免得筛选把历史堆满，详情页要 push 好让返回键回到这条知识）。 -->
   <nav v-if="crumbs.length >= minLevel" class="crumbs">
+    <!-- 根项（「全部」）：**清除目录筛选**的出口。
+         目录筛选的常驻药丸已经撤掉了（"全部目录"是没选中目录的默认态，
+         是个状态、不该长成可点的东西）⇒ 面包屑的根就是唯一能回到"不限目录"的地方。
+         点它 emit 的是 null（不是某个目录 id）。 -->
+    <template v-if="rootLabel">
+      <button type="button" class="crumbs__link" @click="emit('pick', null)">{{ rootLabel }}</button>
+      <span v-if="crumbs.length" class="crumbs__sep">›</span>
+    </template>
     <template v-for="(c, i) in crumbs" :key="c.id">
       <span v-if="i" class="crumbs__sep">›</span>
       <button
@@ -22,9 +30,11 @@ import { getCategoryPath } from './useCorecraftWebStore'
 const props = defineProps({
   // 当前所在的目录 id。null / undefined = 未归类，此时不渲染
   categoryId: { type: [Number, String], default: null },
-  // 少于几级就不显示。列表页传 2（只有一级目录时侧边栏已经高亮它了，面包屑是冗余）；
-  // 详情页用默认 1（哪怕只在一级目录下，"这条属于哪里"也是详情页唯一的位置线索）
-  minLevel: { type: Number, default: 1 }
+  // 少于几级就不显示。列表页传 1（**带根项「全部」**——它是清除目录筛选的出口，
+  // 一级目录时也得有）；详情页用默认 1（哪怕只在一级目录下，"这条属于哪里"也是详情页唯一的位置线索）
+  minLevel: { type: Number, default: 1 },
+  // 根项的名字（不传就没有根项）。详情页不传 —— 那儿没有"回到不限目录"这个需求。
+  rootLabel: { type: String, default: '' }
 })
 
 const emit = defineEmits(['pick'])

@@ -1,3 +1,5 @@
+import { DEFAULT_RANGE, isRangeKind } from './timeRange'
+
 /**
  * 从路由对象上读业务参数。
  *
@@ -16,4 +18,20 @@
  */
 export function keywordFromRoute(route) {
   return String(route?.query?.q || '')
+}
+
+/**
+ * 「当前时间范围 = URL 上的 `?range=`」这条推导。
+ *
+ * <p>和 {@link keywordFromRoute} 同理：**读 URL 的推导只留一处** ——
+ * 列表页从 URL 取它、URL 变了要跟着变，两处都从这里读。
+ *
+ * <p>⚠️ **认不出来的按默认算**（不限时间）—— 一个手改坏的参数不该把页面搞空。
+ *
+ * @param {object} route vue-router 的 route 对象
+ * @returns {string} 范围的 kind（见 utils/timeRange.js 的 TIME_RANGES）
+ */
+export function rangeFromRoute(route) {
+  const kind = String(route?.query?.range || '')
+  return isRangeKind(kind) ? kind : DEFAULT_RANGE
 }

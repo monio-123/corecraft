@@ -122,7 +122,7 @@ const props = defineProps({
 
 // 2026-10-07 展开改成"点 › 打开、点遮罩关闭"之后，`enter` / `close` 事件就不再有人发、
 // 也没人接了，一并去掉。现在这棵树对外面只说四句话：选中一行（pick）、
-// 有人要新增子目录（add）、有人要改名（rename）、有人要在这个目录下生成知识点（points）——
+// 有人要新增子目录（add）、有人要改名（rename）、有人要在这个目录下写知识点（points）——
 // **开合不再归它管**。
 const emit = defineEmits(['pick', 'pickTopic', 'add', 'rename', 'points'])
 

@@ -650,6 +650,23 @@ export function getCategoryPath(id) {
   return chain
 }
 
+/**
+ * 目录从根到自己的一串**名字**（["计算机网络", "3. 网络协议", "HTTP"]）。
+ *
+ * <p>**只有这一处把目录链变成名字串**：祖先链本身是 {@link getCategoryPath}，
+ * 而"取名字"这一步各写各的就会漂（有一处忘了取 name、去取 id 也不会报错）。
+ *
+ * <p>两处消费者：侧边栏过滤结果要给"祖先路径"（去掉自己那截），
+ * 生成弹窗的材料要给完整路径（"MySQL/1. 架构/1.1 连接"）。
+ * 分隔符由调用方决定 —— 两边要的分隔符不一样，但**名字串本身是同一份**。
+ *
+ * @param {number} id 目录 id
+ * @returns {string[]} 从根到自己的名字数组
+ */
+export function categoryNameChain(id) {
+  return getCategoryPath(id).map((c) => c.name)
+}
+
 /** 该节点及其所有后代的 id。进目录后按子树筛列表时用。 */
 export function getCategorySubtreeIds(id) {
   const root = Number(id)
@@ -792,7 +809,7 @@ export const dnd = reactive({
 /**
  * 命中检测。**先找具体的目录行，再退到侧边栏整块**：
  * 指针落在侧边栏某个一级目录那一行上 → 那个目录 id（拖过去 = 挪到它下面）；
- * 落在侧边栏目录区的空白处（标题、间隙）→ ROOT_CATEGORY（挪成一级）。
+ * 落在侧边栏目录区的空白处（间隙、过滤框周围）→ ROOT_CATEGORY（挪成一级）。
  *
  * **顺序不能反**：`.app-cats__item` 是 `.app-side__section` 的后代，
  * `closest('[data-cat-root]')` 从那一行往上找**也会命中**那个整块。

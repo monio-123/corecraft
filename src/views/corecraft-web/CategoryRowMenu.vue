@@ -23,18 +23,18 @@ const emit = defineEmits(['add', 'points', 'rename', 'removed'])
 // 菜单项写死成常量而不是在 onCommand 里比字符串：加一项只要动这一个数组，
 // 加错 command 名会在模板里就暴露（选项和分支对不上），不会变成"点了没反应"。
 //
-// ⚠️ 这里**没有**「出卷」项：出卷入口在**列表页的筛选条**上（范围 = 当前筛选出来的那些，
+// ⚠️ 这里**没有**「考试」项：考试入口在**列表页的筛选条**上（范围 = 当前筛选出来的那些，
 // 用户 2026-10-23 定）。放在目录行上会让"考这个目录"和"考当前筛选"变成两件事。
 const ITEMS = [
   { command: 'add', label: '新增子目录' },
-  { command: 'points', label: '生成正文' },
+  { command: 'points', label: '写知识点' },
   { command: 'rename', label: '重命名' },
   { command: 'delete', label: '删除目录', divided: true }
 ]
 
 async function onCommand(cmd) {
   if (cmd === 'add') emit('add', props.category)
-  // 生成知识点 = 给**这个目录**写它下面的知识点（材料里带它现有的子目录，
+  // 写知识点 = 给**这个目录**写它下面的知识点（材料里带它现有的子目录，
   // 模型就知道哪些领域已经有人管了）。
   else if (cmd === 'points') emit('points', props.category)
   else if (cmd === 'rename') emit('rename', props.category)
