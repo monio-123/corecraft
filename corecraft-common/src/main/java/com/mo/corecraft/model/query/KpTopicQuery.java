@@ -1,5 +1,6 @@
 package com.mo.corecraft.model.query;
 
+import com.mo.corecraft.model.DateTimeFormats;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.Setter;
@@ -52,11 +53,11 @@ public class KpTopicQuery {
      * （前端那个算出来的起止就是这里收的同一对值）⇒ 否则"下拉里的数字"和
      * "点进去看到的条数"会漂，而**界面上什么异常都看不到**。
      */
-    @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @DateTimeFormat(pattern = DateTimeFormats.DATETIME)
     private LocalDateTime createdFrom;
 
     /** 时间的上界（含）：`yyyy-MM-dd HH:mm:ss`。空 = 不限。 */
-    @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @DateTimeFormat(pattern = DateTimeFormats.DATETIME)
     private LocalDateTime createdTo;
 
     /**

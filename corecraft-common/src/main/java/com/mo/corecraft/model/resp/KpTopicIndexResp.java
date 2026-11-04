@@ -1,6 +1,7 @@
 package com.mo.corecraft.model.resp;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.mo.corecraft.model.DateTimeFormats;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -47,6 +48,6 @@ public class KpTopicIndexResp implements Taggable {
     private Boolean hasContent;
 
     /** 创建时间。首页的「今日新增」要它（一个时间戳，19 个字符，636 条也就 12KB）。 */
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+    @JsonFormat(pattern = DateTimeFormats.DATETIME, timezone = DateTimeFormats.TIMEZONE)
     private LocalDateTime createTime;
 }

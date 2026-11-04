@@ -3,6 +3,7 @@ package com.mo.corecraft.utils;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.core.JsonParser.Feature;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.mo.corecraft.model.DateTimeFormats;
 import com.fasterxml.jackson.core.json.JsonReadFeature;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.*;
@@ -38,7 +39,7 @@ public final class JsonUtils {
 	            .setSerializationInclusion(Include.NON_NULL)
 	            .setFilterProvider(new SimpleFilterProvider().setFailOnUnknownId(false))
 				// 支持对于Date格式的反序列化
-				.setDateFormat(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss"));
+				.setDateFormat(new SimpleDateFormat(DateTimeFormats.DATETIME));
 
 	        DeserializationConfig readConfig = mapper.getDeserializationConfig()
 	            //是否允许JSON字符串包含非引号控制字符

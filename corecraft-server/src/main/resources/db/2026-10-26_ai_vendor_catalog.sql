@@ -79,16 +79,45 @@ DEALLOCATE PREPARE stmt;
 -- ⚠️ **只有 DeepSeek 官方明确有 GET /models**；别的厂商的 OpenAI 兼容
 --    能不能列模型没逐个核过 ⇒ 「刷新」失败时不要清空已有清单（代码里就是这么做的），
 --    报错会带上游原文，自己判断是"厂商没这个接口"还是"key 不对"。
-INSERT INTO `sys_dict_type` (`code`, `name`, `remark`, `is_enabled`) VALUES
-('ai_vendor_deepseek',    'DeepSeek',              'https://api.deepseek.com',                    1),
-('ai_vendor_dashscope',  '阿里百炼（通义千问）',  'https://dashscope.aliyuncs.com/compatible-mode/v1', 1),
-('ai_vendor_zhipu',      '智谱 GLM',              'https://open.bigmodel.cn/api/paas/v4',          1),
-('ai_vendor_moonshot',   'Kimi（Moonshot）',      'https://api.moonshot.cn/v1',                   1),
-('ai_vendor_minimax',    'MiniMax',               'https://api.minimax.chat/v1',                  1),
-('ai_vendor_openai',     'OpenAI',                'https://api.openai.com/v1',                    1),
-('ai_vendor_siliconflow','硅基流动 SiliconFlow',  'https://api.siliconflow.cn/v1',                 1),
-('ai_vendor_volcengine', '火山方舟（豆包）',      'https://ark.cn-beijing.volces.com/api/v3',     1),
-('ai_vendor_xiaomi',     '小米 MiMo',              'https://api.xiaomimimo.com/v1',                 1);
+-- ⚠️ **一条一条插，每条自带守卫**（2026-11-04 改）：
+--   原来这里是**一条多行 INSERT**（没有守卫）⇒ 这个脚本是"全新建库时跑的"那一份
+--   （knowledge_platform.sql 后面紧接着它），**重跑一次就撞 Duplicate key**
+--   （`sys_dict_type.code` 有唯一索引 uk_sys_dict_type_code）⇒ 而且多行 INSERT 整条失败，
+--   后面第 3 段的 DeepSeek 型号预置**跟着执行不到**。
+--   ⇒ 现在每行都是 `INSERT ... SELECT ... WHERE NOT EXISTS`（重跑 = 空操作）。
+--
+--   ⚠️ 小米那一行原来在**两个文件**里各写一遍（这里 + `2026-11-02_add_xiaomi_vendor.sql`，
+--   那份带守卫）⇒ 同一份事实两份、两种守卫风格 = 迟早只改一处。
+--   ⇒ 那份一次性脚本已归档为
+--      `_archive/2026-11-02_add_xiaomi_vendor.sql.merged-into-ai_vendor_catalog`，
+--      **这里这一份是唯一出处**。
+INSERT INTO `sys_dict_type` (`code`, `name`, `remark`, `is_enabled`)
+SELECT 'ai_vendor_deepseek',    'DeepSeek',              'https://api.deepseek.com',                    1 FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM `sys_dict_type` WHERE `code` = 'ai_vendor_deepseek');
+INSERT INTO `sys_dict_type` (`code`, `name`, `remark`, `is_enabled`)
+SELECT 'ai_vendor_dashscope',  '阿里百炼（通义千问）',  'https://dashscope.aliyuncs.com/compatible-mode/v1', 1 FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM `sys_dict_type` WHERE `code` = 'ai_vendor_dashscope');
+INSERT INTO `sys_dict_type` (`code`, `name`, `remark`, `is_enabled`)
+SELECT 'ai_vendor_zhipu',      '智谱 GLM',              'https://open.bigmodel.cn/api/paas/v4',          1 FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM `sys_dict_type` WHERE `code` = 'ai_vendor_zhipu');
+INSERT INTO `sys_dict_type` (`code`, `name`, `remark`, `is_enabled`)
+SELECT 'ai_vendor_moonshot',   'Kimi（Moonshot）',      'https://api.moonshot.cn/v1',                   1 FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM `sys_dict_type` WHERE `code` = 'ai_vendor_moonshot');
+INSERT INTO `sys_dict_type` (`code`, `name`, `remark`, `is_enabled`)
+SELECT 'ai_vendor_minimax',    'MiniMax',               'https://api.minimax.chat/v1',                  1 FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM `sys_dict_type` WHERE `code` = 'ai_vendor_minimax');
+INSERT INTO `sys_dict_type` (`code`, `name`, `remark`, `is_enabled`)
+SELECT 'ai_vendor_openai',     'OpenAI',                'https://api.openai.com/v1',                    1 FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM `sys_dict_type` WHERE `code` = 'ai_vendor_openai');
+INSERT INTO `sys_dict_type` (`code`, `name`, `remark`, `is_enabled`)
+SELECT 'ai_vendor_siliconflow','硅基流动 SiliconFlow',  'https://api.siliconflow.cn/v1',                 1 FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM `sys_dict_type` WHERE `code` = 'ai_vendor_siliconflow');
+INSERT INTO `sys_dict_type` (`code`, `name`, `remark`, `is_enabled`)
+SELECT 'ai_vendor_volcengine', '火山方舟（豆包）',      'https://ark.cn-beijing.volces.com/api/v3',     1 FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM `sys_dict_type` WHERE `code` = 'ai_vendor_volcengine');
+INSERT INTO `sys_dict_type` (`code`, `name`, `remark`, `is_enabled`)
+SELECT 'ai_vendor_xiaomi',     '小米 MiMo',              'https://api.xiaomimimo.com/v1',                 1 FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM `sys_dict_type` WHERE `code` = 'ai_vendor_xiaomi');
 
 
 -- ---------------------------------------------------------------------------
@@ -96,13 +125,22 @@ INSERT INTO `sys_dict_type` (`code`, `name`, `remark`, `is_enabled`) VALUES
 -- ---------------------------------------------------------------------------
 -- label = 显示名（厂商接口返回的 name），value = **模型 id**（真正发给 API 的那个串）。
 -- 其余厂商的模型清单点「刷新」自动灌进来，这里不预置（避免预置一堆过期的）。
+-- ⚠️ **同样带守卫**（2026-11-04 改）：原来这两条是裸 INSERT ⇒ 重跑撞
+--   `uk_sys_dict_item_type_value`（dict_type_id + value）⇒ 整个脚本中断。
+--   守卫按 (dict_type_id, value) 判重 —— 型号的"身份"就是这两个。
 INSERT INTO `sys_dict_item` (`dict_type_id`, `label`, `value`, `sort`, `remark`)
-SELECT id, 'DeepSeek-V4.1-Flash', 'deepseek-flash', 1, '2026-10-26 预置'
-FROM `sys_dict_type` WHERE `code` = 'ai_vendor_deepseek' AND `is_delete` = 0;
+SELECT t.id, 'DeepSeek-V4.1-Flash', 'deepseek-flash', 1, '2026-10-26 预置'
+FROM `sys_dict_type` t
+WHERE t.`code` = 'ai_vendor_deepseek' AND t.`is_delete` = 0
+  AND NOT EXISTS (SELECT 1 FROM `sys_dict_item` i
+                  WHERE i.dict_type_id = t.id AND i.value = 'deepseek-flash');
 
 INSERT INTO `sys_dict_item` (`dict_type_id`, `label`, `value`, `sort`, `remark`)
-SELECT id, 'DeepSeek-V4-Pro', 'deepseek-v4-pro', 2, '2026-10-26 预置'
-FROM `sys_dict_type` WHERE `code` = 'ai_vendor_deepseek' AND `is_delete` = 0;
+SELECT t.id, 'DeepSeek-V4-Pro', 'deepseek-v4-pro', 2, '2026-10-26 预置'
+FROM `sys_dict_type` t
+WHERE t.`code` = 'ai_vendor_deepseek' AND t.`is_delete` = 0
+  AND NOT EXISTS (SELECT 1 FROM `sys_dict_item` i
+                  WHERE i.dict_type_id = t.id AND i.value = 'deepseek-v4-pro');
 
 
 -- ---------------------------------------------------------------------------

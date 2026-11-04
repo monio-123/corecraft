@@ -1,6 +1,7 @@
 package com.mo.corecraft.model.resp;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.mo.corecraft.model.DateTimeFormats;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -26,6 +27,6 @@ public class SysConfigResp {
 
     private String remark;
 
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+    @JsonFormat(pattern = DateTimeFormats.DATETIME, timezone = DateTimeFormats.TIMEZONE)
     private LocalDateTime updateTime;
 }
