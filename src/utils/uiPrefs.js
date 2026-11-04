@@ -121,6 +121,13 @@ const PREF_SPECS = {
   'ui.home.homePadX': { min: 0, max: 120, step: 4, unit: 'px', def: 32, css: (v) => ({ '--home-pad-x': `${v}px` }) },
   'ui.home.homeGap': { min: 0, max: 64, step: 4, unit: 'px', def: 24, css: (v) => ({ '--home-gap': `${v}px` }) },
   'ui.learn.learnGap': { min: 0, max: 48, step: 2, unit: 'px', def: 16, css: (v) => ({ '--learn-gap': `${v}px` }) },
+  // **顶部间距**（内容整体离顶栏多远）。2026-11-04 加（用户：「这个一级目录 -> 二级目录
+  // 往上一点 现在离上面的间隙比较大显得不好看」）。
+  // ⚠️ **它和「上下」（learnGap）不是一回事**：「上下」是区块**之间**的间距
+  // （面包屑 / 筛选条 / 卡片区彼此隔多远），这个是**整体往上的偏移**（内容区离顶栏多远）
+  // —— 用户原话：「目前的上下改的是每个框的上下间隔 不是整体往上的间隔」。
+  // 默认 16：原来跟通用 padding 一样是 32（--sp-15）⇒ 面包屑离顶栏太远。
+  'ui.learn.learnPadY': { min: 0, max: 48, step: 2, unit: 'px', def: 16, css: (v) => ({ '--learn-pad-y': `${v}px` }) },
   'ui.learn.learnPadX': { min: 0, max: 120, step: 4, unit: 'px', def: 32, css: (v) => ({ '--learn-pad-x': `${v}px` }) },
   'ui.learn.learnGridGap': { min: 0, max: 48, step: 2, unit: 'px', def: 14, css: (v) => ({ '--learn-grid-gap': `${v}px` }) },
   'ui.learn.learnPillPy': { min: 0, max: 20, step: 1, unit: 'px', def: 3, css: (v) => ({ '--learn-pill-py': `${v}px` }) },
@@ -182,7 +189,7 @@ const ALL_VARS = Object.keys(PREF_SPECS).flatMap(varNamesOf)
 export const prefGroups = ref([])
 
 /** 生效值（键 → 数字）：我的覆盖 > 系统默认 > 内置默认 */
-let effective = {}
+const effective = ref({})
 /** 系统默认（后端 user_id=0 那几行）——「恢复系统默认」之后要回到这里 */
 let defaults = {}
 /** 哪些键"人设过"（我的覆盖或系统默认那一行）——只有它们写进行内变量 */
@@ -191,20 +198,27 @@ let explicit = new Set()
 let remoteLoaded = false
 
 /**
- * 本地缓存（键 → 数字）。**它只是缓存，后端才是真相**。
+ * 本地缓存（键 → 值）。**它只是缓存，后端才是真相**。
  *
  * 留一份本地的是为了两件事：①接口没回来之前首屏不用等；②接口挂了也能用。
+ *
+ * ⚠️ **解析一次就够**（`localCache` 兜住）：侧边栏每个目录行都要问一遍偏好，
+ * 每次都 `JSON.parse` 一遍 localStorage 是白花的开销（245 行 × 一次解析）。
  */
+let localCache = null
 function readCache() {
+  if (localCache) return localCache
   try {
     const raw = localStorage.getItem(PREF_KEY)
-    return raw ? JSON.parse(raw) : {}
+    localCache = raw ? JSON.parse(raw) : {}
   } catch {
-    return {}
+    localCache = {}
   }
+  return localCache
 }
 
 function writeCache(obj) {
+  localCache = obj
   localStorage.setItem(PREF_KEY, JSON.stringify(obj))
 }
 
@@ -215,6 +229,18 @@ function writeCache(obj) {
 function legacyKey(configKey) {
   const i = configKey.lastIndexOf('.')
   return i < 0 ? configKey : configKey.slice(i + 1)
+}
+
+/**
+ * 配置值 → 偏好值：**能当数字就是数字，否则原样留字符串**。
+ *
+ * <p>面板那一批全是数字（滑块），但**同一张表里还有别的键**（展示格式这种
+ * 「树 / 卡片」两取值）—— 以前这里只留数字，非数字的键**整条被丢掉**，
+ * 表现是"这条配置配了但没生效"，而且界面上什么异常都看不到。
+ */
+function toPrefValue(raw) {
+  const n = Number(raw)
+  return raw !== '' && Number.isFinite(n) ? n : String(raw)
 }
 
 /** 把偏好写到 `<html>` 的行内 style。行内压过样式表，所以用户拖一下立刻生效 */
@@ -268,12 +294,12 @@ export async function loadRemotePrefs() {
     const defs = {}
     // "人设过" = 后端有那一行（系统默认或我的覆盖）；内置默认不算
     for (const [configKey, raw] of Object.entries(values)) {
-      if (raw == null || !Number.isFinite(Number(raw))) continue
-      eff[configKey] = Number(raw)
+      if (raw == null) continue
+      eff[configKey] = toPrefValue(raw)
     }
     for (const [configKey, raw] of Object.entries(defaultsRaw)) {
-      if (raw == null || !Number.isFinite(Number(raw))) continue
-      defs[configKey] = Number(raw)
+      if (raw == null) continue
+      defs[configKey] = toPrefValue(raw)
     }
     defaults = defs
     explicit = new Set(Object.keys(eff))
@@ -287,7 +313,7 @@ export async function loadRemotePrefs() {
         explicit.add(k)
       }
     }
-    effective = eff
+    effective.value = eff
     remoteLoaded = true
     const written = pickExplicit(eff)
     applyPrefs(written)
@@ -338,7 +364,53 @@ async function migrateOnce(cached, backendValues, nodes) {
 }
 
 export function getUiPrefs() {
-  return { ...effective }
+  return { ...effective.value }
+}
+
+/**
+ * 某个键的**生效值**（我的覆盖 > 系统默认）。没有就是 undefined。
+ *
+ * <p>给**不是滑块**的偏好用（展示格式这种「树 / 卡片」两取值）。
+ * 面板那一批走 {@link getUiPrefs} 拿数字 —— 两边各管各的形状。
+ *
+ * ⚠️ **后端还没回来时先给本地缓存那份**：接口回来前界面已经要出答案
+ * （侧边栏每个书名都要算"点开是树还是卡片"）。本地那份只是缓存，
+ * 后端一到就以它为准（`loadRemotePrefs` 会重写本地那份）。
+ *
+ * ⚠️ **读 `effective.value` 是必须的**（不能只读本地缓存）：后端那份到了以后
+ * 它会整体换掉 —— 读它才能让调用方的 computed **跟着重算**。
+ * 只读本地缓存的话，后端到了界面也不会变（而且还是那份可能过期的本地值）。
+ */
+export function getUiPref(key) {
+  const remote = effective.value[key]
+  if (remote !== undefined) return remote
+  return readCache()[key]
+}
+
+/**
+ * 写一个键：**本地立刻生效**，后端存一份"我自己的覆盖"。
+ *
+ * <p>面板滑块走 {@link saveUiPrefs}（攒批 + 拖动手感）；这里是一次性动作，
+ * 直接写 —— 攒批是为了"拖一次滑块别打几十个请求"，而这个一次就一个值。
+ *
+ * ⚠️ **系统默认那一行不动**：这里写的永远是"我的覆盖"（user_id=我），
+ * 删掉它（`clearMyConfig`）就回到系统默认。
+ */
+export async function setUiPref(key, value) {
+  effective.value = { ...effective.value, [key]: value }
+  explicit.add(key)
+  const written = pickExplicit(effective.value)
+  writeCache(written)
+  applyPrefs(written)
+  try {
+    await saveMyConfig([{ key, value: String(value) }])
+  } catch {
+    // 失败提示请求拦截器已经弹过。
+    // ⚠️ **本地那份救不了这一条**（原注释写的是「本地那份还在，下次进来还是这个值」——
+    // **那是假的**）：下次进页面 `loadRemotePrefs` 会用后端那份**整体换掉** `effective`
+    // 和本地缓存 ⇒ 后端没存上的值会被丢掉（**只有当前这次会话里还在**）。
+    // ⇒ 这里不假装"下次还是这个值"。
+  }
 }
 
 /**
@@ -347,9 +419,9 @@ export function getUiPrefs() {
  * 攒批是因为滑块每拖一格就回调一次 —— 每一格打一个接口，拖一次就是几十个请求。
  */
 export function saveUiPrefs(patch) {
-  effective = { ...effective, ...patch }
+  effective.value = { ...effective.value, ...patch }
   explicit = new Set([...explicit, ...Object.keys(patch)])
-  const written = pickExplicit(effective)
+  const written = pickExplicit(effective.value)
   writeCache(written)
   applyPrefs(written)
   queueRemoteSave(patch)
@@ -374,7 +446,11 @@ async function flushRemoteSave() {
   try {
     await saveMyConfig(items)
   } catch {
-    // 失败提示请求拦截器已经弹过；本地那份还在，下次进来还是这个值
+    // 失败提示请求拦截器已经弹过。
+    // ⚠️ **本地那份救不了这一条**（原注释写的是「本地那份还在，下次进来还是这个值」——
+    // **那是假的**）：下次进页面 `loadRemotePrefs` 会用后端那份**整体换掉** `effective`
+    // 和本地缓存 ⇒ 后端没存上的值会被丢掉（**只有当前这次会话里还在**）。
+    // ⇒ 这里不假装"下次还是这个值"。
   }
 }
 
@@ -405,14 +481,14 @@ export async function resetUiPrefs(only) {
     }
   }
   // 本地：这几项回到系统默认（系统默认也没有就回到内置默认 ⇒ 摘掉行内）
-  const next = { ...effective }
+  const next = { ...effective.value }
   for (const g of picked) {
     for (const it of g.items) {
       if (defaults[it.configKey] != null) next[it.configKey] = defaults[it.configKey]
       else delete next[it.configKey]
     }
   }
-  effective = next
+  effective.value = next
   writeCache(pickExplicit(next))
   applyPrefs(pickExplicit(next))
   // 后端：删掉这几组的"我自己的覆盖"（= 恢复系统默认）

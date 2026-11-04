@@ -4,16 +4,12 @@
   <div class="app-shell" :class="{ 'is-side-collapsed': sideCollapsed }">
     <!-- 左侧栏：品牌 + 目录。沉浸模式下整个不渲染（它就是"壳"的一部分）。
 
-         `@click="closeCascade"` 挂**整条侧边栏**而不是目录行：#111 之后遮罩只盖主区
-         （`left: var(--w-side)`，因为侧边栏还得留着当拖拽落点区），"点侧边栏也收树"
-         这件事就得自己管。挂容器而不是行，是因为点**行之间的空白**同样该收——
-         按行挂只覆盖得到目录名那几行，空白处点了没反应。
-         目录行的点击靠冒泡到这里，本来就不用再挂一遍。
-
-         行上两个控件各自 `stop`，不会误触发：
-         - `›` 展开/收起的是它自己（#108：展开和进入是两件事）
-         - `⋯` 只开菜单、不关树（#108：用户可能只是看了一眼菜单又缩回去） -->
-    <aside v-if="!immersive.on" class="app-side" @click="closeCascade">
+         ⚠️ **这一列是纯导航了**（2026-11-03）：品牌区 + 过滤框（框内两个操作）+
+         一列书名 + 每行的条数。**没有行内控件了** ——
+         「⋯」（目录操作）挪到目录页（看着它才操作它），
+         「›」（就地展开子树）删掉（展开子树由目录页做，它更宽、能分层、知识点能点）。
+         ⇒ 这里也**不需要"点侧边栏收树"那个 handler**（树不在侧边栏了）。 -->
+    <aside v-if="!immersive.on" class="app-side">
       <!-- 品牌区 = **首页入口**（2026-11-02）。
            导航块整个撤掉之后侧边栏只剩"目录"这一件事，而"回首页"总得有个地方放 ——
            品牌区是全站唯一的固定位置，放这儿最不占地方（原来它只是个静态标题）。
@@ -82,7 +78,7 @@
                 <button
                   class="app-side__op-btn"
                   aria-label="新建目录"
-                  @click="openCreate(ROOT_CATEGORY, '')"
+                  @click="openCreate()"
                 >
                   <el-icon><Plus /></el-icon>
                 </button>
@@ -95,7 +91,7 @@
           <RouterLink
             v-for="c in visibleCats"
             :key="c.id"
-            :to="categoryLink(c.id)"
+            :to="viewLink(c)"
             class="app-cats__item"
             :class="{
               'is-on': isCurrentCategory(c.id),
@@ -114,19 +110,28 @@
               <span v-if="filtering" class="app-cats__trail">{{ trailOf(c.id) }}</span>
             </span>
             <span class="app-cats__count">{{ categoryCounts[c.id] || 0 }}</span>
-            <CategoryRowMenu :category="c" @add="(c) => openCreate(c.id, c.name)" @rename="openRename" @points="openPointsDialog" />
-            <!-- 展开子树的入口。**没有下级就不给箭头**：弹出来是个空壳，
-                 建子目录靠这一行自己的「⋯」就够了。
-                 `@click.stop.prevent`：外层是 RouterLink，不拦住的话点箭头会顺带
-                 导航进这个目录——展开和进入是两件事，箭头只干前者。 -->
+            <!-- 形态切换（目录树 ⇄ 卡片）：**hover 这一行才显形**。
+                 ⚠️ 2026-11-04 用户拍板：「这个目录和卡片的切换按钮 在目录树和卡片栏中
+                 完全不一样的图标不一样的位置 …是不是可以把这个切换放到侧边栏的目录上
+                 加一个按钮 hover才显示」⇒ 树顶部那个「用卡片看」和卡片视图右上那个
+                 「目录」**两处都删掉**，切换只剩这里一处。
+                 记住的是「我 + 这本书」（`ui.view.category.<一级目录 id>`，见 utils/viewPref.js）。 -->
             <button
-              v-if="hasKids(c.id)"
-              type="button"
-              class="app-cats__expand"
-              :aria-label="`展开 ${c.name} 的下级目录`"
-              :aria-expanded="cascadeFor === c.id"
-              @click.stop.prevent="toggleCascade(c, $event)"
-            ><el-icon><ArrowRight /></el-icon></button>
+              class="app-cats__view-btn"
+              :aria-label="viewLabel(c)"
+              :title="viewLabel(c)"
+              @click.stop.prevent="toggleView(c)"
+              @pointerdown.stop
+            >
+              <el-icon><component :is="viewOf(c) === VIEW_TREE ? Grid : Menu" /></el-icon>
+            </button>
+            <!--
+              这一行**只有名字和条数**（2026-11-03）：
+              - 「⋯」（新增子目录 / 写知识点 / 重命名 / 删除）→ 挪到目录页里那一行，
+                **规则一句话：在哪儿看着它，就在哪儿操作它**。侧边栏是纯导航。
+              - 「›」（就地展开子树）→ 删：展开子树这件事目录页做得更好
+                （宽栏、分层、知识点能点），侧边栏这 264px 撑不开层级。
+            -->
           </RouterLink>
         </div>
         <!-- ⚠️ **「没有目录」这句话只在真的加载完之后才成立**。
@@ -269,43 +274,20 @@
          必须能点外面关掉，否则用户不知道怎么退出去。 -->
     <div v-if="dnd.live && dnd.picking" class="scrim pick-scrim" @click="dndReset" />
 
-    <!-- 入口二（进）：点一级目录行尾的 › 展开它整棵子树。
-         不用一层一层再点开——层级在"要挑一个深层目录"时才需要被完整看见，
-         一次给全比让人自己逐层点开省事。
-         遮罩 z 39 压在弹层（40）之下、**只盖主区不盖侧边栏**（见 .cascade-scrim）：
-         点主区 = 关；侧边栏那边由 `<aside class="app-side">` 自己的
-         @click="closeCascade" 管，它同时还得留着当拖拽落点区，不能被遮罩吃掉。 -->
-    <div v-if="cascadeFor != null" class="scrim cascade-scrim" @click="closeCascade" />
-    <CategoryTree
-      v-if="cascadeFor != null"
-      :key="cascadeFor"
-      mode="nav"
-      :items="childrenOf(cascadeFor)"
-      :anchor-top="cascadeTop"
-      @pick="goCategory"
-      @pick-topic="goTopic"
-      @add="(c) => openCreate(c.id, c.name)"
-      @rename="openRename"
-      @points="openPointsDialog"
-    />
+    <!-- ⚠️ **侧边栏展开子树的那个弹层删了**（2026-11-03）：点一级目录行尾的「›」
+         展开整棵子树的那一套（遮罩 + 定位 + 开合状态）。
+         理由：展开子树这件事现在由**目录页**做（主区里那棵树）—— 它更宽、能分层、
+         知识点能直接点；侧边栏 264px 展开出来是两百多行的一根长条。
+         ⇒ 侧边栏那列退回**纯导航**（书名 + 条数）。 -->
 
-    <!-- 「给目录起个名」只有一个弹窗：新建一级 / 新建子级 / 改名都是它，
-         靠 mode + initialId + initialName 区分。三个弹窗实例就是同一个输入框写三遍。 -->
-    <CategoryNameDialog
-      v-model="nameDialog.visible"
-      :mode="nameDialog.mode"
-      :parent-id="nameDialog.parentId"
-      :parent-label="nameDialog.parentLabel"
-      :initial-name="nameDialog.initialName"
-    :initial-id="nameDialog.initialId"
-    />
+    <!-- 「给目录起个名」：**只剩新建一级目录**这一种用法（新建子级 / 改名都跟着目录页走了）。
+         ⚠️ 其它参数全用组件自己的默认值（mode=create / parentId=ROOT_CATEGORY /
+         initialName='' / initialId=null）—— 那几个值在这里是常量，写出来就是第二份。 -->
+    <CategoryNameDialog v-model="nameDialog.visible" />
 
-    <!-- 生成主题：主题 → 目录骨架 → 逐目录写知识点。
-         也可以从某个目录的「⋯」进"写知识点"（目录现成，只写内容）。 -->
+    <!-- 生成主题：主题 → 目录骨架 → 逐目录写知识点。 -->
     <CategoryTreeDialog
       v-model="treeDialog.visible"
-      :mode="treeDialog.mode"
-      :category="treeDialog.category"
     />
   </div>
 </template>
@@ -313,24 +295,24 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter, RouterLink, RouterView } from 'vue-router'
-import { Search, Setting, Expand, Fold, Refresh, ArrowRight, MagicStick, Plus, CircleClose } from '@element-plus/icons-vue'
-import { categoryLink, topicLink } from '../../utils/categoryNav'
+import { Search, Setting, Expand, Fold, Refresh, ArrowRight, MagicStick, Plus, CircleClose, Grid, Menu } from '@element-plus/icons-vue'
+import { viewLink } from '../../utils/categoryNav'
+import { viewOf, setView, VIEW_TREE, VIEW_CARD } from '../../utils/viewPref'
 import { hasAdminMenus, bootstrapSession, sessionState, sessionProfile } from '../../utils/session'
 import { applyUiPrefs, clearUiPrefs } from '../../utils/uiPrefs'
 import UserMenu from '../UserMenu.vue'
 import PrefsPanel from './PrefsPanel.vue'
 import CategoryNameDialog from '../../views/corecraft-web/CategoryNameDialog.vue'
 import CategoryTreeDialog from '../../views/corecraft-web/CategoryTreeDialog.vue'
-import CategoryRowMenu from '../../views/corecraft-web/CategoryRowMenu.vue'
 import CategoryTree from '../../views/corecraft-web/CategoryTree.vue'
 import { useTopicDrag } from '../../views/corecraft-web/useTopicDrag'
 import { loadShellData } from '../../views/corecraft-web/useShellData'
 import { keywordFromRoute } from '../../utils/routeQuery'
 import { useImmersive } from '../../views/corecraft-web/useImmersive'
 import {
-  getChildCategories, hasChildCategories, categoriesState,
+  getChildCategories, categoriesState,
   getCategoryCountMap, dnd, dndReset, ROOT_CATEGORY,
-  flattenCategoryTree, categoryNameChain
+  flattenCategoryTree, categoryNameChain, getCategoryPath
 } from '../../views/corecraft-web/useCorecraftWebStore'
 
 const route = useRoute()
@@ -357,14 +339,13 @@ function toggleSide() {
 
 // 目录树弹层的开合状态。展开靠点行尾的 ›（见 toggleCascade），关靠点遮罩 / Esc 之外的
 // 那几条业务路径（进目录 / 新建子级 / 改名都会顺手关掉）。
-const cascadeFor = ref(null)
-const cascadeTop = ref(0)
-
 /**
- * 目录生成弹窗。
- * `mode = 'pack'` 生成一整套（主题 → 骨架 → 知识点）；`mode = 'points'` 给某个目录写知识点。
+ * 目录生成弹窗。**只用于"生成主题"**（mode 默认 'pack'）。
+ *
+ * <p>⚠️ 给某个目录写知识点（mode='points'）那个用法搬到了**目录页**里
+ * （2026-11-03）—— 在哪儿看着它，就在哪儿操作它。
  */
-const treeDialog = reactive({ visible: false, mode: 'pack', category: null })
+const treeDialog = reactive({ visible: false })
 
 /**
  * 侧边栏每个一级目录**也是拖拽源**：把它拖到弹层里的某一行 = 挪到那个目录下，
@@ -383,20 +364,11 @@ const { onPointerDown: onCatPointerDown } = useTopicDrag((e) => {
   return { what: { catId: id }, label: e.currentTarget.dataset.catName || '' }
 })
 
-// 「给目录起个名」弹窗的全部参数。三个入口（建一级 / 建子级 / 改名）共用这一个状态，
-// 拆成三个 ref 就要各自记一份 visible，改一个入口的判断就得同步另外两个。
-const nameDialog = reactive({
-  visible: false,
-  mode: 'create',
-  parentId: ROOT_CATEGORY,
-  parentLabel: '',
-  initialName: '',
-  // 改名时被改的是哪个目录。后端按 id 定位：名字是可变字段，
-  // 允许同名之后按名字根本认不出要改哪一个（initialName 只用来回显）。
-  initialId: null
-})
+// 「给目录起个名」弹窗。**这里只剩新建一级目录**（新建子级 / 改名都跟着目录页走了）
+// ⇒ 其余参数全用组件自己的默认值，不在这儿再抄一份。
+const nameDialog = reactive({ visible: false })
 
-// 侧边栏只渲染一级（parentId = 0），层级交给 hover 级联
+// 侧边栏只渲染一级（parentId = 0）。层级在**目录页**里看。
 const rootCategories = computed(() => getChildCategories(ROOT_CATEGORY))
 const categoryCounts = computed(() => getCategoryCountMap())
 
@@ -434,10 +406,55 @@ function trailOf(id) {
   return chain.slice(0, -1).join(' / ')
 }
 
-const childrenOf = (id) => getChildCategories(id)
-const hasKids = (id) => hasChildCategories(id)
-/** 当前路由选中的目录。过滤时列表里可能有深层目录，所以它认的不只是"一级" */
-const isCurrentCategory = (id) => Number(route.query.category) === id
+/**
+ * 当前所在的那本书（= 当前目录的最顶层祖先）。
+ *
+ * <p>侧边栏只放一级目录，而两种形态都能一路走进三层（书 → 章 → 小节）⇒
+ * 判据不能是"当前目录 === 这一行"（进到小节时侧边栏就一行都不亮了，
+ * 用户会以为位置丢了）。**认祖先链上的那本书**才对。
+ *
+ * <p>⚠️ **两个形态的 id 要合并着看**：树视图的书在 `?tree=` 上，
+ * 卡片视图的目录在 `?category=` 上 —— 两者都可能是"当前所在的那本书"的线索。
+ */
+const currentBookId = computed(() => {
+  const t = route.query.tree
+  const id = t != null ? Number(t) : Number(route.query.category)
+  if (!id) return null
+  const chain = getCategoryPath(id)
+  return chain.length ? chain[0].id : id
+})
+
+/** 侧边栏这一行是不是"当前所在的那本书"。 */
+const isCurrentCategory = (id) => currentBookId.value === id
+
+/**
+ * 这一行那颗按钮画的是**点了会发生什么**（不是"现在是什么样"）。
+ *
+ * <p>现在这本是树 ⇒ 按钮给「用卡片看」；现在是卡片 ⇒ 按钮给「用目录看」。
+ */
+function viewLabel(c) {
+  return viewOf(c) === VIEW_TREE ? '用卡片看' : '用目录看'
+}
+
+/**
+ * 切这一本书的形态：**改地址 + 记住**。
+ *
+ * <p>**记住的是那本书**（侧边栏只放一级目录 ⇒ 这一行就是那本书；
+ * 二级目录的卡片视图要回那本书的树，也是通过它 —— 见 FEATURES.md §2.2）。
+ *
+ * <p>⚠️ **地址保留其它参数**（`?q=` / `?range=`）：切的是"怎么看这一本"，
+ * 不是"看什么" ⇒ 搜索词和时间窗不该被切形态顺手清掉。
+ * （原来树视图那个「用卡片看」是 `router.push(categoryLink(id))` —— 整个 query 被替换掉，
+ * `?range=today` 就没了；两端的地址规则现在只有这一份。）
+ */
+function toggleView(c) {
+  const next = viewOf(c) === VIEW_TREE ? VIEW_CARD : VIEW_TREE
+  // 本地立刻生效（setUiPref 内部先写 effective 再发后端），所以地址换过去时偏好已经是对的。
+  setView(c.id, next)
+  router.push(next === VIEW_TREE
+    ? { path: '/app/learn', query: { ...route.query, tree: c.id, category: undefined } }
+    : { path: '/app/learn', query: { ...route.query, category: c.id, tree: undefined } })
+}
 
 // 有管理后台菜单的（超管）才给"管理后台"入口。判据与 Layout 的 hasAppShell 共用 hasAdminMenus
 // —— 原来这里自己写了一遍 `menuPaths.some(p => !p.startsWith('/app'))`，和 session.js 里的
@@ -540,72 +557,18 @@ function goAdmin() {
   router.push('/')
 }
 
-// hover 停 300ms 才弹级联的整套定时器（hoverTimer / closeTimer / onCatEnter /
-// onCatLeave / onCascadeEnter / scheduleCloseCascade）在 2026-10-07 全部删掉了：
-// 展开改成**点 › 打开、点遮罩关闭**，鼠标移开不再收走弹层。下面只留开合本身。
-//
-// 没有下级的目录不给箭头（模板里 `v-if="hasKids(c.id)"`），所以这里不用再判一次。
-function toggleCascade(c, e) {
-  if (cascadeFor.value === c.id) {
-    closeCascade()
-    return
-  }
-  cascadeFor.value = c.id
-  cascadeTop.value = e.currentTarget.getBoundingClientRect().top
-}
-
-// 整条级联只有一个开关，要关它的理由全汇到这一处。
-// 之前 cascadeFor 只在 goCategory / openCreate 里被清，onCatLeave 只清了
-// hoverTimer——打开和关闭是两条互不相干的路径，中间没人管，于是弹出来就再也
-// 关不掉，只能靠点导航或刷新。
-function closeCascade() {
-  cascadeFor.value = null
-}
-
-function goCategory(c) {
-  closeCascade()
-  router.push(categoryLink(c.id))
-}
+// ⚠️ **侧边栏展开子树的弹层整套删了**（2026-11-03）：cascadeFor / cascadeTop /
+// toggleCascade / closeCascade / goCategory / goTopic 那一族，
+// 连同模板里的遮罩 + <CategoryTree mode="nav">。
+// 展开子树现在由**目录页**做（主区那棵树）：它更宽、能分层、知识点能直接点。
+// ⇒ 侧边栏这列退回纯导航（书名 + 条数），目录的其它操作也一起搬到了目录页。
 
 /**
- * 点树上的知识点叶子 ⇒ 进它的详情页。
+ * 新建一级目录（侧边栏过滤框里那个「＋」）。
  *
- * <p>和 `goCategory` 一样先把弹层关掉：留着弹层的话，新页面上面还挂着一棵
- * 旧树，看着像没跳过去。
+ * <p>⚠️ **只有一级这一种**：新建子目录 / 改名都在**目录页**里（看着那个目录时操作它）。
  */
-function goTopic(t) {
-  closeCascade()
-  router.push(topicLink(t.id))
-}
-
-/**
- * 新建目录。**一级和子级是同一个动作**，只是父目录不同 ——
- * 原来 openCreateRoot / openChildCreate 两个函数体逐行相同，只差父目录。
- *
- * <p>新建的三个入口都收在这一带：建一级（侧边栏标题的 ＋）、建子级（任一行 ⋯ 的
- * "新增子目录"）、改名（任一行 ⋯ 的"重命名"）。都先关掉 hover 弹层，
- * 免得弹层停在一棵待改的树上。
- *
- * @param {number} parentId 父目录 id（一级用 ROOT_CATEGORY）
- * @param {string} parentLabel 父目录名（一级是空串；给对话框显示用）
- */
-function openCreate(parentId, parentLabel) {
-  closeCascade()
-  nameDialog.mode = 'create'
-  nameDialog.parentId = parentId
-  nameDialog.parentLabel = parentLabel
-  nameDialog.initialName = ''
-  nameDialog.initialId = null
-  nameDialog.visible = true
-}
-
-function openRename(c) {
-  closeCascade()
-  nameDialog.mode = 'rename'
-  nameDialog.parentLabel = c.name
-  // initialName 只用来回显输入框、判"没改就别提交"；真正发给后端的是 id
-  nameDialog.initialName = c.name
-  nameDialog.initialId = c.id
+function openCreate() {
   nameDialog.visible = true
 }
 
@@ -615,22 +578,6 @@ function openRename(c) {
  * <p>生成的目录**自成一体、放在第一层**：挂到哪、怎么挪层级，用户自己在侧边栏拖。
  */
 function openTreeDialog() {
-  closeCascade()
-  treeDialog.mode = 'pack'
-  treeDialog.category = null
-  treeDialog.visible = true
-}
-
-/**
- * 给某个**现成的目录**写知识点（目录行「⋯」→「写知识点」）。
- *
- * <p>材料里会带上这个目录现有的子目录 ⇒ 模型知道哪些领域已经有人管了，
- * 不会把该属于子目录的内容写在这里。
- */
-function openPointsDialog(c) {
-  closeCascade()
-  treeDialog.mode = 'points'
-  treeDialog.category = c
   treeDialog.visible = true
 }
 
@@ -734,29 +681,17 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   opacity: 0.95;
 }
-/* 两处"点外面关掉"的透明遮罩，用途一样、只有层级不同，收成一个基类 + 两个 z-index。
-   - .pick-scrim  z 19，压在归类落点树（20）之下，树上的行照常可点
-   - .cascade-scrim z 39，压在目录树弹层（40）之下，弹层里的行照常可点
-   两处都是"透明只为接住点击"，所以不画任何背景。
+/* "点外面关掉"的透明遮罩（触屏点选归类用），透明只为接住点击，不画背景。
    position/inset 只能写在基类上：漏挂 `scrim` 的话元素退化成 .app-shell 里
-   一个宽度 0 的 flex item，点击永远打不中，而且 build / 编译都不会报。 */
+   一个宽度 0 的 flex item，点击永远打不中，而且 build / 编译都不会报。
+   ⚠️ **原来还有第二处 `.cascade-scrim`**（盖住目录树弹层），随弹层一起删了
+   （2026-11-03）⇒ 现在只剩这一处。 */
 .scrim {
   position: fixed;
   inset: 0;
 }
 .pick-scrim {
   z-index: 19;
-}
-.cascade-scrim {
-  z-index: 39;
-  /* **只盖主区，不盖侧边栏**。侧边栏不是"弹层外面"：它是弹层的锚点所在，
-     也是「把弹层里的子目录拖到一级目录上」唯一的落点区。
-     盖住它的后果不是"多点不到"而是**拖拽整个失效**——落点靠
-     document.elementFromPoint + closest('[data-cat-id]') 算（store 的 hitCategory），
-     指针落在遮罩上时两个 closest 都落空 → over = null → 不高亮、松手无事。
-     左边距用同一个变量，不能各写各的：body 上有 zoom(--cc-scale)，
-     两个地方读同一个 token，改一边另一边自动跟。 */
-  left: var(--w-side);
 }
 .app-shell {
   display: flex;
@@ -983,24 +918,26 @@ onBeforeUnmount(() => {
   opacity: var(--row-tools, 1);
   transition: opacity 0.15s;
 }
-.app-cats__expand {
+/* 形态切换（目录树 ⇄ 卡片）：**hover 这一行才显形**（跟条数共用行上的 --row-tools）。
+   一排书名都挂着一个图标 = 一片噪点；平时干净，动手的时候工具都在。
+   ⚠️ 图标画的是**点了会发生什么**：现在是树 ⇒ 画卡片（Grid），现在是卡片 ⇒ 画目录（Menu）。 */
+.app-cats__view-btn {
   display: inline-flex;
   align-items: center;
-  /* border/background 这两条和同文件的 .app-side__op-btn（框内那三个）、
-     RowMenu 的 .row-menu__btn（⋯）是**同一组**：全局 reset 只清了 margin/padding，
-     没清 border（base.css 的 `* { margin: 0; padding: 0 }`）。漏了的话
-     `<button>` 的默认边框就露成一个黑框——2026-10-07 实机截图就是这个。 */
+  justify-content: center;
+  width: var(--ctl-sm);
+  height: var(--ctl-sm);
+  padding: 0;
   border: none;
+  border-radius: var(--radius-sm);
   background: transparent;
-  padding: var(--sp-2);
-  margin-left: calc(-1 * var(--sp-4));
-  border-radius: var(--radius-xs);
   color: var(--cc-text-4);
   cursor: pointer;
+  flex-shrink: 0;
   opacity: var(--row-tools, 1);
-  transition: opacity 0.15s;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
 }
-.app-cats__expand:hover {
+.app-cats__view-btn:hover {
   background: var(--cc-surface-2);
   color: var(--cc-text-1);
 }
@@ -1177,13 +1114,21 @@ onBeforeUnmount(() => {
   padding-left: var(--home-pad-x, var(--sp-15));
   padding-right: var(--home-pad-x, var(--sp-15));
 }
-/* 知识点列表：只有左右留白（--learn-pad-x，见 uiPrefs.js 的 LEARN_PAD_X），底部呼吸位照旧。
+/* 知识点列表：左右留白（--learn-pad-x，见 uiPrefs.js）+ **顶部间距**（--learn-pad-y）。
+   底部呼吸位照旧。
 
    判据用 :has(根节点) 而不是路由名：这一页"要不要底部留白 / 左右留白多大"是**它自己的
-   形态**（三排铺满一屏 / 卡片网格）决定的，认根节点比认路由贴近事实，路由改名也不会失效。 */
+   形态**（三排铺满一屏 / 卡片网格）决定的，认根节点比认路由贴近事实，路由改名也不会失效。
+
+   ⚠️ **顶部间距是 2026-11-04 加的**（用户：「这个一级目录 -> 二级目录 往上一点
+   现在离上面的间隙比较大显得不好看」）—— 原来这里只有左右两档，顶部跟着
+   `.app-content` 的通用 padding（--sp-15 = 32px）⇒ 面包屑离顶栏很远。
+   顶部那一档**独立可调**（跟「上下」不是一回事：「上下」是区块**之间**的间距，
+   这是**整体往上的偏移**）。 */
 .app-content:has(.learn) {
   padding-left: var(--learn-pad-x, var(--sp-15));
   padding-right: var(--learn-pad-x, var(--sp-15));
+  padding-top: var(--learn-pad-y, 16px);
 }
 .app-content > * {
   margin: 0 auto;

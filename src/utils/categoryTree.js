@@ -60,6 +60,27 @@ export function branchyIds(rows) {
 }
 
 /**
+ * 前序列表的"祖先栈"：走一行就把 path 维护成**这一行的祖先链**。
+ *
+ * <p>**这是"祖先"这件事的唯一算法**：path[d] = 深度 d 上那个目录，
+ * 某一行的祖先 = path[0..depth-1]。
+ *
+ * <p>两处用它：{@link visibleRows} 判"这一行被哪个祖先藏起来了"，
+ * {@link ancestorIds} 答"这一行的祖先是谁"（返回时展开到那一条用）。
+ * **各写一遍的话，两处对"祖先"的定义会漂** —— 表现是"树明明展开了，
+ * 那条知识点还是不出现"，而界面上什么异常都看不到。
+ *
+ * @param {Array} path 复用同一个数组（调用方持有）
+ * @param {{kind:'cat'|'topic', depth:number}} r 当前行
+ * @returns {Array} path（就地维护）
+ */
+function pathStep(path, r) {
+  path.length = r.depth
+  if (r.kind === 'cat') path[r.depth] = r.c.id
+  return path
+}
+
+/**
  * 画出来的行：**被收起的目录，它自己那棵子树整段不画**（它自己那一行留着）。
  *
  * <p>「这一行的祖先」= 前序走到这一行时沿路碰到的那些目录（按深度分层记着：
@@ -81,9 +102,27 @@ export function visibleRows(rows, collapsed) {
     for (let i = 0; i < d; i++) {
       if (off.has(path[i])) { hidden = true; break }
     }
-    path.length = d
-    if (r.kind === 'cat') path[d] = r.c.id
+    pathStep(path, r)
     if (!hidden) out.push(r)
   }
   return out
+}
+
+/**
+ * 某一行的**祖先目录 id**（根 → 父，从外往里）。
+ *
+ * <p>用途：从目录树点进一条知识点、再返回时，**把它的祖先逐个展开** ——
+ * 不展开的话那一条根本不画（`visibleRows` 的规矩），返回过去是一片空白。
+ *
+ * @param {Array} rows 前序行
+ * @param {number} index 那一行的下标
+ * @returns {number[]} 祖先目录 id（没有祖先就是空数组）
+ */
+export function ancestorIds(rows, index) {
+  const all = rows || []
+  if (index < 0 || index >= all.length) return []
+  const path = []
+  for (let i = 0; i <= index; i++) pathStep(path, all[i])
+  // path[d] 是深度 d 上的目录；这一行深度是 d ⇒ 它的祖先是 path[0..d-1]
+  return path.slice(0, all[index].depth)
 }

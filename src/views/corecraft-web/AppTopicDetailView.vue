@@ -70,80 +70,16 @@
 
     <template v-else-if="topic">
       <!-- 标题现在在下面 .content 框内第一行（语雀那种），这里不再单独占一行 -->
-      <!-- 标签：pill + 一个入口。
-           收起态：无标签时是「添加标签」，有标签时收成一个 + 号（同一个动作，只是没地方写
-           那四个字了）。点开 → 变成一个**有边框的输入框** + 右侧向下箭头：
-             框里打字回车 = 建新标签；点箭头 = 挑一个已有的。两个动作分开，
-             不做成"一个框既搜又建"——短框塞不下「新建「xxx」」那一行。
-           **箭头只在展开态出现**：收起态它没有可点的东西，一直挂着只是个装饰。
-           入口常驻（不管这条知识有没有标签），所以有标签之后照样能建新标签
-           ——原来的入口文字挂在 editTags.length === 0 上，一有标签就消失。
-           文案用「添加」而不是「新建」：它挂的是**这条知识**的标签，而"新建"
-           会被读成"要造一个全局的新标签"——实际两件事都在（打回车建全局标签、
-           点箭头挂已有的），「添加」只描述"往这条知识上加"这层意思，不误导。 -->
+      <!-- 这一行现在**只剩类型**。
+           原来标签也在这行（pill + 添加 + 挑已有），2026-11-03 用户拍板：
+           「标签功能没啥用，从页面上去掉，后台逻辑暂时不去」⇒ 整块撤了。
+           类型留着 —— 它是"这条知识是什么性质"（单选），跟标签不是一回事。
+           ⚠️ **后端那套标签逻辑一行没动**（表 / 接口 / 服务 / store 层），
+           AI 归类和 AI 采纳仍然会写标签（只是界面上看不见）。
+           别在清理时把它当死代码删了 —— 见 brove-skills/corecraft-web-context/SKILL.md
+           「标签：界面已下线，后端有意保留」。 -->
       <div class="tags">
-        <!-- 类型在标签左边：它是"这条知识是什么性质"（单选，分类意味），
-             标签是"它涉及什么"（多选，中性信息）。形态也不同——类型是主色底，
-             标签是灰底 chip，同一行里能一眼分开。 -->
         <TopicTypeSelect v-model="editTypeId" @change="saveType" />
-        <span v-for="t in editTags" :key="t" class="kb-chip">
-          <span class="kb-chip__text">{{ t }}</span>
-          <button
-            type="button"
-            class="kb-chip__x"
-            :aria-label="`移除标签 ${t}`"
-            @click="removeTag(t)"
-          ><el-icon><Close /></el-icon></button>
-        </span>
-
-        <button
-          v-if="!tagInputOpen"
-          type="button"
-          class="tags__add"
-          aria-label="添加标签"
-          @click="openTagInput"
-        >
-          <template v-if="!editTags.length">添加标签</template>
-          <el-icon v-else><Plus /></el-icon>
-        </button>
-
-        <div v-else class="tags__picker">
-          <el-input
-            ref="tagInputRef"
-            v-model="tagQuery"
-            size="small"
-            placeholder="标签名"
-            @keyup.enter="commitTypedTag"
-            @keydown.esc="closeTagInput"
-            @blur="closeTagInput"
-          />
-          <button
-            type="button"
-            class="tags__caret"
-            :class="{ 'is-open': tagListOpen }"
-            :aria-label="tagListOpen ? '收起已有标签' : '选择已有标签'"
-            @mousedown.prevent
-            @click="tagListOpen = !tagListOpen"
-          ><el-icon><ArrowDown /></el-icon></button>
-
-          <!-- @mousedown.prevent 是必需的，不是保险：不阻止默认行为的话 mousedown 会把焦点
-               从输入框抢走 → blur → 列表当场收起，列表项永远点不中。阻止之后焦点留在
-               输入框，列表能正常点。 -->
-          <div v-if="tagListOpen" class="tags__list">
-            <button
-              v-for="t in filteredTags"
-              :key="t.name"
-              type="button"
-              class="tags__list-item"
-              @mousedown.prevent
-              @click="pickExisting(t)"
-            >
-              <span class="tags__list-name">{{ t.name }}</span>
-              <span class="tags__list-count">{{ t.count }}</span>
-            </button>
-            <p v-if="!filteredTags.length" class="tags__list-empty">没有可加的</p>
-          </div>
-        </div>
       </div>
       <!-- 内容框：白底卡片。**标题是框内第一行**（语雀那种"第一行就是标题"），
            不再是框外一个孤立的表单字段——框外那行 23px 粗体压在正文上方，
@@ -443,7 +379,7 @@ defineOptions({ name: 'AppTopicDetail' })
 import { ref, reactive, computed, nextTick, onMounted, onBeforeUnmount, onActivated, onDeactivated, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowDown, ArrowLeft, Close, Delete, Loading, MagicStick, Plus, Top, VideoPause } from '@element-plus/icons-vue'
+import { ArrowLeft, Close, Delete, Loading, MagicStick, Top, VideoPause } from '@element-plus/icons-vue'
 import KbAiIcon from '../../components/KbAiIcon.vue'
 import MilkdownEditor from '../../components/MilkdownEditor.vue'
 import ViewToggles from '../../components/corecraft-web/ViewToggles.vue'
@@ -466,8 +402,8 @@ import { copyText } from '../../utils/clipboard'
 import { toCategoryTree } from '../../utils/categoryTree'
 import { categoryLink } from '../../utils/categoryNav'
 import {
-  fetchTopic, updateTopic, confirmDeleteTopic, getAllTags, resolveTags,
-  ensureAllTagsLoaded, getCategories,
+  fetchTopic, updateTopic, confirmDeleteTopic, resolveTags,
+  getCategories,
   resolveTopicTypeId
 } from './useCorecraftWebStore'
 
@@ -512,17 +448,8 @@ const immersive = useImmersive()
 // 按钮和状态必须是同一份，否则切了按钮不动。
 const toolbar = ref(false)
 const editContent = ref('')
-const editTags = ref([])
-// 标签输入分两层：tagInputOpen 控制"入口 ⇄ 输入框"这次切换，
-// tagListOpen 控制"箭头下拉"这一次。箭头只在 tagInputOpen 时才存在。
-// 原来是两个入口（inline 输入框 + "选择已有标签" popover），功能重叠；
-// 而且 inline 输入框挂在 `editTags.length === 0` 上，有标签之后就再也建不了新标签。
 // 类型：本地草稿，saveType 落库。可能是悬空的旧 id，落库前用 resolveTopicTypeId 收口
 const editTypeId = ref(null)
-const tagInputOpen = ref(false)
-const tagQuery = ref('')
-const tagListOpen = ref(false)
-const tagInputRef = ref(null)
 
 // 内容自动保存状态机：'idle'（不显示）| 'saving'（debounce 中 / 调用中）| 'saved'（保存成功，2s 后回 idle）
 const saveStatus = ref('idle')
@@ -533,21 +460,6 @@ const saveStatusText = computed(() => {
   if (saveStatus.value === 'saving') return '保存中'
   if (saveStatus.value === 'saved') return '已保存'
   return ''
-})
-
-const existingTags = computed(() => getAllTags())
-
-// 还没挂在这条知识上的标签
-const availableTags = computed(() =>
-  existingTags.value
-    .filter((t) => !editTags.value.includes(t.name))
-)
-
-// 箭头展开的列表：输入框里有字就按字收窄，没字就按频次倒序扫一眼。
-const filteredTags = computed(() => {
-  const q = tagQuery.value.trim().toLowerCase()
-  if (!q) return [...availableTags.value].sort((a, b) => b.count - a.count).slice(0, 50)
-  return availableTags.value.filter((t) => t.name.toLowerCase().includes(q))
 })
 
 // ⚠️ **「关联知识点」那一块从前端删掉了**（2026-10-21）：
@@ -577,7 +489,8 @@ async function load() {
       topic.value = null
       return
     }
-    // 只调详情接口；已有标签列表懒加载（用户点开箭头下拉时才调 ensureAllTagsLoaded）
+    // 只调详情接口（标签列表的懒加载那一支随标签界面一起撤了 —— 界面上
+    // 不再有"挑已有标签"的地方，就不必再拉那份清单）
     const t = await fetchTopic(id)
     if (!t) {
       topic.value = null
@@ -590,7 +503,6 @@ async function load() {
     // 外层改 v-model 不会更新 ProseMirror 的视图（见 MilkdownEditorBody 的注释）。
     // 第一次进来时编辑器还没建出来（editorRef 是 null）⇒ 不用换，它自己会用新值建出来。
     editorRef.value?.switchContent(t.content || '')
-    editTags.value = (t.tags || []).map((tg) => tg.name)
     editTypeId.value = t.typeId ?? null
   } finally {
     loading.value = false
@@ -642,61 +554,10 @@ watch(editContent, (newVal) => {
   }, 1500)
 })
 
-async function saveTags() {
-  if (!topic.value) return
-  // 防御性去重：editTags 理论上 addTag 已 dedup，但避免极端路径把重复字符串传给后端
-  const tags = resolveTags([...new Set(editTags.value)])
-  await applyPatch({ tags })
-  ElMessage.success('已更新')
-}
-
 // 类型切换后立即落库。typeId 可能悬空（字典项被软删），先收口成清单里真实存在的 id
 async function saveType(id) {
   if (!topic.value) return
   await applyPatch({ typeId: resolveTopicTypeId(id) })
-}
-
-function addTag(name) {
-  const value = name.trim()
-  if (!value) return
-  if (editTags.value.includes(value)) return  // dedup：避免重复
-  editTags.value = [...editTags.value, value]
-  saveTags()
-}
-
-// 展开输入框 + 聚焦。ElInput 实例 expose 了 focus()（EP 官方 API），
-// 不用再绕 $el.querySelector('input')。
-async function openTagInput() {
-  tagInputOpen.value = true
-  await nextTick()
-  tagInputRef.value?.focus?.()
-}
-
-// 收起：输入框和下拉一起收，回到入口
-function closeTagInput() {
-  tagInputOpen.value = false
-  tagListOpen.value = false
-  tagQuery.value = ''
-}
-
-// 输入框回车：精确命中已有标签就选它（不然会造出一个同名重复，散在各处），
-// 否则当新标签建。加完收起，回到入口。
-function commitTypedTag() {
-  const v = tagQuery.value.trim()
-  if (!v) { closeTagInput(); return }
-  const hit = availableTags.value.find((t) => t.name === v)
-  addTag(hit ? hit.name : v)
-  closeTagInput()
-}
-
-function pickExisting(t) {
-  addTag(t.name)
-  closeTagInput()
-}
-
-function removeTag(t) {
-  editTags.value = editTags.value.filter((x) => x !== t)
-  saveTags()
 }
 
 // ============ 对这条知识提问（AI，零写入） ============
@@ -1019,7 +880,9 @@ function syncTopicSnapshot(patch) {
   if (patch.content !== undefined) next.content = patch.content
   if (patch.categoryId !== undefined) next.categoryId = patch.categoryId
   if (patch.typeId !== undefined) { next.typeId = patch.typeId; editTypeId.value = patch.typeId }
-  if (patch.tags) { next.tags = resolveTags(patch.tags); editTags.value = patch.tags }
+  // ⚠️ 标签仍然会**跟着 AI 采纳写进去**（后台逻辑保留），只是界面上不再显示/编辑它。
+  // `resolveTags` 那个口子在 store 里，也保留着。
+  if (patch.tags) next.tags = resolveTags(patch.tags)
   topic.value = next
 }
 
@@ -1158,14 +1021,6 @@ watch(() => route.params.id, () => {
 })
 onMounted(() => {
   load()
-})
-
-// 懒加载 tag 列表：用户点开箭头下拉时才调 /kp/tag/list。
-// 详情页打开不请求；首次点开触发请求；后续复用 store 缓存。
-// （没点开过箭头就直接打字回车是纯新建路径，此时 availableTags 是空的，
-//   commitTypedTag 里的"精确命中就选中"自然匹配不到，不会误判。）
-watch(tagListOpen, (open) => {
-  if (open) ensureAllTagsLoaded()
 })
 
 /**
@@ -1369,7 +1224,7 @@ onBeforeUnmount(() => {
   margin: 0 0 var(--sp-2);
 }
 
-/* ---------- 标签行 ---------- */
+/* ---------- 这一行（现在只剩类型） ---------- */
 .tags {
   display: flex;
   align-items: center;
@@ -1380,122 +1235,6 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid var(--cc-border);
 }
 
-/* ---------- 标签入口 / 输入框 ---------- */
-/* 两者都是"空 chip"：高 20px、4px 圆角、--cc-surface-2 底色、**没有边框**——
-   三样全部照抄全局 .kb-chip 的尺寸，所以它跟在真 chip 旁边是同一种东西。
-   之前给它画了一圈 1px 边框、还做到 24px 高，结果在 chip 后面杵着一个
-   又高又带框的方块，一眼就是个控件而不是"再加一个标签"。 */
-.tags__add,
-.tags__picker {
-  display: inline-flex;
-  align-items: center;
-  height: 20px;
-  padding: 0 var(--sp-7);
-  border-radius: 4px;
-  background: var(--cc-surface-2);
-  border: none;
-  color: var(--cc-text-4);
-  font-size: var(--text-sm);
-  cursor: pointer;
-  font-family: inherit;
-  transition: var(--cc-transition);
-}
-.tags__add {
-  gap: var(--sp-4);
-}
-.tags__add:hover {
-  background: var(--cc-surface-3);
-  color: var(--cc-text-2);
-}
-.tags__picker {
-  cursor: text;
-  padding-right: 0;
-  gap: var(--sp-4);
-}
-.tags__picker :deep(.el-input__wrapper) {
-  box-shadow: none;
-  background: transparent;
-  padding: 0;
-}
-.tags__picker :deep(.el-input__inner) {
-  height: 20px;
-  line-height: 20px;
-  font-size: var(--text-sm);
-  color: var(--cc-text-1);
-  padding: 0 var(--sp-7);
-}
-.tags__picker:focus-within {
-  background: var(--cc-surface);
-  box-shadow: inset 0 0 0 1px var(--cc-border-strong);
-}
-.tags__caret {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border: none;
-  background: transparent;
-  color: var(--cc-text-4);
-  cursor: pointer;
-  padding: 0;
-  border-radius: 4px;
-}
-.tags__caret:hover {
-  color: var(--cc-text-2);
-  background: var(--cc-surface-3);
-}
-.tags__caret.is-open {
-  transform: rotate(180deg);
-}
-.tags__list {
-  position: absolute;
-  /* 贴着入口下方弹，和侧边栏的目录树一个层级 */
-  z-index: 30;
-  margin-top: var(--sp-3);
-  min-width: 200px;
-  max-height: 260px;
-  overflow-y: auto;
-  background: var(--cc-surface);
-  border: 1px solid var(--cc-border);
-  border-radius: var(--radius-md);
-  box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
-  padding: var(--sp-3) 0;
-}
-.tags__list-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-8);
-  width: 100%;
-  border: none;
-  background: transparent;
-  padding: var(--sp-5) var(--sp-10);
-  font-size: var(--text-sm);
-  color: var(--cc-text-1);
-  cursor: pointer;
-  text-align: left;
-  font-family: inherit;
-}
-.tags__list-item:hover {
-  background: var(--cc-surface-2);
-}
-.tags__list-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.tags__list-count {
-  font-size: var(--text-xs);
-  color: var(--cc-text-4);
-  flex-shrink: 0;
-}
-.tags__list-empty {
-  padding: var(--sp-5) var(--sp-10);
-  font-size: var(--text-sm);
-  color: var(--cc-text-4);
-  margin: 0;
-}
 
 /* ---------- 正文框 ---------- */
 /* 和知识点卡片同一张脸：白底 + #eef0f3 细边 + 12px 圆角。

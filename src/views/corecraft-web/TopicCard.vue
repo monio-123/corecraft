@@ -43,12 +43,9 @@
     <p v-if="excerpt" class="card__excerpt">{{ excerpt }}</p>
     <p v-else class="card__excerpt card__excerpt--empty">未写正文</p>
 
-    <!-- 底部只剩标签，没有目录。目录不进卡片：目录一多，平铺的下拉列表就没法用了，
-         归类和改类统一走"把卡片拖到右侧那棵树上"这一个动作。
-         标签样式是全局 .kb-chip，和知识点详情页的标签是同一份规则。 -->
-    <div v-if="tags.length" class="card__tags">
-      <span v-for="t in tags" :key="t" class="kb-chip">{{ t }}</span>
-    </div>
+    <!-- ⚠️ **底部那块标签 chip 撤了**（2026-11-03 用户拍板：标签功能从页面上去掉，
+         后台逻辑暂时不去）。目录本来就不进卡片（归类走拖拽），
+         标签再撤掉 ⇒ 卡片底部**什么都不剩** —— 那一行本来就是为标签留的。 -->
   </article>
 </template>
 
@@ -118,7 +115,7 @@ function setMoreBtn(el) {
   moreBtn = el
 }
 
-// 和 CategoryRowMenu / TagRowMenu 同一个写法：菜单项写死成常量，
+// 和 CategoryRowMenu 同一个写法：菜单项写死成常量，
 // 加一项只动这一个数组，加错 command 名会在 onCommand 里对不上而不是"点了没反应"。
 const ITEMS = [
   { command: 'categorize', label: '归类到目录' },
@@ -141,8 +138,6 @@ function onCommand(cmd) {
 function onClick() {
   emit('click')
 }
-
-const tags = computed(() => (props.topic.tags || []).map((t) => t.name || t))
 
 // 内容摘要：清洗规则收敛到 store 的 excerptOf（删除确认框也要用同一份）
 const excerpt = computed(() => excerptOf(props.topic.content))
@@ -268,13 +263,5 @@ const excerpt = computed(() => excerptOf(props.topic.content))
    它不是"坏了"，是"还没写"（所以不用错误色）。 */
 .card__excerpt--empty {
   color: var(--cc-text-3);
-}
-
-.card__tags {
-  display: flex;
-  gap: var(--sp-5);
-  margin-top: var(--sp-10);
-  min-width: 0;
-  overflow: hidden;
 }
 </style>

@@ -4,7 +4,21 @@
 
        trigger="click" 而不是 hover：菜单 teleport 到 body，hover 触发时鼠标从 ⋯ 滑到菜单的
        路径会跨出触发元素的边界，菜单当场就关了（之前级联菜单踩过这个坑）。点开就没这问题。 -->
-  <el-dropdown trigger="click" @command="(cmd) => emit('command', cmd)">
+  <!-- ⚠️ **persistent=false 是性能项，不是风格选择**（2026-11-03 晚 · 性能）。
+       persistent=true（EP 默认）时，菜单内容在**挂载那一刻**就渲染出来，
+       于是 floating-ui 的 createPopper 立刻被调用（usePopper 里 watch 两个 ref 都非空就建实例）
+       ⇒ **每个下拉菜单在挂载时就付一次建实例 + 摆位的钱**，哪怕用户一次都没点开它。
+
+       实测（真实 TopicCard 组件，20 张卡片，浏览器里跑 5 次取中位数）：
+         带 el-dropdown : 挂载 71.8ms ｜ 画出一帧 133.3ms
+         不带 dropdown  : 挂载  2.8ms ｜ 画出一帧  18.4ms
+       ⇒ **20 个下拉菜单白花 114.9ms**。知识点列表一页就是 20 张卡片 ⇒ 每次进卡片视图
+       都先付这 115ms，这就是「点目录跳卡片页慢半拍」的主因（网络只占几十毫秒）。
+
+       persistent=false 时内容**首次点开才渲染** ⇒ 挂载时一个 popper 都不建，
+       列表里几十个菜单一个都不用花钱；真点开了再建那一个。
+       代价只是每次打开菜单重建一次 DOM（三个静态菜单项，可忽略）。 -->
+  <el-dropdown trigger="click" :persistent="false" @command="(cmd) => emit('command', cmd)">
     <!-- prevent.stop 必须写在这里：调用方那一行本身通常也是可点的（RouterLink / button），
          只 stop 拦得住冒泡，拦不住浏览器照着 href 或外层的 click 走。写一次，两处都受益。 -->
     <button

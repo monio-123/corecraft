@@ -226,10 +226,27 @@ export async function ask(
 
 const questionsSlot = createLoadSlot()
 
+/**
+ * **界面上不出现的引导问题**。目前只有一条：「挑标签」（`pick_tags`）。
+ *
+ * <p>2026-11-03 用户拍板：「标签功能没啥用，从页面上去掉，后台逻辑暂时不去」。
+ * 那个问题的答案是一串标签，采纳它要弹一个**标签编辑框** ⇒ 标签界面没了，
+ * 这个按钮也就没有意义了 ⇒ 从清单里去掉。
+ *
+ * <p>⚠️ **后端那条提示词还在**（`sys_config` 的 `ai.prompt.question.pick_tags`），
+ * 一行没动 —— "后台逻辑暂时不去"。这里只是**界面不显示它**。
+ */
+const HIDDEN_QUESTION_KEYS = new Set(['pick_tags'])
+
+/** 引导问题的 key 段（`key:contexts` 复合值 ⇒ 取前一段）。 */
+function questionKeyOf(q) {
+  return String(q?.key || '').split(':')[0]
+}
+
 export async function ensureAiQuestionsLoaded(force = false) {
   return loadOnce(questionsSlot, force, async (isCurrent) => {
     const res = await fetchQuestions()
-    const next = res?.data || []
+    const next = (res?.data || []).filter((q) => !HIDDEN_QUESTION_KEYS.has(questionKeyOf(q)))
     // 只有最新发起的那次才落缓存（见 lazyLoad 的「版本号」）
     if (isCurrent()) aiQuestions.value = next
     return next

@@ -24,47 +24,27 @@
       />
     </template>
 
-    <!-- 标签 和 organize 合成一处分支。**这两块的标签编辑逐字相同**，
-         organize 只是多出「标题」「目录」两项控件，标签那块一个字都不用变。
+    <!-- 目录和 organize 合成一处分支。
+         ⚠️ **标签那一块撤了**（2026-11-03 用户拍板：标签从页面上去掉，
+         后台逻辑暂时不去）：界面上不再显示/编辑标签，
+         但 **AI 提议的标签仍然照写**（`draftTags` 还在，`confirm` 里
+         `patch.tags` 那条路一行没动）—— 只是用户看不见。
          ⚠️ 写进去的是全部标签，不是只有 AI 推荐的：updateTopic 是
          deleteByTopicId 后重插（替换不是合并），只传新增的那几个会把用户原有的标签抹掉 -->
-    <template v-else-if="field === 'tags' || field === ORGANIZE_FIELD">
-      <template v-if="field === ORGANIZE_FIELD">
-        <div class="adopt__field">
-          <span class="adopt__label">标题</span>
-          <el-input v-model="draftTitle" placeholder="给它起个名字" />
-        </div>
-
-        <div class="adopt__field">
-          <span class="adopt__label">目录</span>
-          <p class="adopt__now">现在：{{ currentCategoryName }}</p>
-          <CategoryTreeSelect
-            v-model="draftCategoryId"
-            :categories="categories"
-            :new-category="parsed?.newCategory || null"
-            placeholder="选择目录"
-          />
-        </div>
-      </template>
+    <template v-else-if="field === ORGANIZE_FIELD">
+      <div class="adopt__field">
+        <span class="adopt__label">标题</span>
+        <el-input v-model="draftTitle" placeholder="给它起个名字" />
+      </div>
 
       <div class="adopt__field">
-        <span v-if="field === ORGANIZE_FIELD" class="adopt__label">标签</span>
-        <div class="adopt__tags">
-          <span v-for="(t, i) in draftTags" :key="t" class="kb-chip">
-            <span class="kb-chip__text">{{ t }}</span>
-            <button
-              type="button"
-              class="kb-chip__x"
-              :aria-label="`移除标签 ${t}`"
-              @click="draftTags.splice(i, 1)"
-            ><el-icon><Close /></el-icon></button>
-          </span>
-        </div>
-        <el-input
-          v-model="newTag"
-          size="small"
-          placeholder="再加一个标签"
-          @keyup.enter="addTag"
+        <span class="adopt__label">目录</span>
+        <p class="adopt__now">现在：{{ currentCategoryName }}</p>
+        <CategoryTreeSelect
+          v-model="draftCategoryId"
+          :categories="categories"
+          :new-category="parsed?.newCategory || null"
+          placeholder="选择目录"
         />
       </div>
     </template>
@@ -103,7 +83,6 @@
  */
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Close } from '@element-plus/icons-vue'
 import { adoptFieldOf, parseAdopt, NEW_CATEGORY, ORGANIZE_FIELD } from './aiAdopt'
 import CategoryTreeSelect from './CategoryTreeSelect.vue'
 import { createCategory } from './useCorecraftWebStore'
@@ -141,8 +120,14 @@ const currentCategoryName = computed(
 
 const draftTitle = ref('')
 const draftCategoryId = ref(null)
+/**
+ * AI 提议的标签。**界面上不显示了**（标签功能下线），但**照样写进库** ——
+ * `confirm` 里 `patch.tags` 那条路一行没动（后台逻辑保留）。
+ *
+ * ⚠️ 别因为"界面上看不见"就把它一起删了：删了就是"AI 提议的标签被丢掉"，
+ * 那已经不是"暂时不做"，是"改数据"了。
+ */
 const draftTags = ref([])
-const newTag = ref('')
 
 // 每次打开都重新解析：对话还在增长，同一轮的答案也会变，用打开那一刻的为准
 watch(
@@ -158,7 +143,6 @@ watch(
       ? (p.categoryId ?? (p.newCategory ? NEW_CATEGORY : props.topic?.categoryId ?? null))
       : props.topic?.categoryId ?? null
     draftTags.value = [...new Set([...(props.topic?.tags || []).map((t) => t.name), ...(p?.tags || [])])]
-    newTag.value = ''
   }
 )
 
@@ -175,8 +159,6 @@ const canConfirm = computed(() => {
       return draftTitle.value.trim().length > 0
     case 'categoryId':
       return draftCategoryId.value != null
-    case 'tags':
-      return draftTags.value.length > 0
     // organize 一次三个字段，**各自独立**：有一项有值就能确认。
     // 目录没选**不拦**——patch 里没有 categoryId 就是"不动目录"，
     // 跟"选了空目录等于把这条知识移回未归类"完全是两回事
@@ -188,12 +170,6 @@ const canConfirm = computed(() => {
       return false
   }
 })
-
-function addTag() {
-  const name = newTag.value.trim()
-  if (name && !draftTags.value.includes(name)) draftTags.value.push(name)
-  newTag.value = ''
-}
 
 /**
  * 目录可能要新建：选了「+ 新建「X」」就真的建，返回它的 id。
@@ -240,6 +216,7 @@ async function confirm() {
     // 用户只想要目录、把标题和标签改回原样，确认后也只动目录
     patch = {}
     if (draftTitle.value.trim()) patch.title = draftTitle.value.trim()
+    // ⚠️ 标签照写（后台逻辑保留），只是界面上没有那一格可改。
     if (draftTags.value.length) patch.tags = [...draftTags.value]
     if (draftCategoryId.value === NEW_CATEGORY) {
       const id = await createNewCategoryId(p?.newCategory)
@@ -248,8 +225,6 @@ async function confirm() {
     } else if (draftCategoryId.value != null) {
       patch.categoryId = draftCategoryId.value
     }
-  } else if (field.value === 'tags') {
-    patch = { tags: [...draftTags.value] }
   }
   // organize 的 patch 起步是 {}，三个字段全被清空时它仍然是空的——那就不该发生任何写入
   if (!patch || !Object.keys(patch).length) return
@@ -282,12 +257,6 @@ async function confirm() {
   margin-bottom: var(--sp-4);
   font-size: var(--text-xs);
   color: var(--cc-text-3);
-}
-.adopt__tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-6);
-  margin-bottom: var(--sp-10);
 }
 
 .adopt__raw {

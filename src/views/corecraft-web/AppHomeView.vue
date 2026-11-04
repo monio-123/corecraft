@@ -32,26 +32,25 @@
       </div>
     </section>
 
-    <!-- 概览。四张里**只有两张是入口**，用 RouterLink（不是 div onclick）：
+    <!-- 概览。**三张卡全是入口**（RouterLink，不是 div onclick）：
          语义上就是链接，右键复制链接 / 中键新标签页 / 读屏器念得出来，全是白送的。
-         后两张是纯数字，去处本来就在同一个壳里：
-         「目录」= 侧边栏那棵树（只显示一级，这里给的是全量统计）；
-         「知识点」原来也跳 `/app/learn` —— 那是**全部知识点平铺**，点进去没有方向
-         （2026-11-02 定的：那个入口已经撤掉了，这一格改成纯统计）。
-         「今日新增」原来是**死数字**（点不动），现在跳列表页的「今天」范围 ——
-         它是全局的一个数，不指向本屏任何一块（原先指向的「最近记录」面板已删，见 #123）。
-         用户明确说四张卡先不动、入口收敛的事后面单独议 —— **这一轮就是那次"后面单独议"**。
-         "能不能点"只靠 hover 的边框变化 + 手型表达，**不加静态装饰**——
-         四个数字并排摆着，给不动的两张也画个箭头只会把真正能点的那两张淹掉。 -->
+
+         ⚠️ **原来有四张**（知识点 / 目录 / 待归类 / 今日新增），「目录」那张 2026-11-03 删掉
+         （用户原话：「首页的那个目录栏不要了 只保留知识点 待归类 今日新增」）。
+         目录不是一个该从首页进的去处 —— 侧边栏那棵树就在那儿。
+
+         ⚠️ **三张卡的落地口径各不相同**（"同一屏三件事"的关键）：
+         | 卡 | 落到哪 | 时间筛选 | 目录范围 |
+         |---|---|---|---|
+         | 知识点 | `/app/learn` | **不限** | 全部 |
+         | 今日新增 | `/app/learn?range=today` | **今天** | 全部 |
+         | 待归类 | `/app/learn?category=UNCATEGORIZED` | **不限** | 只看待归类那批 |
+         「待归类」是**首页唯一的入口**（列表页那个药丸已经删掉，见 AppLearnView）。 -->
     <section class="stats">
-      <div class="stat">
+      <RouterLink class="stat stat--link" :to="{ path: '/app/learn' }">
         <div class="stat__num">{{ topicCount }}</div>
         <div class="stat__label">知识点</div>
-      </div>
-      <div class="stat">
-        <div class="stat__num">{{ categories.length }}</div>
-        <div class="stat__label">目录</div>
-      </div>
+      </RouterLink>
       <RouterLink
         class="stat stat--link"
         :to="{ path: '/app/learn', query: { category: UNCATEGORIZED } }"
@@ -97,7 +96,7 @@ import { keywordFromRoute } from '../../utils/routeQuery'
 import { rangeBounds, withinRange } from '../../utils/timeRange'
 import TopicTypeSelect from './TopicTypeSelect.vue'
 import {
-  getTopicIndex, getCategories,
+  getTopicIndex,
   getUncategorizedCount, createTopic,
   UNCATEGORIZED
 } from './useCorecraftWebStore'
@@ -124,7 +123,6 @@ const saving = ref(false)
 // 结构索引（全集，不含正文）—— 首页只要**条数**和"今天新增了几条"，
 // 一条正文都不需要（正文那 90 万字符是列表接口慢的真正原因）。
 const topics = computed(() => getTopicIndex())
-const categories = computed(() => getCategories())
 const topicCount = computed(() => topics.value.length)
 const uncategorizedCount = computed(() => getUncategorizedCount())
 
@@ -280,11 +278,12 @@ onMounted(async () => {
 /* 概览。**不参与高度分配**（`flex: 0 0 auto` = 保持自己的高度）：
    用户明确要求"第二三行不要改变本身的框的大小"——它们被拉高时框内的字会偏上/偏下，
    数字和标签不在一条基线上。与其去修那个对齐，不如让它们根本不参与分配；
-   录入区让出来的高度由 .home::after 那条尾巴接住（见上面那段）。 */
+   录入区让出来的高度由 .home::after 那条尾巴接住（见上面那段）。
+   ⚠️ **三列**（2026-11-03：「目录」那张卡删掉 ⇒ 四列变三列）。 */
 .stats {
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: var(--sp-11);
 }
 .stat {

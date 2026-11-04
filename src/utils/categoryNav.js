@@ -16,8 +16,50 @@
  * @param {number|string} categoryId 目录 id
  * @returns {{path:string,query:object}} vue-router 的 location 对象
  */
+import { VIEW_TREE, viewOf } from './viewPref'
+
+/**
+ * 「跳到某个目录的卡片视图」的地址。
+ *
+ * @param {number|string} categoryId 目录 id
+ * @returns {{path:string,query:object}} vue-router 的 location 对象
+ */
 export function categoryLink(categoryId) {
   return { path: '/app/learn', query: { category: categoryId } }
+}
+
+/**
+ * 「跳到某个**一级目录**的树视图」的地址。
+ *
+ * <p>和 {@link categoryLink} 是**两种形态**，不是同一个地址的两个写法：
+ * - `?tree=<id>` = **树视图**：这一本书的整棵目录树（结构）。
+ * - `?category=<id>` = **卡片视图**：那个目录（含子树）的知识点平铺（内容）。
+ *
+ * <p>⚠️ **侧边栏点书走树视图、正文里点目录走卡片视图** —— 前者是"我要看这本书
+ * 有什么"，后者是"我要看这个目录里的内容"，问的不是一件事。
+ * 两个参数互斥：写的时候互相清掉 ⇒ 不用判"两个都带时听谁的"。
+ *
+ * @param {number|string} categoryId 一级目录 id
+ * @returns {{path:string,query:object}} vue-router 的 location 对象
+ */
+export function treeLink(categoryId) {
+  return { path: '/app/learn', query: { tree: categoryId } }
+}
+
+/**
+ * 「跳到某个目录」——**按这个目录的展示偏好**决定去树视图还是卡片视图。
+ *
+ * <p>**不是第三种地址**，只是前两种按偏好挑一个：偏好是树 ⇒ `?tree=`，
+ * 是卡片 ⇒ `?category=`。两种形态的地址本来就只有那两个（见上面的注释），
+ * 这里只做"挑一个"，不新造第三种。
+ *
+ * <p>偏好在 {@link viewPref}（存在 `sys_config` 的"我的覆盖"那一层）。
+ *
+ * @param {{id:number, parentId?:number}} category 目录对象
+ * @returns {{path:string,query:object}} vue-router 的 location 对象
+ */
+export function viewLink(category) {
+  return viewOf(category) === VIEW_TREE ? treeLink(category.id) : categoryLink(category.id)
 }
 
 /**
@@ -61,14 +103,4 @@ export const TOPIC_HREF_PREFIX = '/app/topic/'
  */
 export function topicHref(topicId) {
   return TOPIC_HREF_PREFIX + topicId
-}
-
-/**
- * 跳到知识点详情页的路由地址（vue-router 的 location 对象）。
- *
- * @param {number|string} topicId 知识点 id
- * @returns {{path:string}}
- */
-export function topicLink(topicId) {
-  return { path: '/app/topic/' + topicId }
 }

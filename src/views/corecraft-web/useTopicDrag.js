@@ -30,11 +30,27 @@
  * 至于长按会弹出浏览器的「复制 / 查找」菜单——那是 `user-select` 和
  * `-webkit-touch-callout` 管的（都挂在 .card 上），跟拖拽逻辑无关。
  */
-import { onBeforeUnmount } from 'vue'
+import { onBeforeUnmount, ref } from 'vue'
 import { dnd, dndStart, dndMove, dndDrop, dndReset } from './useCorecraftWebStore'
 
 /** 位移超过这个像素才算起拖（横竖取最大值，跟库一致）。 */
 const TOLERANCE = 8
+
+/**
+ * 这一次手势**是不是"拖了一下"**（而不是点了一下）。
+ *
+ * <p>为什么需要它：拖完之后浏览器**照样会发 click**（指针按下和抬起在同一个元素上，
+ * 只是中间移动过）⇒ 拖着一个目录丢到另一行上，那一行会**同时**被"点"一下
+ * ⇒ 顺手就跳进了那个目录的卡片视图。用户看到的是"我拖了一下，页面自己跳了"。
+ *
+ * <p>所以：**起拖了就把这个标记置真**，点击的处理方先问它一句。
+ * 下一次 pointerdown 时复位（那是新的一次手势）。
+ *
+ * <p>⚠️ **模块级**：一次只可能有一个拖拽在进行中，而"拖完了别再当成点击"
+ * 这条规则**所有拖拽源都要用** ⇒ 每个源各存一份的话，拖目录的标记和
+ * 拖知识点的标记会各说各话（点那一行的时候读的是哪一份？）。
+ */
+export const gestureWasDrag = ref(false)
 
 /**
  * @param {(e: PointerEvent) => object|null} getSource 认出"按下的是哪个拖拽源"。
@@ -79,6 +95,7 @@ export function useTopicDrag(getSource) {
     // 一超阈值立刻起拖——不分鼠标 / 触摸，PC 的手感本来也是"挪动才拖"
     if (!source) return
     dragging = true
+    gestureWasDrag.value = true
     dndStart(source.what, originX, originY, source.label)
     document.body.classList.add('dnd-active')
     if (e.cancelable) e.preventDefault()
@@ -109,6 +126,8 @@ export function useTopicDrag(getSource) {
     // 只认主键 / 单指：右键菜单、多指手势（缩放）不参与拖拽
     if (e.pointerType === 'mouse' && e.button !== 0) return
     if (!e.isPrimary) return
+    // 新的一次手势 ⇒ 上一次"拖过"的标记作废（不然下一次点击会被当成拖）
+    gestureWasDrag.value = false
     source = getSource(e)
     originX = e.clientX
     originY = e.clientY

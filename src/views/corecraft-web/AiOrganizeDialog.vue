@@ -39,7 +39,9 @@
                 {{ newCategoryPath(r.newCategory, categories) }}
               </span>
               <span v-else-if="r.pick != null">目录：{{ pathOf(r.pick) }}</span>
-              <span v-if="r.patch?.tags?.length">标签：{{ r.patch.tags.join('、') }}</span>
+              <!-- ⚠️ **标签那一行撤了**（2026-11-03 用户拍板：标签从页面上去掉，
+                   后台逻辑暂时不去）。**AI 提议的标签仍然会写进库**
+                   （patch.tags 那条路一行没动）—— 只是界面上不露出来。 -->
             </p>
             <!-- **每行都有**（跑完的），不管 AI 是提议新建还是选了已有的——用户要能随时改选 -->
             <CategoryTreeSelect

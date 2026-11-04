@@ -35,11 +35,16 @@ export const ORGANIZE_FIELD = 'title|categoryId|tags'
  * questionKey 的 key 段 → kp_topic 的字段名。
  * 数组形式的 `ORGANIZE_FIELD` 只给 `organize` 用：它一次产出三个字段，
  * 不走单字段的 switch（`adoptFieldOf` 只是拿它当"这条能不能被采纳"的判据）。
+ *
+ * ⚠️ **`pick_tags` 不在里面了**（2026-11-03 用户拍板：标签功能从页面上去掉，
+ * 后台逻辑暂时不去）：「挑标签」那个引导问题不再出现在界面上，
+ * 它的答案也就没有"该写进哪个字段"的语义了 ⇒ 不给采纳按钮。
+ * ⚠️ **后端的提示词（`ai.prompt.question.pick_tags`）和写标签的口子都还在** ——
+ * `organize` 那条仍然产出标签并照写（见 `parseOrganize`）。
  */
 const ADOPT_FIELDS = {
   rename: 'title',
   pick_category: 'categoryId',
-  pick_tags: 'tags',
   organize: ORGANIZE_FIELD
 }
 
@@ -100,7 +105,7 @@ const BULLET = /^\s*(?:[-*•·]|\d{1,2}\s*[.、)）])\s*(.*)$/
  *
  * **取值一律走 cleanValue**：模型很爱写 `- 「Lombok」。`，只 trim 的话引号和句号
  * 会一起存进 kp_tag，变成一个叫"「Lombok」。"的标签，以后再匹配就永远对不上。
- * 两条取标签的地方（parseTags / parseOrganize）都从这里走。
+ * 取标签名的地方（parseOrganize）都从这里走。
  */
 function tagNameOf(line) {
   const m = String(line || '').match(BULLET)
@@ -124,8 +129,6 @@ export function parseAdopt(turn, categories) {
       return parseRename(turn?.answer)
     case 'categoryId':
       return parseCategory(turn?.answer, categories)
-    case 'tags':
-      return parseTags(turn?.answer)
     case ORGANIZE_FIELD:
       return parseOrganize(turn?.answer, categories)
     default:
@@ -228,18 +231,6 @@ export function newCategoryPath(nc, categories) {
 
 function parseCategory(answer, categories) {
   return matchCategory(cleanName(answer), categories)
-}
-
-function parseTags(answer) {
-  const names = []
-  const seen = new Set()
-  for (const line of String(answer || '').split('\n')) {
-    const name = tagNameOf(line)
-    if (!name || seen.has(name)) continue
-    seen.add(name)
-    names.push(name)
-  }
-  return names.length ? { tags: names } : null
 }
 
 /**
