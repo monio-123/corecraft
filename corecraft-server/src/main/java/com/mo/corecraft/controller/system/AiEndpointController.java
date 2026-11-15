@@ -2,7 +2,9 @@ package com.mo.corecraft.controller.system;
 
 import com.mo.corecraft.exception.CoreCraftException;
 import com.mo.corecraft.model.req.AiEndpointSaveReq;
+import com.mo.corecraft.model.req.AiEndpointTestReq;
 import com.mo.corecraft.model.resp.AiEndpointResp;
+import com.mo.corecraft.model.resp.AiEndpointTestResp;
 import com.mo.corecraft.model.resp.ResultResp;
 import com.mo.corecraft.service.AiEndpointService;
 import com.mo.corecraft.utils.SecurityUtil;
@@ -45,6 +47,15 @@ public class AiEndpointController {
             throw new CoreCraftException("更新时必须带 API ID");
         }
         return ResultResp.data(aiEndpointService.save(SecurityUtil.getUserId(), req));
+    }
+
+    /**
+     * 测试连通性。**上游不通不抛异常**：它是测试结果，不是系统故障
+     * （抛了会被全站错误提示出口先弹一条红字，界面里再显示一遍同样的原文）。
+     */
+    @RequestMapping(value = "/test", method = RequestMethod.POST)
+    public ResultResp<AiEndpointTestResp> test(@RequestBody AiEndpointTestReq req) {
+        return ResultResp.data(aiEndpointService.test(SecurityUtil.getUserId(), req));
     }
 
     @RequestMapping(value = "/{id}", method = RequestMethod.DELETE)

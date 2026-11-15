@@ -20,6 +20,25 @@ public class KpTopic extends BaseEntity {
 
     private String content;
 
+    /**
+     * 标题 + 正文的归一化指纹（{@link com.mo.corecraft.utils.ContentHash}，任何内容变化都更新）。
+     * <p>
+     * 两条写路径都要维护它：{@code KpTopicServiceImpl.updateTopic}（一般编辑）和
+     * {@code KpGenStepMapper.updateTopicContent}（AI 写正文）——只改一条就失效。
+     * <p>
+     * NULL = 存量行未计算（迁移时有意留空，SQL 里算不出和 Java 同口径的归一化），
+     * 由写路径补算；证据生成前若为 NULL 必须先补算。
+     */
+    private String contentHash;
+
+    /**
+     * 重大正文版本号（初始 1）：**只有明确的大幅重写、重新生成才递增**，一般编辑不动它。
+     * <p>
+     * 「证据是否当前有效」的判据**只有** {@code evidence.contentEpoch == 本列}（设计 §9.2）。
+     * epoch 切换时学习投影回待复测、A/M/H 回基线；hash 只负责 epoch 内一般编辑的可信度打折。
+     */
+    private Integer contentEpoch;
+
     @TableField("parent_topic_id")
     private Long parentTopicId;
 
@@ -53,4 +72,22 @@ public class KpTopic extends BaseEntity {
      */
     @TableField("type_id")
     private Long typeId;
+
+    /**
+     * 是否参与掌握度的**单条覆盖**：NULL=继承类型默认 / TRUE=参与 / FALSE=不参与。
+     *
+     * <p>解析顺序只有一条（后端一处判据，见 {@code MasteryScope}）：
+     * {@code 单条显式值 > 类型默认值（sys_dict_item.mastery_enabled）> 安全兜底（不参与）}。
+     *
+     * <p>⚠️ **字段名故意叫 {@code masteryOverride} 而不是 {@code masteryEnabled}**：
+     * 库里存的是**可空的原始值**（还没解析），而响应里的 {@code masteryEnabled}
+     * 是**已解析的最终判据**。两者同名 ⇒ BeanUtils 转换时会把原始值灌进最终值那一位，
+     * 而最终值必须由判据算出来 ⇒ 两处同名必然串位。
+     *
+     * <p>⚠️ **这里必须用 {@code updateStrategy = ALWAYS}**：NULL 在这一列有真实含义
+     * （"没配置，继承类型"），而 MP 默认的 NOT_NULL 策略会把 null 从 UPDATE 里跳过
+     * ⇒ "恢复成继承类型"这个操作永远写不进去（列在、值还在，静默失效）。
+     */
+    @TableField(value = "mastery_enabled", updateStrategy = FieldStrategy.ALWAYS)
+    private Boolean masteryOverride;
 }

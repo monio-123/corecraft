@@ -3,6 +3,7 @@ package com.mo.corecraft.service;
 import com.mo.corecraft.model.req.KpCategoryCreateReq;
 import com.mo.corecraft.model.req.KpCategoryImportReq;
 import com.mo.corecraft.model.req.KpCategoryRenameReq;
+import com.mo.corecraft.model.resp.KpCategoryDeletePreviewResp;
 import com.mo.corecraft.model.resp.KpCategoryResp;
 
 import java.util.List;
@@ -48,6 +49,22 @@ public interface KpCategoryService {
      *
      * <p>2026-10-07 之前的行为是"子目录上提到被删节点的父级"，用户明确否掉了：
      * 删一个目录不该顺手留下"它原来那些孩子跑到同级了"这种结果。
+     *
+     * @param cascadeTopics **true = 连这棵子树里的知识点一起删**（软删）。
+     *        false = 知识点回到"未归类"，一条不删（默认行为）。
+     *        <p>为什么要有这个开关：删目录后的待归类是**堆积源** —— 目录树改了，
+     *        里面的知识点却全部掉进"待归类"桶里，越整理越脏。而批量清理待归类
+     *        在服务端分页下语义不清（"全选"是当前页还是全部？）。
+     *        <p>⇒ 从**源头**堵：删目录时让用户明确选择"这些知识点一起删掉"。
+     *        默认不删 —— 目录只是归类的壳，整理结构不该默认丢知识。
      */
-    void deleteCategory(Long categoryId, Long userId);
+    void deleteCategory(Long categoryId, Long userId, boolean cascadeTopics);
+
+    /**
+     * 「删这个目录会连带删掉什么」的**预检**：数清楚整棵子树里的目录数和知识点数。
+     *
+     * <p>这两个数字要摆在**不可逆操作**的确认框里 ⇒ 必须来自服务端现查，
+     * 不能用前端的缓存（那份是当前关键词下的快照，还会过期）。
+     */
+    KpCategoryDeletePreviewResp previewDelete(Long categoryId, Long userId);
 }

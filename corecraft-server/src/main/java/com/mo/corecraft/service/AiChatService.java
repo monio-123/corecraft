@@ -23,6 +23,35 @@ public interface AiChatService {
     List<AiQuestionResp> questions();
 
     /**
+     * 某条提示词配置**展开 `【引用】` 之后**的最终文本（空 / 不存在 ⇒ 空串）。
+     *
+     * <p>⚠️ **为什么不能直接读 `sys_config`**：配置里可能写着 `【引用】ai.skill.writing`，
+     * 那是**给会展开的那条通路看的**。前端 `GET /sys/config/mine` 拿到的是原文
+     * ⇒ 原样塞进 prompt 的话，模型收到的是一行字面的「【引用】ai.skill.writing」，
+     * **被引的规范一个字都到不了**（2026-11-12 实测踩到）。
+     *
+     * <p>所以「要拿去当提示词的文本」一律走这个口，和 `questionKey` 那条路同一份展开逻辑。
+     */
+    String composedPrompt(String key);
+
+    /**
+     * 几条知识的正文摘要（**按类型分组**：【学习】/【笔记】…），现查现拼。
+     *
+     * <p>给**任务执行端**用（2026-11-15 修随堂出题「出不了题」）：出题/考试这类
+     * 步骤的材料是前端拼的**出题指令**，正文得后端现捞——前端那条路是
+     * 「给 material 就不捞知识」（判卷时 material 是整卷，别再捞一遍几十 KB 正文），
+     * 于是任务路径**正文压根没进 prompt**，模型只能答「出不了题」。
+     *
+     * <p>⚠️ **要复用这一份，不要在别处再实现一遍分组格式**——出题规范里写死了
+     * 「材料按类型分组，每组前面标着这一组的类型名」，格式分叉了模型就认不出材料。
+     *
+     * @param topicIds 要考的几条知识
+     * @param userId 归属校验（只取自己的）
+     * @return 分组后的正文摘要（无正文时返回空串）
+     */
+    String digestFor(List<Long> topicIds, Long userId);
+
+    /**
      * 流式回答。**阻塞**——一直读到模型答完，中途每产出一段就喂给 deltaSink。
      *
      * 异步是 Web 层的事（SseEmitter 要在 handler 返回之后才写得进去），所以这个方法
@@ -58,10 +87,11 @@ public interface AiChatService {
      *                     {@code stop} = 正常写完；{@code length} = **撞了输出上限，内容是截断的**。
      *                     空串 = 上游没给。
      */
-    record AiDelta(String prompt, String reasoning, String content, String finishReason) {
+    record AiDelta(String prompt, String reasoning, String content, String finishReason,
+                   Integer tokenPrompt, Integer tokenCompletion) {
 
         public static AiDelta ofPrompt(String prompt) {
-            return new AiDelta(prompt, "", "", "");
+            return new AiDelta(prompt, "", "", "", null, null);
         }
 
         /**
@@ -72,7 +102,7 @@ public interface AiChatService {
          * 用户以为拿到的是完整的一段）。要发增量就把 finishReason 一起带上。
          */
         public static AiDelta of(String reasoning, String content, String finishReason) {
-            return new AiDelta("", reasoning, content, finishReason);
+            return new AiDelta("", reasoning, content, finishReason, null, null);
         }
     }
 

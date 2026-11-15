@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mo.corecraft.model.query.KpTopicQuery;
 import com.mo.corecraft.model.req.KpTopicCreateReq;
+import com.mo.corecraft.model.req.KpTopicMasteryReq;
 import com.mo.corecraft.model.req.KpTopicUpdateReq;
 import com.mo.corecraft.model.resp.KpTopicIndexResp;
 import com.mo.corecraft.model.resp.KpTopicResp;
@@ -58,11 +59,20 @@ public class KpTopicController {
      *
      * <p>带 q 时返回的是**关键词下的全集**：浏览器那边按它算分面计数，
      * 数字才和"点进去看到多少条"对得上。
+     *
+     * <p>⚠️ **scope 决定搜哪一块**（标题 / 正文 / 都搜，见 KpTopicQuery）：
+     * 前端两个搜索模式各传一个 —— **「搜正文」那档传 `both`**（标题 + 正文都搜，
+     * 用户 2026-11-05：「对于卡片栏搜索模式 搜索的包括正文和正文标题」）、
+     * **「搜目录」那档传 `title`**（只搜知识点标题；**目录名在前端本地匹配**，
+     * 不往服务端跑一趟）⇒ 索引里那批就是**这一档的命中集**，
+     * 前端拿它算目录命中、算分面计数。认不出来的按 both 算（默认那条语义不变）。
      */
     @RequestMapping(value = "index", method = RequestMethod.GET)
-    public ResultResp<List<KpTopicIndexResp>> index(@RequestParam(value = "q", required = false) String q) {
+    public ResultResp<List<KpTopicIndexResp>> index(
+            @RequestParam(value = "q", required = false) String q,
+            @RequestParam(value = "scope", required = false) String scope) {
         Long userId = SecurityUtil.getUserId();
-        return ResultResp.data(kpTopicService.selectTopicIndex(userId, q));
+        return ResultResp.data(kpTopicService.selectTopicIndex(userId, q, scope));
     }
 
     @RequestMapping(value = "{id}", method = RequestMethod.GET)
@@ -83,6 +93,26 @@ public class KpTopicController {
     public ResultResp<Void> update(@Validated @RequestBody KpTopicUpdateReq req) {
         Long userId = SecurityUtil.getUserId();
         kpTopicService.updateTopic(req, userId);
+        return ResultResp.success();
+    }
+
+    /**
+     * 设置这条内容的**掌握度参与开关**（2026-11-12）。
+     *
+     * <p>三态：{@code enabled=true} 参与 / {@code false} 不参与 / {@code null} 恢复继承类型默认。
+     *
+     * <p>⚠️ **为什么单独一个端点**（不塞进 PUT /kp/topic）：
+     * 通用更新那条路是"保存正文"，前端每次都不带这个字段 ⇒ 它的 null 是"没这个字段"；
+     * 而这里的 null 是"恢复继承"这个**明确动作**。两者塞在一起就必须靠"字段存不存在"
+     * 来区分，而 JSON 里"没传"和"传 null"在很多客户端上根本分不开。
+     */
+    @RequestMapping(value = "{id}/mastery", method = RequestMethod.PUT)
+    public ResultResp<Void> setMastery(@PathVariable("id") Long id,
+                                       @RequestBody(required = false) KpTopicMasteryReq body) {
+        Long userId = SecurityUtil.getUserId();
+        KpTopicMasteryReq req = body == null ? new KpTopicMasteryReq() : body;
+        req.setId(id);
+        kpTopicService.setTopicMasteryEnabled(req, userId);
         return ResultResp.success();
     }
 

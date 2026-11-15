@@ -8,9 +8,12 @@ import com.mo.corecraft.model.req.KpCategoryCreateReq;
 import com.mo.corecraft.model.req.KpCategoryImportNode;
 import com.mo.corecraft.model.req.KpCategoryImportReq;
 import com.mo.corecraft.model.req.KpCategoryRenameReq;
+import com.mo.corecraft.model.resp.KpCategoryDeletePreviewResp;
 import com.mo.corecraft.model.resp.KpCategoryResp;
 import com.mo.corecraft.repository.KpCategoryRepository;
+import com.mo.corecraft.repository.KpTopicRepository;
 import com.mo.corecraft.service.KpCategoryService;
+import com.mo.corecraft.service.KpTopicService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,6 +35,15 @@ public class KpCategoryServiceImpl implements KpCategoryService {
     private static final int MAX_IMPORT_NODES = 300;
 
     private final KpCategoryRepository kpCategoryRepository;
+    /** 预检「删这个目录会连带删多少条」用（数知识点条数）。 */
+    private final KpTopicRepository kpTopicRepository;
+    /**
+     * 连带删知识点时用（{@code deleteCategory(..., cascadeTopics=true)}）。
+     *
+     * <p>⚠️ **不会成环**：`KpTopicServiceImpl` 依赖的是 `KpCategoryRepository`（不是本接口），
+     * 两条路都收敛在 repository 层 ⇒ 互相不引用 service ⇒ Spring 注入没有环。
+     */
+    private final KpTopicService kpTopicService;
 
     @Override
     public List<KpCategoryResp> listCategories(Long userId) {
@@ -188,15 +200,37 @@ public class KpCategoryServiceImpl implements KpCategoryService {
 
     @Override
     @Transactional
-    public void deleteCategory(Long categoryId, Long userId) {
+    public void deleteCategory(Long categoryId, Long userId, boolean cascadeTopics) {
         KpCategory category = require(categoryId, userId);
         List<Long> subtree = subtreeIds(userId, category.getId());
-        // 子树里**每一层**的知识点都要回未归类。原来只清直接下级，是因为删除语义是
-        // "子目录上提"、那些下级还活着；现在下级跟着一起删了，只清一层就会让挂在更深
-        // 一处的知识点留下 category_id 指向一个**已经物理删掉**的目录——那些知识在界面上
-        // 查不到、数据却还在。所以一次 IN 把整棵子树清干净。
-        kpCategoryRepository.clearTopicCategory(subtree);
-        kpCategoryRepository.deleteBatch(subtree);
+        if (cascadeTopics) {
+            // **连带删知识点**（软删）。这一步**不能先跑 clearTopicCategory** ——
+            // 那个 UPDATE 会把知识点置成 category_id=NULL，那就再也认不出
+            // "哪些是该跟着这个目录一起删的"了（它们和本来就没归类的混成一堆）。
+            kpTopicService.deleteTopicsByCategoryIds(subtree, userId);
+            kpCategoryRepository.deleteBatch(subtree);
+        } else {
+            // 子树里**每一层**的知识点都要回未归类。原来只清直接下级，是因为删除语义是
+            // "子目录上提"、那些下级还活着；现在下级跟着一起删了，只清一层就会让挂在更深
+            // 一处的知识点留下 category_id 指向一个**已经物理删掉**的目录——那些知识在界面上
+            // 查不到、数据却还在。所以一次 IN 把整棵子树清干净。
+            kpCategoryRepository.clearTopicCategory(subtree);
+            kpCategoryRepository.deleteBatch(subtree);
+        }
+    }
+
+    @Override
+    public KpCategoryDeletePreviewResp previewDelete(Long categoryId, Long userId) {
+        KpCategory category = require(categoryId, userId);
+        List<Long> subtree = subtreeIds(userId, category.getId());
+        KpCategoryDeletePreviewResp resp = new KpCategoryDeletePreviewResp();
+        resp.setCategoryId(category.getId());
+        resp.setCategoryName(category.getName());
+        // 子树数**含自己** ⇒ 减一才是"还会被一起删掉几个下级目录"
+        resp.setSubCategoryCount(subtree.size() - 1);
+        // 知识点数按**整棵子树**算（所有层级，不只是直接下级）
+        resp.setTopicCount((int) kpTopicRepository.countByCategoryIdsAndUserId(subtree, userId));
+        return resp;
     }
 
     @Override

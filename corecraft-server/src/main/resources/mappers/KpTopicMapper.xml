@@ -16,21 +16,111 @@
       NULL > 0 还是 NULL ⇒ 正文为 NULL 的行会落成 null（不是 false），
       同一个字段出现两种空值形态，契约声明的却是布尔。
 
-      q（关键词）在**服务端**筛：正文匹配要看到正文，浏览器里那份轻量索引没有正文，
-      筛不了 —— 这也是为什么索引接口带 q：它就是"当前关键词下的全集"。
+      关键词（titleQ / contentQ）在**服务端**筛：正文匹配要看到正文，浏览器里那份轻量索引没有正文，
+      筛不了 —— 这也是为什么索引接口带关键词：它就是"当前关键词下的全集"。
     -->
     <select id="selectIndex" resultType="com.mo.corecraft.model.resp.KpTopicIndexResp">
-        select id, title, category_id, type_id, create_time, (COALESCE(LENGTH(content), 0) &gt; 0) as has_content
+        <!-- update_time：详情页「更新于」的时间戳来源。保存类动作强刷索引后，
+             前端从索引条目里补新时间（2026-11-09）。同 create_time，一个 19 字符列。 -->
+        select id, title, category_id, type_id, mastery_enabled as mastery_override, create_time, update_time, (COALESCE(LENGTH(content), 0) &gt; 0) as has_content
         from kp_topic
         where user_id = #{userId}
         <!-- ⚠️ **逻辑删除必须自己写**：MyBatis-Plus 只给它自己生成的 SQL 加 is_delete = 0，
              手写 SQL 不吃那一套。漏了的话索引里会混着已删的知识点
              （实测库里 is_delete=1 有 55 条，目录树会显示它们、计数也会多 55）。 -->
         and is_delete = 0
-        <if test="q != null and q != ''">
-            and (title like concat('%', #{q}, '%') or content like concat('%', #{q}, '%'))
+        <!-- ⚠️ **关键词在哪几块搜，由 Java 那边算好传进来**
+             （KpTopicRepository#scopeKeywords）：titleQ / contentQ 各自是"要 like 的那个词"，
+             null = 这一块不搜。
+             ⚠️ **这里不判断 scope** —— scope 的分支只在 Java 一处，
+             索引这条 SQL 和列表那条 wrapper 共用同一份推导 ⇒ 改一边另一边不会漂。
+             ⚠️ **三种组合拼出来的 SQL 与原来逐字相同**（both 那一支仍带括号：
+             `and (title like … or content like …)`）。 -->
+        <if test="titleQ != null and contentQ != null">
+            and (title like concat('%', #{titleQ}, '%') or content like concat('%', #{contentQ}, '%'))
+        </if>
+        <if test="titleQ != null and contentQ == null">
+            and title like concat('%', #{titleQ}, '%')
+        </if>
+        <if test="titleQ == null and contentQ != null">
+            and content like concat('%', #{contentQ}, '%')
         </if>
         order by id
+    </select>
+
+    <!--
+      列表页的**一页**：轻量投影，**正文只取开头一段当摘要**。
+
+      为什么不用 MP 的 selectPage（实体查询）：那条把整行取回来，**包括 content 整列**
+      （实测一页 20 条里正文占 29KB）—— 而卡片上只显示**前 90 个字的摘要**，
+      其余正文在这一屏里一个像素都用不上；点进详情页另有详情接口取全文
+      ⇒ 列表那次传输是**白传输**（用户 2026-11-09 报「这个接口有点慢」）。
+
+      ⚠️ **摘要取 200 字符，不是 90**：前端摘要还要清洗一遍（去 markdown 标记、压空白），
+      90 字符截完清洗完常常不足 90 字（实测 40 条里 39 条不足；截 150 起全部够）⇒ 取 200 留余量。
+
+      ⚠️ **过滤条件必须与 countPageProjection 逐条一致**（同 <sql> 片段复用，不手抄两遍）：
+      两边条数不一致时，分页器显示的页数和实际能翻到的条数对不上，
+      **而界面上什么异常都看不出来**。
+
+      ⚠️ **逻辑删除必须自己写**（MyBatis-Plus 只给它自己生成的 SQL 加 is_delete = 0）。
+
+      ⚠️ **关键词在哪几块搜，由 Java 那边算好传进来**（scopeKeywords）：titleQ / contentQ
+      各自是"要 like 的那个词"，null = 这一块不搜 —— 与 selectIndex 那条**同一份推导**。
+    -->
+    <sql id="pageWhere">
+        where user_id = #{userId}
+        and is_delete = 0
+        <!-- 未归类是更窄的条件：两个都传时以它为准（前端本来只发一个） -->
+        <if test="uncategorized != null and uncategorized">
+            and category_id is null
+        </if>
+        <if test="(uncategorized == null or !uncategorized) and categoryIds != null and categoryIds.size() > 0">
+            and category_id in
+            <foreach collection="categoryIds" item="cid" open="(" separator="," close=")">#{cid}</foreach>
+        </if>
+        <if test="typeId != null">
+            and type_id = #{typeId}
+        </if>
+        <!-- 标签：EXISTS 子查询（关联表 + 标签表 join 一次），与原 wrapper 逐字一致 -->
+        <if test="tag != null and tag != ''">
+            and exists (SELECT 1 FROM kp_topic_tag tt JOIN kp_tag g ON g.id = tt.tag_id
+                        WHERE tt.topic_id = kp_topic.id AND g.name = #{tag} AND g.user_id = #{userId})
+        </if>
+        <if test="titleQ != null and contentQ != null">
+            and (title like concat('%', #{titleQ}, '%') or content like concat('%', #{contentQ}, '%'))
+        </if>
+        <if test="titleQ != null and contentQ == null">
+            and title like concat('%', #{titleQ}, '%')
+        </if>
+        <if test="titleQ == null and contentQ != null">
+            and content like concat('%', #{contentQ}, '%')
+        </if>
+        <if test="createdFrom != null">
+            and create_time &gt;= #{createdFrom}
+        </if>
+        <if test="createdTo != null">
+            and create_time &lt;= #{createdTo}
+        </if>
+    </sql>
+
+    <select id="selectPageProjection" resultType="com.mo.corecraft.model.resp.KpTopicResp">
+        select id, title,
+        <!-- 摘要：正文开头一段（见上面的说明：为什么是 200 而不是 90） -->
+        SUBSTRING(content, 1, 200) as content,
+        parent_topic_id, category_id, type_id, mastery_enabled as mastery_override, create_time, update_time
+        from kp_topic
+        <include refid="pageWhere"/>
+        <!-- 排序**必须带 id 兜底**：一批生成的条目 create_time 落在同一秒，
+             只按 create_time 排的话次序是随机的 ⇒ **分页会漏条 / 重条**。
+             与原 wrapper 的 orderByDesc(createTime).orderByDesc(id) 逐字一致。 -->
+        order by create_time desc, id desc
+        limit #{offset}, #{size}
+    </select>
+
+    <select id="countPageProjection" resultType="long">
+        select count(*) from kp_topic
+        <include refid="pageWhere"/>
     </select>
 
 </mapper>

@@ -1,10 +1,14 @@
 package com.mo.corecraft.service.impl;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.mo.corecraft.enums.ResultCodeEnum;
 import com.mo.corecraft.exception.CoreCraftException;
+import com.mo.corecraft.mapper.KpTopicLearningMapper;
 import com.mo.corecraft.model.entity.KpTag;
 import com.mo.corecraft.model.entity.KpTopic;
+import com.mo.corecraft.model.entity.KpTopicLearning;
 import com.mo.corecraft.model.entity.KpTopicRelation;
 import com.mo.corecraft.model.entity.KpTopicTag;
 import com.mo.corecraft.model.query.KpCategoryQuery;
@@ -12,6 +16,7 @@ import com.mo.corecraft.model.query.KpTopicQuery;
 import com.mo.corecraft.model.query.SysDictItemQuery;
 import com.mo.corecraft.model.query.SysDictTypeQuery;
 import com.mo.corecraft.model.req.KpTopicCreateReq;
+import com.mo.corecraft.model.req.KpTopicMasteryReq;
 import com.mo.corecraft.model.req.KpTopicUpdateReq;
 import com.mo.corecraft.model.resp.KpTopicIndexResp;
 import com.mo.corecraft.model.resp.KpTopicResp;
@@ -25,7 +30,12 @@ import com.mo.corecraft.repository.KpTopicTagRepository;
 import com.mo.corecraft.service.KpTopicService;
 import com.mo.corecraft.service.SysDictItemService;
 import com.mo.corecraft.service.SysDictTypeService;
+import com.mo.corecraft.service.support.KpDictCodes;
+import com.mo.corecraft.service.support.MasteryLevelResolver;
+import com.mo.corecraft.service.support.MasteryScope;
+import com.mo.corecraft.service.support.MasteryScopeResolver;
 import com.mo.corecraft.utils.BeanUtils;
+import com.mo.corecraft.utils.ContentHash;
 import com.mo.corecraft.utils.JsonUtils;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
@@ -33,40 +43,59 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
+import java.time.LocalDateTime;
 import java.util.stream.Collectors;
-
 @Service
 @RequiredArgsConstructor
 public class KpTopicServiceImpl implements KpTopicService {
 
     /**
-     * 知识点类型所在的字典编码。
-     *
-     * <p>前端 store 加载的是**同一个字典**（那边的 {@code TOPIC_TYPE_DICT}）——
-     * 字典是"知识点类型"这个概念唯一的权威定义，两端要指名同一份字典，
-     * 字典编码就是它的名字（和表名一样，是共享契约不是各写一遍的规则）。
+     * 知识点类型所在的字典编码：{@link com.mo.corecraft.service.support.KpDictCodes#TOPIC_TYPE}
+     * （后端唯一一份；前端 store 加载的是**同一个字典**——字典是"知识点类型"这个概念
+     * 唯一的权威定义，字典编码就是它的名字，是共享契约不是各写一遍的规则）。
      */
-    private static final String TOPIC_TYPE_DICT = "kp_topic_type";
 
     private final KpTopicRepository kpTopicRepository;
     private final KpTopicTagRepository kpTopicTagRepository;
     private final KpTagRepository kpTagRepository;
     private final KpTopicRelationRepository kpTopicRelationRepository;
     private final KpCategoryRepository kpCategoryRepository;
+    private final KpTopicLearningMapper kpTopicLearningMapper;
     private final SysDictTypeService sysDictTypeService;
     private final SysDictItemService sysDictItemService;
+    private final MasteryScopeResolver masteryScopeResolver;
 
     @Override
     public IPage<KpTopicResp> selectTopicPage(Page<KpTopic> page, KpTopicQuery query) {
-        IPage<KpTopicResp> result = kpTopicRepository.page(page, query, BeanUtils.converter(KpTopicResp.class));
-        enrichTopicResps(result.getRecords());
+        // ⚠️ **列表页走轻量投影**（2026-11-09 用户报「/kp/topic/list 有点慢」）：
+        // 原来这条走 MP 的实体分页（selectPage），**content 整列被取回来**
+        // （实测一页 20 条 = 29KB，正文占绝大多数），而卡片上只显示**前 90 字的摘要**
+        // ⇒ 列表那次传输是白传输；点进详情页另有详情接口取全文。
+        // 现在只取 SUBSTRING(content, 1, 200) 当摘要，**响应结构一个字没变**（content 字段还在）。
+        long current = page.getCurrent();
+        long size = page.getSize();
+        long offset = (current - 1) * size;
+        List<KpTopicResp> records = kpTopicRepository.listPageProjection(query, offset, size);
+        long total = kpTopicRepository.countPageProjection(query);
+        // 手工拼 Page：分页是自己 limit 出来的（MP 的 PaginationInnerInterceptor 只管它自己生成的 SQL），
+        // 但**返回类型仍是 IPage** ⇒ controller / 前端的分页契约一个字没动。
+        Page<KpTopicResp> result = new Page<>(current, size, total);
+        result.setRecords(records);
+        enrichTopicResps(result.getRecords(), query.getUserId());
         return result;
     }
 
     @Override
-    public List<KpTopicIndexResp> selectTopicIndex(Long userId, String keyword) {
-        List<KpTopicIndexResp> list = kpTopicRepository.listIndex(userId, keyword);
+    public List<KpTopicIndexResp> selectTopicIndex(Long userId, String keyword, String scope) {
+        List<KpTopicIndexResp> list = kpTopicRepository.listIndex(userId, keyword, scope);
         applyTags(list);
+        // 索引也要把「是否参与掌握度」解析好（目录树/概览要按参与项过滤，
+        // 同一个判据必须在这一层也能读到，前端不自己判一遍）
+        Map<Long, Boolean> typeDefaults = masteryScopeResolver.typeDefaults();
+        for (KpTopicIndexResp row : list) {
+            row.setMasteryEnabled(MasteryScope.participates(
+                    row.getMasteryOverride(), typeDefaults, row.getTypeId()));
+        }
         return list;
     }
 
@@ -76,7 +105,7 @@ public class KpTopicServiceImpl implements KpTopicService {
         // 列表路径早就 setUserId 了（controller 的 list），详情这条路漏了。
         KpTopicResp resp = kpTopicRepository.get(ownedTopicQuery(id, userId), BeanUtils.converter(KpTopicResp.class));
         // get 查不到会 orElseThrow，所以这里 resp 必然非 null，List.of(null) 那个 NPE 到不了
-        enrichTopicResps(List.of(resp));
+        enrichTopicResps(List.of(resp), userId);
         return resp;
     }
 
@@ -91,7 +120,7 @@ public class KpTopicServiceImpl implements KpTopicService {
         if (list.isEmpty()) {
             return list;
         }
-        enrichTopicResps(list);
+        enrichTopicResps(list, userId);
         // **按传入顺序排回去**：`IN` 查询的返回顺序是不确定的，
         // 而调用方给的顺序是有意义的（页面上卡片看到的顺序）⇒ 同样的集合每次汇总成同样的一段。
         Map<Long, KpTopicResp> byId = list.stream()
@@ -121,7 +150,7 @@ public class KpTopicServiceImpl implements KpTopicService {
      */
     private Map<Long, String> dictTypeLabels() {
         SysDictTypeQuery typeQuery = new SysDictTypeQuery();
-        typeQuery.setCode(TOPIC_TYPE_DICT);
+        typeQuery.setCode(KpDictCodes.TOPIC_TYPE);
         var dictType = sysDictTypeService.selectSysDictTypeList(typeQuery).stream().findFirst().orElse(null);
         if (dictType == null) {
             return Map.of();
@@ -143,6 +172,9 @@ public class KpTopicServiceImpl implements KpTopicService {
         entity.setUserId(userId);
         requireOwnCategory(entity.getCategoryId(), userId);
         entity.setTitle(StringUtils.defaultIfBlank(req.getTitle(), ""));
+        // 内容版本锚点（实施计划 §1.3）：hash 每次内容变化都算；epoch 走 DB 默认 1（新建不可能有旧证据）
+        entity.setContentHash(ContentHash.ofTopic(entity.getTitle(), entity.getContent()));
+        entity.setMasteryOverride(req.getMasteryEnabled());
         kpTopicRepository.insert(entity);
         saveTopicTags(entity.getId(), req.getTags(), userId);
     }
@@ -172,11 +204,38 @@ public class KpTopicServiceImpl implements KpTopicService {
             if (r.getTypeId() != null) {
                 e.setTypeId(r.getTypeId());
             }
+            // 掌握度单条覆盖：**只在显式给了才写**。
+            // ⚠️ 这里和 KpTopic.masteryOverride 的 ALWAYS 策略是一对：实体那一侧保证
+            // "null 能写进库"（null = 继承类型是有意义的值），但**这个入口**的 null
+            // 是"这次请求没带这个字段"（保存正文时前端不会带）⇒ 无条件写会把用户
+            // 显式设过的覆盖悄悄抹回继承。
+            // ⇒ 显式改覆盖走专门的一步（PUT 时带 masteryEnabled），
+            //    这里只在有值时写，"恢复继承"由那一步显式传 null 完成。
+            if (r.getMasteryEnabled() != null) {
+                e.setMasteryOverride(r.getMasteryEnabled());
+            }
+            // 内容版本锚点（实施计划 §1.3）：一般编辑只更新 hash、**不动 epoch**——
+            // epoch 只有「大幅重写/重新生成」才递增（AI 写正文那条路），设计 §9.2。
+            e.setContentHash(ContentHash.ofTopic(e.getTitle(), e.getContent()));
         });
         if (req.getTags() != null) {
             kpTopicTagRepository.deleteByTopicId(req.getId());
             saveTopicTags(req.getId(), req.getTags(), userId);
         }
+    }
+
+    @Override
+    @Transactional
+    public void setTopicMasteryEnabled(KpTopicMasteryReq req, Long userId) {
+        // 归属校验：不是自己的改不了（和 updateTopic 同一条规矩）
+        KpTopic topic = kpTopicRepository.get(ownedTopicQuery(req.getId(), userId), e -> e);
+        if (topic == null) {
+            throw new CoreCraftException(ResultCodeEnum.NOT_FOUND, "知识点不存在");
+        }
+        // ⚠️ **无条件写**（包括 null）：这个端点的 null 是"恢复继承类型默认"，
+        // 是一个**明确的三态**。KpTopic.masteryOverride 标了 ALWAYS ⇒ null 会进 UPDATE。
+        topic.setMasteryOverride(req.getEnabled());
+        kpTopicRepository.update(topic);
     }
 
     @Override
@@ -187,6 +246,29 @@ public class KpTopicServiceImpl implements KpTopicService {
         kpTopicTagRepository.deleteByTopicId(topic.getId());
         kpTopicRelationRepository.deleteByTopicId(topic.getId());
         kpTopicRepository.delete(topic.getId());
+    }
+
+    @Override
+    @Transactional
+    public int deleteTopicsByCategoryIds(List<Long> categoryIds, Long userId) {
+        if (categoryIds == null || categoryIds.isEmpty()) {
+            return 0;
+        }
+        // **只取本人挂在这批目录下的**：目录本身已按 userId 校验过，但知识点还得再收一遍
+        // ——万一库里有一条 category_id 指向别人的目录（脏数据），那条不该被连带删掉。
+        List<KpTopic> victims = kpTopicRepository.listByCategoryIdsAndUserId(categoryIds, userId);
+        if (victims.isEmpty()) {
+            return 0;
+        }
+        List<Long> ids = victims.stream().map(KpTopic::getId).toList();
+        // 标签引用和关联关系**物理删**（关联表是纯关系，关系断了不留墓碑，
+        // 否则重新插 (topic_id, tag_id) 会撞唯一键 uk_topic_tag）——
+        // 和单条删除（deleteTopic）走的是同一条路。
+        ids.forEach(kpTopicTagRepository::deleteByTopicId);
+        ids.forEach(kpTopicRelationRepository::deleteByTopicId);
+        // 知识点本体是**软删**（@TableLogic）：数据还在库里，将来想做回收站/自动清理有底。
+        ids.forEach(kpTopicRepository::delete);
+        return ids.size();
     }
 
     @Override
@@ -275,7 +357,7 @@ public class KpTopicServiceImpl implements KpTopicService {
      * 批量填充 resp 的 tags/relatedTopicIds（避免 N+1）。
      * 入参 list 可变，结果就地修改。
      */
-    private void enrichTopicResps(List<KpTopicResp> resps) {
+    private void enrichTopicResps(List<KpTopicResp> resps, Long userId) {
         if (resps == null || resps.isEmpty()) {
             return;
         }
@@ -295,6 +377,49 @@ public class KpTopicServiceImpl implements KpTopicService {
                 List<Long> relatedIds = relations.stream().map(KpTopicRelation::getRelatedTopicId).toList();
                 resp.setRelatedTopicIds(relatedIds);
             }
+        }
+
+        // 掌握度：参与判据 + 档位（2026-11-12）
+        enrichMastery(resps, userId);
+    }
+
+    /**
+     * 批量补「是否参与掌握度」与「展示档位」。
+     *
+     * <p>⚠️ **判据只有一处**（{@link MasteryScope}）：单条显式值 &gt; 类型默认值 &gt; 安全兜底。
+     * 前端拿到的是**已解析的最终值**，不自己再判一遍。
+     *
+     * <p>⚠️ **档位为 null = 没有有效评估**：前端据此**完全不渲染**掌握度标记
+     * （"从未考过"表现为空白，不是画一个「未评估」）。
+     *
+     * <p>不参与掌握度的条目：{@code masteryLevel} 一律留 null（哪怕它有学习投影）。
+     */
+    private void enrichMastery(List<KpTopicResp> resps, Long userId) {
+        if (resps == null || resps.isEmpty()) {
+            return;
+        }
+        Map<Long, Boolean> typeDefaults = masteryScopeResolver.typeDefaults();
+        LocalDateTime now = LocalDateTime.now();
+
+        // 学习投影一次性捞这批 id（避免 N+1）。
+        // ⚠️ user_id 必须带上：其它所有 kp_topic_learning 访问都带 eq(userId)，
+        // 这里靠"topic 私有 ⇒ 学习行必属本人"的间接不变式护着，口径一漂就查不出错。
+        List<Long> ids = resps.stream().map(KpTopicResp::getId).toList();
+        Map<Long, KpTopicLearning> learningByTopic = kpTopicLearningMapper
+                .selectList(Wrappers.<KpTopicLearning>lambdaQuery()
+                        .eq(KpTopicLearning::getUserId, userId)
+                        .in(KpTopicLearning::getTopicId, ids))
+                .stream().collect(Collectors.toMap(KpTopicLearning::getTopicId, e -> e, (a, b) -> a));
+
+        for (KpTopicResp resp : resps) {
+            boolean participates = MasteryScope.participates(
+                    resp.getMasteryOverride(), typeDefaults, resp.getTypeId());
+            resp.setMasteryEnabled(participates);
+            if (!participates) {
+                resp.setMasteryLevel(null);
+                continue;
+            }
+            resp.setMasteryLevel(MasteryLevelResolver.levelOf(learningByTopic.get(resp.getId()), now));
         }
     }
 

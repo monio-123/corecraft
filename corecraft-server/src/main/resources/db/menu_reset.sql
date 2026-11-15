@@ -63,25 +63,43 @@ VALUES
 (@system_group_id, 'dict:manage', '字典管理', 4, 1, 'MENU', '{"path":"/dicts","icon":"CollectionTag"}', NOW(), NOW(), 0);
 
 -- ============================================================
--- 3.5 OP 节点：接口操作权限（不是菜单，不进任何导航）
+-- 3.6 系统配置 MENU + 它下面的 OP 权限码
 -- ============================================================
--- user:add 是当前唯一接入接口鉴权体系的权限码。
---   后端 SysUserController#createSysUser 上有 @PreAuthorize("@auth.hasPermission('user:add')")
---   前端 Users.vue 的「新建用户」按钮由 hasPermission('user:add') 控制显隐
--- ⚠️ 本脚本会 TRUNCATE sys_permission，漏掉这一行会导致该端点对所有人 403。
+-- 与 2026-10-21_sys_config_table.sql 里的插入值一致（sort=5 / path=/configs / icon=Operation）。
+-- ⚠️ 本脚本 TRUNCATE 之后**不会跑**那条脚本 ⇒ 这里必须自带一份，否则：
+--   ① 「系统配置」菜单消失；② config:api 这个权限码消失 ⇒ SysConfigController /
+--   SysConfigNodeController 上所有 @PreAuthorize("@auth.hasPermission('config:api')") 的管理端
+--   接口对所有人 403，前端界面还在、按钮全哑（2026-11-13 审计发现漏了这份同步）。
+
+INSERT INTO sys_permission (parent_id, code, name, sort, is_enabled, type, meta, create_time, update_time, is_delete)
+VALUES (@system_group_id, 'config:manage', '系统配置', 5, 1, 'MENU', '{"path":"/configs","icon":"Operation"}', NOW(), NOW(), 0);
+
+SET @config_manage_menu_id = LAST_INSERT_ID();
+
+-- ============================================================
+-- 3.7 OP 节点：接口操作权限（不是菜单，不进任何导航）
+-- ============================================================
+-- 当前接入接口鉴权体系的权限码有两个：user:add 与 config:api。
+--   user:add   → SysUserController#createSysUser；前端 Users.vue「新建用户」按钮显隐
+--   config:api → SysConfigController / SysConfigNodeController 的管理端接口（查列表 / 改系统默认 / 删一行）
+-- ⚠️ 本脚本会 TRUNCATE sys_permission，漏掉任何一条都会让对应端点对所有人 403。
 
 INSERT INTO sys_permission (parent_id, code, name, sort, is_enabled, type, meta, create_time, update_time, is_delete)
 VALUES (@user_manage_menu_id, 'user:add', '新建用户', 1, 1, 'OP', NULL, NOW(), NOW(), 0);
+
+INSERT INTO sys_permission (parent_id, code, name, sort, is_enabled, type, meta, create_time, update_time, is_delete)
+VALUES (@config_manage_menu_id, 'config:api', '系统配置管理', 1, 1, 'OP', NULL, NOW(), NOW(), 0);
 
 -- 为管理员角色分配菜单权限（假设管理员角色 ID 为 1）
 -- 请根据实际管理员角色 ID 修改
 SET @admin_role_id = 1;
 
--- 系统管理权限（含 OP 节点 user:add）
+-- 系统管理权限（含两个 OP 节点）
 INSERT INTO sys_role_permission (role_id, permission_id, create_time, update_time, is_delete)
 SELECT @admin_role_id, id, NOW(), NOW(), 0
 FROM sys_permission
-WHERE code IN ('system', 'user:manage', 'role:manage', 'permission:manage', 'dict:manage', 'user:add')
+WHERE code IN ('system', 'user:manage', 'role:manage', 'permission:manage', 'dict:manage', 'user:add',
+               'config:manage', 'config:api')
 AND is_delete = 0;
 
 -- ============================================================

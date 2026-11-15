@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -52,6 +53,19 @@ public class AiChatController {
     private long chatTimeoutMs;
 
     private final AiChatService aiChatService;
+
+    /**
+     * 某条提示词**展开 `【引用】` 之后**的最终文本。
+     *
+     * <p>给「前端自己拼提问」那条路用（改写正文：用户的原话要保留，不能走 questionKey
+     * —— 那条会把用户的话整段换掉）。前端读 `sys/config/mine` 只能拿到原文，原文里可能有
+     * `【引用】`，所以必须走这里；否则模型收到的是一行字面的「【引用】ai.skill.writing」，
+     * 被引的规范一个字都到不了（2026-11-12 实测踩到）。
+     */
+    @GetMapping("/prompt")
+    public ResultResp<String> composedPrompt(@RequestParam("key") String key) {
+        return ResultResp.data(aiChatService.composedPrompt(key));
+    }
 
     /**
      * 抽屉空态那几个引导问题。来自配置树上的「引导问题」那组——改问题在管理后台的

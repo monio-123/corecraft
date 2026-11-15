@@ -1,6 +1,5 @@
 package com.mo.corecraft.service.impl;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.mo.corecraft.exception.CoreCraftException;
 import com.mo.corecraft.model.entity.AiEndpoint;
 import com.mo.corecraft.model.req.AiChatReq;
@@ -9,11 +8,13 @@ import com.mo.corecraft.model.resp.KpCategoryResp;
 import com.mo.corecraft.model.resp.KpTopicResp;
 import com.mo.corecraft.service.AiChatService;
 import com.mo.corecraft.service.AiEndpointService;
+import com.mo.corecraft.service.AiStagePolicy;
 import com.mo.corecraft.service.KpCategoryService;
 import com.mo.corecraft.service.KpTagService;
 import com.mo.corecraft.service.KpTopicService;
 import com.mo.corecraft.service.SysConfigNodeService;
 import com.mo.corecraft.service.SysConfigService;
+import com.mo.corecraft.service.support.AiProtocol;
 import com.mo.corecraft.utils.HttpExecutor;
 import com.mo.corecraft.utils.JsonUtils;
 import lombok.RequiredArgsConstructor;
@@ -36,17 +37,16 @@ import com.mo.corecraft.service.AiChatService.AiDelta;
 import com.mo.corecraft.service.AiChatService.AiDeltaSink;
 
 /**
- * 调 OpenAI 兼容的 /chat/completions。
+ * 就某条知识提问：按端点的**协议**调上游（{@code AiProtocol}），默认 OpenAI 兼容。
  *
- * **不引 provider 字段**：OpenAI 兼容协议下厂商由 base_url 决定，换厂商只改 URL 和模型名。
- * 碰到不兼容的（星火 / 百度）才写适配器，那时再加字段。
+ * <p>**不引 provider 字段**：OpenAI 兼容协议下厂商由 base_url 决定，换厂商只改 URL 和模型名。
+ * 真正的协议差异（Anthropic /v1/messages）不是"换厂商"，走 {@code AiProtocol} 一处收敛，
+ * 这里只负责"提交什么内容"，不负责"怎么调"。
  */
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class AiChatServiceImpl implements AiChatService {
-
-    private static final AiDelta EMPTY_DELTA = AiDelta.of("", "", "");
 
     /**
      * 引导问题的键前缀：值在 sys_config（user_id=0 = 系统级），名字在配置树上。
@@ -85,6 +85,28 @@ public class AiChatServiceImpl implements AiChatService {
     /** 目录树输出时的深度上限。层级数据坏了（父子成环）时靠它收住 */
     private static final int MAX_TREE_DEPTH = 10;
 
+    /**
+     * 输出上限的兜底值（token）。**以前这里什么都不填，走厂商的服务端默认**。
+     *
+     * <p>为什么必须显式给：厂商默认值普遍偏小（实测 4079 字的正文以
+     * {@code finish_reason=length} 收尾），而"写知识点"这种任务的正文本来就长，
+     * 一条知识点带图之后只会更长 ⇒ **默认值成了内容质量的天花板，且没有任何提示**。
+     *
+     * <p>8192 的依据：现有 507 条正文的长度中位 3575 字、P90 4720 字，
+     * 按中文 1 字 ≈ 0.6~0.7 token 折算，P90 约 3.3k token；
+     * 给到 8192 留出"一条长知识点 + 图"的余量，又不至于让一次超时烧掉一整屏额度。
+     *
+     * <p>**可以在 sys_config 里改**（键 {@code ai.chat.maxTokens}），改完不用发版。
+     */
+    private static final int DEFAULT_MAX_TOKENS = 8192;
+
+    /** 允许请求方指定的区间：下限防"给 1 个 token"这种坏参数，上限防一次把额度烧穿 */
+    private static final int MIN_MAX_TOKENS = 256;
+    private static final int MAX_MAX_TOKENS = 32768;
+
+    /** 输出上限的配置键（sys_config，user_id=0 = 系统级） */
+    private static final String MAX_TOKENS_KEY = "ai.chat.maxTokens";
+
     private final AiEndpointService aiEndpointService;
     private final KpTopicService kpTopicService;
     private final KpCategoryService kpCategoryService;
@@ -92,6 +114,7 @@ public class AiChatServiceImpl implements AiChatService {
     private final SysConfigService sysConfigService;
     private final SysConfigNodeService sysConfigNodeService;
     private final HttpExecutor httpExecutor;
+    private final AiStagePolicy aiStagePolicy;
 
     @Override
     public List<AiQuestionResp> questions() {
@@ -107,6 +130,9 @@ public class AiChatServiceImpl implements AiChatService {
     @Override
     public void stream(Long userId, AiChatReq req, AiDeltaSink deltaSink) throws IOException {
         AiEndpoint endpoint = aiEndpointService.requireReady(userId, req.getEndpointId());
+        // ⚠️ **params 只解析一次**：协议给 URL / 请求头 / 解帧用，自定义参数给请求体用
+        AiEndpoint.Params params = endpoint.params();
+        String protocol = params.protocol();
 
         // 上下文有档位：**用户自己敲的 material > 这次指定的几条知识**。
         // **给了 material 就不去捞知识**——判卷时带的是整卷，
@@ -116,10 +142,7 @@ public class AiChatServiceImpl implements AiChatService {
                 ? resolveTopics(req, userId)
                 : List.of();
 
-        Map<String, String> headers = Map.of(
-                "Authorization", "Bearer " + endpoint.getApiKey(),
-                "Content-Type", "application/json"
-        );
+        Map<String, String> headers = AiProtocol.headers(endpoint.getApiKey(), protocol);
 
         List<Map<String, String>> messages = buildMessages(req, topics, userId);
 
@@ -127,15 +150,25 @@ public class AiChatServiceImpl implements AiChatService {
         // 界面上要能核对 AI 到底看见了什么，那就得是这个 messages 本身，不是另拼一份。
         deltaSink.accept(AiDelta.ofPrompt(readable(messages)));
 
-        httpExecutor.doPostStream(AiEndpoint.chatUrlOf(endpoint.getBaseUrl()), headers,
-                JsonUtils.toJsonString(requestBody(endpoint, messages, req.getThinking())),
+        // **思考与额度优先听环节策略**（见 AiStagePolicy）：调用方没显式给，就按环节取。
+        // 界面上的「开启思考」已经删了 —— 那个勾对一半模型是无效的（后端只有"关"的写法）。
+        AiStagePolicy.Policy policy = aiStagePolicy.of(req.getQuestionKey());
+        Boolean thinking = req.getThinking() != null ? req.getThinking() : policy.thinking();
+        Integer maxTokens = req.getMaxTokens() != null ? req.getMaxTokens() : policy.maxTokens();
+
+        Map<String, Object> body = requestBody(endpoint, params, messages, thinking, maxTokens);
+        // **OpenAI 兼容下是 no-op**：存量端点走这条路，请求体一个键都不动
+        AiProtocol.shapeBody(body, messages, protocol);
+
+        httpExecutor.doPostStream(AiProtocol.chatUrl(endpoint.getBaseUrl(), protocol), headers,
+                JsonUtils.toJsonString(body),
                 line -> {
                     // **空帧不用在这里滤**：controller 逐字段判空
                     // （prompt / reasoning / content / finish 各判一次），
                     // 空帧到了那儿什么也发不出去。
-                    // 原来这里还多包了一层 `AiDelta.of(...)` —— 三个参数逐一相同，
-                    // 包出来的对象跟 `delta` 一模一样（prompt 恒为空串）。
-                    deltaSink.accept(extractDelta(line));
+                    // ⚠️ 两套协议的帧在这里被对齐到同一个 AiDelta：上层完全不知道
+                    // 这次是 openai 还是 anthropic，也不需要知道。
+                    deltaSink.accept(AiProtocol.parseDelta(line, protocol));
                 });
     }
 
@@ -148,20 +181,56 @@ public class AiChatServiceImpl implements AiChatService {
      * 用户在自定义参数里写它们也不算数（后写的盖掉先写的）。
      * 其余字段（temperature、思考开关……）原样带过去。
      *
-     * @param thinking 这次要不要关掉模型的思考（{@code false} = 关；其它 = 不干预）
+     * <p>**max_tokens 的优先级：这一次显式传的 > 端点自定义参数 > 兜底值**。
+     * 端点上那格是"这个模型的常规额度"，用户自己填了就该听他的；
+     * 但**没有填的时候必须补一个**，不能再让厂商默认值当地板
+     * （见 {@link #DEFAULT_MAX_TOKENS} 的注释）。
+     *
+     * @param thinking  这次要不要关掉模型的思考（{@code false} = 关；其它 = 不干预）
+     * @param maxTokens 这次要多少输出额度（{@code null} = 没指定，按端点配置 / 兜底值）
      */
-    private Map<String, Object> requestBody(AiEndpoint endpoint, List<Map<String, String>> messages, Boolean thinking) {
+    private Map<String, Object> requestBody(AiEndpoint endpoint, AiEndpoint.Params params,
+                                            List<Map<String, String>> messages,
+                                            Boolean thinking, Integer maxTokens) {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.putAll(endpoint.params().custom());
+        body.putAll(params.custom());
         // **关思考**：厂商无关的一个写法（2026-10-26 实测 deepseek / dashscope 都认它）。
         // 放在端点自定义参数**之后** ⇒ 这一次的勾选盖过端点自己配的那份。
         if (Boolean.FALSE.equals(thinking)) {
             body.put("thinking", Map.of("type", "disabled"));
         }
+        if (maxTokens != null) {
+            body.put("max_tokens", clampTokens(maxTokens));
+        } else if (!body.containsKey("max_tokens")) {
+            body.put("max_tokens", defaultMaxTokens());
+        }
         body.put("model", endpoint.getModel());
         body.put("stream", true);
         body.put("messages", messages);
         return body;
+    }
+
+    /**
+     * 兜底额度：配置里有就用配置，没有 / 写坏了就用常量。
+     *
+     * <p>**写坏了不报错**：配置是人手填的，填成 `8k` 这种字样不该让整个问答挂掉 ——
+     * 退回常量继续干活，比抛异常对用户友好。
+     */
+    private int defaultMaxTokens() {
+        String raw = sysConfigService.getSystemValue(MAX_TOKENS_KEY);
+        if (StringUtils.isBlank(raw)) {
+            return DEFAULT_MAX_TOKENS;
+        }
+        try {
+            return clampTokens(Integer.parseInt(raw.trim()));
+        } catch (NumberFormatException e) {
+            return DEFAULT_MAX_TOKENS;
+        }
+    }
+
+    /** 卡在 [MIN, MAX]：坏参数不报错，改成一个能干活的值 */
+    private int clampTokens(int value) {
+        return Math.max(MIN_MAX_TOKENS, Math.min(MAX_MAX_TOKENS, value));
     }
 
     /**
@@ -274,6 +343,23 @@ public class AiChatServiceImpl implements AiChatService {
     }
 
     /**
+     * 几条知识的正文摘要（按类型分组），现查现拼（2026-11-15 出题「出不了题」的修复）。
+     *
+     * <p>与 {@link #digestOf} 同一份分组格式——**不另实现一遍**。
+     */
+    @Override
+    public String digestFor(List<Long> topicIds, Long userId) {
+        if (topicIds == null || topicIds.isEmpty()) {
+            return "";
+        }
+        List<KpTopicResp> topics = kpTopicService.selectTopicsByIds(topicIds, userId);
+        if (topics.isEmpty()) {
+            return "";
+        }
+        return digestOf(topics);
+    }
+
+    /**
      * 多条知识汇总成一段上下文（考一个目录时）。
      *
      * <p>**每条一段，标题带上**：模型要知道"哪句话讲的是哪个知识点"，
@@ -361,6 +447,19 @@ public class AiChatServiceImpl implements AiChatService {
         return questionKey.contains(".") ? questionKey : QUESTION_KEY_PREFIX + questionKey;
     }
 
+    @Override
+    public String composedPrompt(String key) {
+        if (StringUtils.isBlank(key)) {
+            return "";
+        }
+        String raw = sysConfigService.getSystemValue(key);
+        if (StringUtils.isBlank(raw)) {
+            return "";
+        }
+        // 与 `questionKey` 那条路**同一份**展开逻辑（含跨组【引用】、成环检测、断链抛错）
+        return composeInstruction(raw, new LinkedHashSet<>());
+    }
+
     /**
      * 把一条引导问题的 remark 拼成最终指令。
      *
@@ -413,7 +512,7 @@ public class AiChatServiceImpl implements AiChatService {
                 appendSection(format, t.substring(MARK_FORMAT.length()));
                 continue;
             }
-            appendSection(sink, line);
+            appendRaw(sink, line);
         }
         return new String[]{criteria.toString(), format.toString()};
     }
@@ -432,11 +531,17 @@ public class AiChatServiceImpl implements AiChatService {
         if (!visited.add(key)) {
             throw new CoreCraftException("引导问题的【引用】成环：" + String.join(" -> ", visited) + " -> " + key);
         }
-        var target = sysConfigService.getSystemValue(QUESTION_KEY_PREFIX + key);
+        // ⚠️ **不要硬拼 `ai.prompt.question.` 前缀**：能力包住在别的组（`ai.skill.*`），
+        // 硬拼的话【引用】只能指向引导问题 ⇒ 跨组必抛「引用了不存在的配置项」。
+        // 口径和 `promptKeyOf` 保持同一份：带点就当完整键。
+        var target = sysConfigService.getSystemValue(promptKeyOf(key));
         if (StringUtils.isBlank(target)) {
             throw new CoreCraftException("引导问题引用了不存在的配置项：" + key);
         }
-        appendSection(criteria, splitSections(target, visited)[0]);
+        // **原样插入**（`appendRaw` 而不是 `appendSection`）：能力包的第一行常常是缩进的子条目
+        // （`  - **术语要解释**`），`appendSection` 会把它整体 `strip()` ⇒ 第一条被顶到行首、
+        // 后面几条还在缩进 ⇒ markdown 会把它们读成「第一条的子列表」，结构就变了。
+        appendRaw(criteria, splitSections(target, visited)[0]);
     }
 
     private boolean hasSectionMark(String remark) {
@@ -447,6 +552,20 @@ public class AiChatServiceImpl implements AiChatService {
         if (StringUtils.isNotBlank(text)) {
             sb.append(text.strip()).append('\n');
         }
+    }
+
+    /**
+     * **原样追加一行**：保留行首缩进与空行。
+     *
+     * <p>⚠️ **普通行不能用 {@link #appendSection}**（它 `strip()` 每一行、且丢掉空行）：
+     * 一旦这条配置里出现【引用】，整条提示词都会走拆段重组 ⇒ 嵌套列表被摊平成同级
+     * （`  - \`graph LR\`` 变成 `- \`graph LR\``）、段落之间的空行全被吃掉。
+     * 拆段只该改**组装方式**，不该改**作者写下的排版**。
+     *
+     * <p>`stripTrailing` 而不是 `strip`：行尾空格没有意义，行首缩进有意义。
+     */
+    private void appendRaw(StringBuilder sb, String text) {
+        sb.append(text.stripTrailing()).append('\n');
     }
 
     private String joinSections(String criteria, String format) {
@@ -566,37 +685,8 @@ public class AiChatServiceImpl implements AiChatService {
         return value;
     }
 
-    /**
-     * SSE 的一行 → 一段增量。
-     *
-     * **同时读 `reasoning_content` 和 `content` 两个字段**。思考过程在 OpenAI 兼容协议里
-     * 是独立的 `delta.reasoning_content`，只读 content 就等于把它丢掉了（2026-10-07 实测）。
-     * 不过**能不能拿到取决于模型**：deepseek-flash 这类非思考模型压根不给这个字段，
-     * 要换 deepseek-reasoner / o 系列 / qwen-thinking 才有。拿不到就是空串，不补、不伪造。
-     *
-     * 空行、`[DONE]`、只带 role 的首帧都返回空增量。
-     *
-     * **还读 `choices[0].finish_reason`**：上游为什么停。`length` = 撞了输出上限 ⇒
-     * **内容是截断的** —— 这个信息必须送到前端去，否则用户拿到的是一段"看着完整"的残篇。
-     * （2026-10-27 加：之前静默截断，界面和库里都看不出少了东西。）
-     *
-     * **解析失败让它抛出去**：流已经开始了，悄悄吞掉只会让用户对着一个说到一半突然停住的
-     * 回答发呆。抛出去由 controller 发一个 error 事件，前端能明确显示"出错了"。
-     */
-    private AiDelta extractDelta(String line) {
-        if (line == null || !line.startsWith("data:")) {
-            return EMPTY_DELTA;
-        }
-        String payload = line.substring(5).trim();
-        if (payload.isEmpty() || "[DONE]".equals(payload)) {
-            return EMPTY_DELTA;
-        }
-        JsonNode choice = JsonUtils.readTree(payload).path("choices").path(0);
-        JsonNode delta = choice.path("delta");
-        // 字段没有 / 是 null ⇒ JsonUtils.text 给 null，这里落成空串（这一层要的是"没有增量"）
-        return AiDelta.of(
-                StringUtils.defaultString(JsonUtils.text(delta, "reasoning_content")),
-                StringUtils.defaultString(JsonUtils.text(delta, "content")),
-                StringUtils.defaultString(JsonUtils.text(choice, "finish_reason")));
-    }
+    // ⚠️ SSE 解帧**不在这里**：两套协议的帧在 AiProtocol.parseDelta 里收敛成同一个
+    // AiDelta（OpenAI 的 reasoning_content/content/finish_reason 那一套是原样搬过去的，
+    // 一个字段没改）。留第二份的话，"Anthropic 的 stop_reason 要翻成 stop"这种规则
+    // 必然只改一边，症状还是"前端把正常答完判成截断"——看不出是哪份解帧器干的。
 }

@@ -2,7 +2,9 @@ package com.mo.corecraft.service;
 
 import com.mo.corecraft.model.entity.AiEndpoint;
 import com.mo.corecraft.model.req.AiEndpointSaveReq;
+import com.mo.corecraft.model.req.AiEndpointTestReq;
 import com.mo.corecraft.model.resp.AiEndpointResp;
+import com.mo.corecraft.model.resp.AiEndpointTestResp;
 
 import java.util.List;
 
@@ -30,4 +32,13 @@ public interface AiEndpointService {
      * "能不能用"要同时看两边；散开判的话各处都会漏掉一半。
      */
     AiEndpoint requireReady(Long userId, Long endpointId);
+
+    /**
+     * 测一条配置能不能真调通。**不通是结果，不是异常**（见 AiEndpointTestResp）：
+     * 上游 401/404/超时一律正常返回 ok=false + 上游原文，交给界面内联显示。
+     *
+     * <p>测的是「地址 + 密钥 + 协议 + 模型名」四关，走的是真的一次最小对话；
+     * 请求形状与错误识别都收敛在 {@code AiProtocol}，这里不认任何厂商/模型。
+     */
+    AiEndpointTestResp test(Long userId, AiEndpointTestReq req);
 }

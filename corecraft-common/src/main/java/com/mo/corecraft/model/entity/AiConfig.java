@@ -33,6 +33,18 @@ public class AiConfig {
     /** 0 关闭（界面不出现任何 AI 入口）1 开启 */
     private Boolean enabled;
 
+    /**
+     * **当前选中的那条 API**（一人一条）。NULL = 没选过，界面兜回第一条能用的。
+     *
+     * <p>⚠️ **2026-11-13 从 localStorage 搬过来的**：原来「选哪个」只存在浏览器
+     * （`localStorage['ai-current-endpoint']`）⇒ 换个浏览器/换台机器登录就掉回默认，
+     * 用户看到的是「我明明配了 mimo，怎么又是 deepseek」。
+     * 端点列表本来就是账号级的（{@link AiEndpoint} 带 user_id），只有"选哪个"不是，这不对。
+     *
+     * <p>与 {@code enabled} 同表不同权：`enabled` 管"用不用 AI"，这个管"用哪一条"。
+     */
+    private Long currentEndpointId;
+
     private LocalDateTime createTime;
 
     private LocalDateTime updateTime;

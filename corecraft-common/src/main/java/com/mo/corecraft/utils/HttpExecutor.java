@@ -1,5 +1,6 @@
 package com.mo.corecraft.utils;
 
+import com.mo.corecraft.exception.UpstreamHttpException;
 import jakarta.annotation.PreDestroy;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
@@ -81,8 +82,27 @@ public class HttpExecutor {
     }
 
     public String doPost(String url, Map<String, String> headers, String body) throws IOException {
-        return execute(newPost(url, headers, body, defaultConfig));
+        return doPostForResult(url, headers, body).body();
     }
+
+    /**
+     * 和 {@link #doPost} 同一趟请求，额外把 HTTP 状态码带回来。
+     *
+     * <p>为什么要有：{@code execute} 只读响应体、丢掉状态码（历史行为，拉模型清单
+     * 那一路靠错误体也够用）。但**连通性测试**要靠状态码分「密钥不对」(401)、
+     * 「地址不对」(404)、「模型名/参数不对」(400) —— 这三者的响应体长得几乎一样，
+     * 光看 body 分不出来。工具类这里补一个通用出口，不为某个业务单开一套 HTTP 调用。
+     */
+    public HttpResult doPostForResult(String url, Map<String, String> headers, String body) throws IOException {
+        return client.execute(newPost(url, headers, body, defaultConfig), response -> {
+            HttpEntity entity = response.getEntity();
+            String text = entity == null ? "" : EntityUtils.toString(entity, CHARSET);
+            return new HttpResult(response.getCode(), text);
+        });
+    }
+
+    /** 一次非流式 POST 的结果：状态码 + 原始响应体（不解析，解析归调用方） */
+    public record HttpResult(int status, String body) { }
 
     /**
      * 流式 POST：逐行把上游响应体喂给 consumer，直到流结束。
@@ -99,7 +119,11 @@ public class HttpExecutor {
             if (status >= 400) {
                 HttpEntity entity = response.getEntity();
                 String detail = entity == null ? "" : EntityUtils.toString(entity, CHARSET);
-                throw new IOException("上游返回 " + status + "：" + detail);
+                // ⚠️ **抛 UpstreamHttpException 而不是裸 IOException**：
+                // 上层要靠状态码分「重试也没用」（4xx：密钥错/余额不足/模型没开通）
+                // 和「再试一次也许能成」（5xx/超时）。只有状态码能区分这两者，
+                // 光看「上游返回 xxx」这句话是分不出来的。
+                throw new UpstreamHttpException(status, detail);
             }
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(response.getEntity().getContent(), CHARSET))) {

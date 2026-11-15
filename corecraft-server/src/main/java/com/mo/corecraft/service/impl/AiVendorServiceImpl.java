@@ -13,6 +13,7 @@ import com.mo.corecraft.repository.AiEndpointRepository;
 import com.mo.corecraft.repository.SysDictItemRepository;
 import com.mo.corecraft.repository.SysDictTypeRepository;
 import com.mo.corecraft.service.AiVendorService;
+import com.mo.corecraft.service.support.AiProtocol;
 import com.mo.corecraft.utils.HttpExecutor;
 import com.mo.corecraft.utils.JsonUtils;
 import lombok.RequiredArgsConstructor;
@@ -36,8 +37,10 @@ import java.util.stream.Collectors;
  * 模型 = 那个类型下的字典项（label = 显示名，value = 模型 id，停用 = is_enabled=0）。
  * 字典表本来就是「类型 + 平铺的项」两层、项下没有子项 ⇒ 这套层级只能这样落。
  *
- * <p>**刷新走 OpenAI 兼容标准**（GET {base}/models），不按厂商分叉：
- * 厂商由地址决定，不引 provider 字段（{@code AiChatServiceImpl} 那条规矩）。
+ * <p>**刷新按端点的协议分叉**（{@code AiProtocol.modelsUrl / headers}）：
+ * OpenAI 兼容是 GET {base}/models + Bearer，Anthropic 是 GET /v1/models + x-api-key。
+ * **但不按厂商分叉**：同一协议下换厂商只改地址，不引 provider 字段
+ * （{@code AiChatServiceImpl} 那条规矩）。
  */
 @Service
 @Slf4j
@@ -46,9 +49,6 @@ public class AiVendorServiceImpl implements AiVendorService {
 
     /** 厂商字典类型的 code 前缀。厂商 code ↔ 类型 code 的对应靠它 */
     private static final String VENDOR_PREFIX = "ai_vendor_";
-
-    /** 报错时原文最多给多少字：界面放不下要截断，但一个字都不改 */
-    private static final int UPSTREAM_BRIEF = 200;
 
     private final SysDictTypeRepository dictTypeRepository;
     private final SysDictItemRepository dictItemRepository;
@@ -91,14 +91,21 @@ public class AiVendorServiceImpl implements AiVendorService {
             throw new CoreCraftException("没配接口地址");
         }
         // 密钥：前端传的 → 这条端点自己存的
-        // （**密钥不再下发到浏览器**，所以编辑已有端点时前端手上没有，只能走后端这条）
+        // （2026-11-11 起编辑框会明文回显，正常会原样带回来；留空仍走后端这条兜底）
         String apiKey = StringUtils.trimToNull(
                 StringUtils.firstNonBlank(req.getApiKey(), endpoint == null ? null : endpoint.getApiKey()));
         if (StringUtils.isBlank(apiKey)) {
             throw new CoreCraftException("请先配置 API Key");
         }
 
-        List<AiVendorResp.Model> models = parseModels(fetchModels(AiEndpoint.modelsUrlOf(baseUrl), apiKey));
+        // 协议：前端传的 → 端点自己存的 → openai（存量端点默认）
+        // ⚠️ 拉模型和聊天必须用**同一个协议**：URL（/models vs /v1/models）和
+        // 请求头（Bearer vs x-api-key）都跟着它变，猜错就是 401/404 且看不出根因。
+        String protocol = AiEndpoint.protocolOf(StringUtils.firstNonBlank(
+                req.getProtocol(), endpoint == null ? null : endpoint.params().protocol()));
+
+        List<AiVendorResp.Model> models = parseModels(
+                fetchModels(AiProtocol.modelsUrl(baseUrl, protocol), apiKey, protocol), protocol);
         syncModels(type.getId(), models);
         log.info("拉取厂商 {} 的模型清单：{} 个", req.getVendor(), models.size());
         return toResp(type, models);
@@ -113,31 +120,32 @@ public class AiVendorServiceImpl implements AiVendorService {
                 .orElseThrow(() -> new CoreCraftException("没有这个厂商：" + vendor));
     }
 
-    private String fetchModels(String url, String apiKey) {
+    private String fetchModels(String url, String apiKey, String protocol) {
         try {
             // ⚠️ HttpExecutor **不检查 HTTP 状态码** ⇒ 401 的错误体会被原样当 body 拿回来，
             // 所以下面解析失败时直接把这段原文抛出去，否则用户分不清"key 不对"和"厂商没这接口"
-            return httpExecutor.doGet(url, Map.of("Authorization", "Bearer " + apiKey));
+            return httpExecutor.doGet(url, AiProtocol.headers(apiKey, protocol));
         } catch (IOException e) {
-            throw raw(e.getMessage());
+            throw new CoreCraftException(AiProtocol.brief(e.getMessage()));
         }
     }
 
     /**
-     * 解析 OpenAI 兼容的模型清单：{@code {"data":[{"id":"...","name":"..."}]}}。
+     * 解析模型清单：{@code {"data":[{"id":"...","name":"..."}]}}。
      *
-     * <p>**只认 id** —— 那是真正发给 API 的那个串；name 是显示名，没有就用 id。
+     * <p>**只认 id** —— 那是真正发给 API 的那个串；显示名没有就用 id。
+     * 显示名的字段名按协议取（Anthropic 叫 display_name），见 {@code AiProtocol.modelName}。
      */
-    private List<AiVendorResp.Model> parseModels(String body) {
+    private List<AiVendorResp.Model> parseModels(String body, String protocol) {
         JsonNode root;
         try {
             root = JsonUtils.readTree(body);
         } catch (RuntimeException e) {
-            throw raw(body);
+            throw new CoreCraftException(AiProtocol.brief(body));
         }
         JsonNode data = root == null ? null : root.get("data");
         if (data == null || !data.isArray()) {
-            throw raw(body);
+            throw new CoreCraftException(AiProtocol.brief(body));
         }
         // 按 id 去重：厂商偶尔会把同一个模型列两遍
         Map<String, AiVendorResp.Model> byId = new LinkedHashMap<>();
@@ -146,10 +154,10 @@ public class AiVendorServiceImpl implements AiVendorService {
             if (StringUtils.isBlank(id)) {
                 continue;
             }
-            byId.putIfAbsent(id, toModel(id, JsonUtils.text(node, "name")));
+            byId.putIfAbsent(id, toModel(id, AiProtocol.modelName(node, protocol)));
         }
         if (byId.isEmpty()) {
-            throw raw(body);
+            throw new CoreCraftException(AiProtocol.brief(body));
         }
         return new ArrayList<>(byId.values());
     }
@@ -219,18 +227,5 @@ public class AiVendorServiceImpl implements AiVendorService {
 
     private static AiVendorResp.Model toModel(SysDictItem item) {
         return toModel(item.getValue(), item.getLabel());
-    }
-
-    /**
-     * **原始错误直接抛出去**：不加自己的前缀（"厂商没返回模型清单：…"那种书面语）——
-     * 前缀既掩盖了真正的错误，又让人以为是系统的新故障。
-     * 只截断（界面放不下），一个字都不改。
-     */
-    private static CoreCraftException raw(String text) {
-        String t = StringUtils.trimToEmpty(text);
-        if (t.isEmpty()) {
-            return new CoreCraftException("没有返回内容");
-        }
-        return new CoreCraftException(t.length() <= UPSTREAM_BRIEF ? t : t.substring(0, UPSTREAM_BRIEF) + "…");
     }
 }

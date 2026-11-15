@@ -22,4 +22,11 @@ public interface AiConfigService {
 
     /** 总开关开没开。接口配没配齐不管——那件事归 AiEndpointService.requireReady */
     boolean isEnabled(Long userId);
+
+    /**
+     * **把某条 API 设为当前**（账号级，跨设备一致）。
+     *
+     * @throws com.mo.corecraft.exception.CoreCraftException 这条 API 不存在 / 不是这个人的
+     */
+    AiConfigResp useEndpoint(Long userId, Long endpointId);
 }

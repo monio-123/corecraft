@@ -10,7 +10,6 @@ import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.ser.impl.SimpleFilterProvider;
 import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import lombok.Getter;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -21,14 +20,35 @@ import java.util.Map;
 
 public final class JsonUtils {
 
-	@Getter
+    /**
+     * **本工具用的那份 mapper**（**不是**容器里 Boot 那份）。
+     *
+     * <p>⚠️ **它带的那几项配置以前从来没生效过** —— 原来 {@code getObjectMapper()}
+     * 去容器里取 Boot 的 mapper，而这份 {@code defaultMapper} 建好就没人读
+     * （"死配置 + 意图未落地"）。现在**它就是权威那份**（2026-11-05 用户拍板：
+     * 「让它真正生效」）。
+     *
+     * <p>**为什么不用容器里那份**：Boot 那份没有这几项 ——
+     * {@code Include.NON_NULL}（null 字段不写进 JSON）、{@code FAIL_ON_EMPTY_BEANS=false}、
+     * {@code ADJUST_DATES_TO_CONTEXT_TIME_ZONE=false}（时间按本地墙钟，不换算）、
+     * {@code ALLOW_COMMENTS}、{@code SimpleDateFormat(DateTimeFormats.DATETIME)}。
+     * ⚠️ **时间的格式必须和接口上那个一致**（{@code DateTimeFormats.DATETIME}
+     * = {@code yyyy-MM-dd HH:mm:ss}）—— 前端按字典序比较时间串，
+     * 差一个字符分面数字就和条数对不上，**而界面上什么异常都看不到**。
+     *
+     * <p>⚠️ **HTTP 响应不走这里**（Spring MVC 用自己的 HttpMessageConverter）⇒
+     * 改它**不会**改变接口返回的 JSON 形状。它只影响这四处：
+     * 缓存 key、**发给厂商的 AI 请求体**、{@code ai_endpoint} 的 params/custom 落库字符串。
+     *
+     * <p>✅ **和缓存序列化器是同一套配置**（{@code CacheConfig} 也是
+     * {@code initializeBaseMapper()} 建的）⇒ 缓存里的值和这里的 JSON 是同一种形状。
+     */
     private final static ObjectMapper defaultMapper = initializeBaseMapper();
 
 	public static ObjectMapper initializeBaseMapper() {
 	        ObjectMapper mapper = new ObjectMapper()
 	            //反序列化时未知字段忽略
 	            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-	            .configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, true)
 	            .configure(DeserializationFeature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE, false)
 	            .configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false)
 	            .configure(Feature.ALLOW_COMMENTS, true)
@@ -134,6 +154,22 @@ public final class JsonUtils {
 	}
 
 	/**
+	 * JSON 字符串 → {@code Map<String, Object>}；**空 / 空白 / 不是 JSON 对象 ⇒ null**。
+	 *
+	 * <p>给"快照类"字段（试卷的范围/设置快照、作答 payload）一个统一读法——
+	 * 原来各 service 里各写一份同名 {@code toMap}（readTree → toJava → instanceof Map），
+	 * 两份就会各自漂（2026-11-15 收敛）。
+	 */
+	@SuppressWarnings("unchecked")
+	public static Map<String, Object> toStringMap(String json) {
+		if (json == null || json.isBlank()) {
+			return null;
+		}
+		Object v = toJava(readTree(json));
+		return v instanceof Map<?, ?> m ? (Map<String, Object>) m : null;
+	}
+
+	/**
 	 * 取一个**字符串字段**。
 	 *
 	 * <p>**没有这个字段 / 字段是 null ⇒ 返回 null**（不给空串）——
@@ -167,8 +203,19 @@ public final class JsonUtils {
 		return getObjectMapper().convertValue(node, Object.class);
 	}
 	
+	/**
+	 * **本工具用的那份 mapper**。
+	 *
+	 * <p>⚠️ **它不再是"容器里那份"** —— 原来这里去 {@code SpringContextHolder}
+	 * 取 Boot 的 mapper，而 {@link #defaultMapper} 建好就没人读（"死配置 + 意图未落地"）。
+	 * 现在**自己那份就是权威那份**（2026-11-05 用户拍板：「让它真正生效」）。
+	 *
+	 * <p>⚠️ **HTTP 响应不走这里**（Spring MVC 用自己的 HttpMessageConverter）⇒
+	 * 改它**不会**改变接口返回的 JSON 形状。它只影响这四处：
+	 * 缓存 key、**发给厂商的 AI 请求体**、{@code ai_endpoint} 的 params/custom 落库字符串。
+	 */
 	private static ObjectMapper getObjectMapper() {
-        return SpringContextHolder.getBean(ObjectMapper.class);
+        return defaultMapper;
     }
 	
 	private JsonUtils() {

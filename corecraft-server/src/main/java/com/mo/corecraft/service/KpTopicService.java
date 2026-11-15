@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mo.corecraft.model.entity.KpTopic;
 import com.mo.corecraft.model.query.KpTopicQuery;
 import com.mo.corecraft.model.req.KpTopicCreateReq;
+import com.mo.corecraft.model.req.KpTopicMasteryReq;
 import com.mo.corecraft.model.req.KpTopicUpdateReq;
 import com.mo.corecraft.model.resp.KpTopicIndexResp;
 import com.mo.corecraft.model.resp.KpTopicResp;
@@ -33,11 +34,12 @@ public interface KpTopicService {
      * <p>目录树要在知识点那一层显示标题、各处要按类型/标签/有无正文分类计数 ——
      * 这些都要"全集"，但**一条正文都不需要**。实测读全文 4416ms、不读正文 78ms。
      *
-     * @param keyword 关键词（标题 + 正文都搜）；空 = 不筛。
+     * @param keyword 关键词；空 = 不筛。
      *               **带关键词时返回的是"关键词下的全集"** —— 浏览器那边按它算分面计数，
      *               数字才和"点进去看到多少条"对得上。
+     * @param scope   搜哪一块（标题 / 正文 / 都搜，见 {@link KpTopicQuery#normalizeScope}）。
      */
-    List<KpTopicIndexResp> selectTopicIndex(Long userId, String keyword);
+    List<KpTopicIndexResp> selectTopicIndex(Long userId, String keyword, String scope);
 
     /**
      * 按 id 取一条知识点，**按 userId 收敛到本人**。
@@ -72,7 +74,31 @@ public interface KpTopicService {
 
     void updateTopic(KpTopicUpdateReq req, Long userId);
 
+    /**
+     * 设置这条内容的**掌握度参与开关**（单条覆盖）。
+     *
+     * <p>三值语义：{@code true}=参与 / {@code false}=不参与 / {@code null}=恢复继承类型默认。
+     * 详见 {@link KpTopicMasteryReq}（那里解释了为什么单独一个端点）。
+     */
+    void setTopicMasteryEnabled(KpTopicMasteryReq req, Long userId);
+
     void deleteTopic(Long id, Long userId);
+
+    /**
+     * 删掉挂在**这一批目录**下面的全部知识点（软删）。
+     *
+     * <p>给「删目录时连知识点一起删」用：目录树改了，里面的知识点不该整批掉进
+     * "待归类"桶里——那是**堆积源**，越整理越脏。
+     *
+     * <p>⚠️ **归属校验在这一层做**：只删 {@code user_id = 本人} 的那些。
+     * 目录本身已经按 userId 校验过（{@code KpCategoryService#deleteCategory}），
+     * 但知识点还得**再收一遍** —— 万一库里有一条 category_id 指向别人的目录
+     * （脏数据），那条不该被连带删掉。
+     *
+     * @param categoryIds 目录 id 的一批（整棵子树）
+     * @return 实际删掉的条数
+     */
+    int deleteTopicsByCategoryIds(List<Long> categoryIds, Long userId);
 
     void addTopicRelation(Long topicId, Long relatedTopicId);
 

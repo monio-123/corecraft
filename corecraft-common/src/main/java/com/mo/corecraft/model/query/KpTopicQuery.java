@@ -88,4 +88,44 @@ public class KpTopicQuery {
     public void setKeyword(String keyword) {
         this.keyword = normalizeKeyword(keyword);
     }
+
+    // ==================== 关键词搜哪一块 ====================
+
+    /** 标题和正文都搜（**默认**）。前端「搜正文」那档就是它（用户 2026-11-05：
+     *  「对于卡片栏搜索模式 搜索的包括正文和正文标题」）。 */
+    public static final String SCOPE_BOTH = "both";
+    /** **只搜正文**。⚠️ **前端当前没有哪一档用它**（「正文」那档是 {@link #SCOPE_BOTH}，
+     *  「目录」那档是 {@link #SCOPE_TITLE}）⇒ 它是**对外契约面上留着的一档**，
+     *  不是死代码 —— 认它的人（别的接入方）传它就按只搜正文算。 */
+    public static final String SCOPE_CONTENT = "content";
+    /** **只搜标题**（「搜目录」那档 —— 目录名在前端本地匹配，知识点标题由这一档负责）。 */
+    public static final String SCOPE_TITLE = "title";
+
+    /**
+     * 关键词搜哪一块。
+     *
+     * <p>⚠️ **默认必须是 {@link #SCOPE_BOTH}**：这个字段不传时（老调用方 / 别的接口）
+     * 行为不能变 —— 「标题 + 正文都搜」是原来那条语义。
+     */
+    @Setter(AccessLevel.NONE)
+    private String scope = SCOPE_BOTH;
+
+    /**
+     * scope 归一：**认不出来的按 {@link #SCOPE_BOTH} 算** —— 一个手改坏的参数
+     * 不该把搜索搞空（和 {@link #rangeFromRoute} 那条一个道理：坏参数按默认算）。
+     */
+    public static String normalizeScope(String scope) {
+        if (scope == null) {
+            return SCOPE_BOTH;
+        }
+        String trimmed = scope.trim();
+        if (SCOPE_CONTENT.equals(trimmed) || SCOPE_TITLE.equals(trimmed)) {
+            return trimmed;
+        }
+        return SCOPE_BOTH;
+    }
+
+    public void setScope(String scope) {
+        this.scope = normalizeScope(scope);
+    }
 }

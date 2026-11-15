@@ -24,5 +24,11 @@ public class SysDictItemCreateReq {
 
     private String remark;
 
+    /**
+     * 该类型默认是否参与掌握度：null=不配置（继承安全兜底）/ true=参与 / false=不参与。
+     * 只有 {@code kp_topic_type} 那一套字典项真的消费它。
+     */
+    private Boolean masteryEnabled;
+
     private Boolean enabled;
 }
