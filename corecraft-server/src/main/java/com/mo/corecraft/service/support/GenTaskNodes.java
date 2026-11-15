@@ -56,7 +56,6 @@ public final class GenTaskNodes {
     public static final String TYPE_CLASSIFY = "classify";
     public static final String TYPE_EXAM = "exam";
     public static final String TYPE_QUIZ = "quiz";
-    public static final String TYPE_GRADE = "grade";
 
     /** 节点 key（**不是 phase** —— phase 是节点内部的步骤组） */
     public static final String NODE_OUTLINE = "outline";
@@ -68,7 +67,6 @@ public final class GenTaskNodes {
     public static final String NODE_ADOPT = "adopt";
     public static final String NODE_EXAM = "exam";
     public static final String NODE_QUIZ = "quiz";
-    public static final String NODE_GRADE = "grade";
     /** 出题后的人工节点（随堂测验 / 章节考试共用）：点「作答」才解析建卷 */
     public static final String NODE_ANSWER = "answer";
 
@@ -81,7 +79,6 @@ public final class GenTaskNodes {
     public static final String PH_CLASSIFY = "classify";
     public static final String PH_EXAM = "exam";
     public static final String PH_QUIZ = "quiz";
-    public static final String PH_GRADE = "grade";
 
     /** 步骤组定义（key + 人话名） */
     public record PhaseDef(String key, String name) {
@@ -129,7 +126,6 @@ public final class GenTaskNodes {
 
     private static final List<PhaseDef> PHASES_EXAM = List.of(new PhaseDef(PH_EXAM, "出题"));
     private static final List<PhaseDef> PHASES_QUIZ = List.of(new PhaseDef(PH_QUIZ, "出题"));
-    private static final List<PhaseDef> PHASES_GRADE = List.of(new PhaseDef(PH_GRADE, "判分"));
 
     private static final List<NodeDef> DEFS_THEME = List.of(
             new NodeDef(NODE_OUTLINE, "生成目录", "AI 把主题拆成目录树", PHASES_OUTLINE, false),
@@ -158,8 +154,9 @@ public final class GenTaskNodes {
             new NodeDef(NODE_QUIZ, "出题", "就这条知识出几道题", PHASES_QUIZ, false),
             new NodeDef(NODE_ANSWER, "作答", "人工开卷作答，答完才入档", List.of(), true));
 
-    private static final List<NodeDef> DEFS_GRADE = List.of(
-            new NodeDef(NODE_GRADE, "判分", "AI 逐题给分和讲评", PHASES_GRADE, false));
+    // 「判分」任务链（grade）已于 2026-11-15 删除：判分走 /ai/chat/stream（答题器直接调），
+    // 从未有过创建方，执行器的 phase 过滤也不认它——登记而不执行的协议是死协议。
+    // 将来判分真要进任务链，按 task-protocol skill 的三步清单重新登记（节点链/前端表/phase）。
 
     /**
      * 这个任务类型的节点链。
@@ -175,7 +172,6 @@ public final class GenTaskNodes {
             case TYPE_CLASSIFY -> DEFS_CLASSIFY;
             case TYPE_EXAM -> DEFS_EXAM;
             case TYPE_QUIZ -> DEFS_QUIZ;
-            case TYPE_GRADE -> DEFS_GRADE;
             default -> List.of();
         };
     }
@@ -198,7 +194,6 @@ public final class GenTaskNodes {
             case PH_CLASSIFY -> NODE_CLASSIFY;
             case PH_EXAM -> NODE_EXAM;
             case PH_QUIZ -> NODE_QUIZ;
-            case PH_GRADE -> NODE_GRADE;
             default -> stage;
         };
     }
@@ -503,7 +498,6 @@ public final class GenTaskNodes {
             case TYPE_CLASSIFY -> PH_CLASSIFY;
             case TYPE_EXAM -> PH_EXAM;
             case TYPE_QUIZ -> PH_QUIZ;
-            case TYPE_GRADE -> PH_GRADE;
             default -> PH_WRITE;
         };
     }
