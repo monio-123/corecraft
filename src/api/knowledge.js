@@ -35,6 +35,22 @@ export function deleteTopic(id) {
   return request.delete(`/kp/topic/${id}`)
 }
 
+/**
+ * 设置单条知识点是否参与掌握度（**三态**）。
+ *
+ * <p>⚠️ **为什么单独一个端点**（2026-11-12）：通用 `PUT /kp/topic` 的 null 是
+ * "没这个字段"（不修改），而这里的 null 是**"恢复继承类型默认"**——两件事在
+ * JSON 里长得一模一样，只能分成两个接口，否则"恢复继承"永远发不出去。
+ *
+ * <p>三态：true=参与 / false=明确不参与 / null=恢复继承类型默认。
+ *
+ * @param {number} id
+ * @param {boolean|null} enabled
+ */
+export function setTopicMastery(id, enabled) {
+  return request.put(`/kp/topic/${id}/mastery`, { enabled })
+}
+
 // ⚠️ **知识点关联的两个接口封装删掉了**（2026-10-21）：前端从上线到现在
 // 没有建立关联的入口，`kp_topic_relation` 表恒为 0 条 ⇒ 这两个封装零调用。
 // **后端接口还在**（`POST /kp/topic/{id}/relation/{rid}` / `DELETE` 同款），
@@ -91,7 +107,32 @@ export function moveCategory(data) {
   return request.put('/kp/category/move', data)
 }
 
-// 删除目录：**整棵子树一并删**；子树里每一层的知识点都回到"未归类"（知识点本身不删）
-export function deleteCategory(id) {
-  return request.delete(`/kp/category/${id}`)
+/**
+ * 「删这个目录会连带删掉什么」的**预检**（不删任何东西）。
+ *
+ * <p>确认框里那个「N 条知识点」必须来自服务端现查 —— 前端那份结构索引是
+ * **当前关键词下的快照**，还会过期。数错了用户就是"以为删 3 条、实际删 30 条"。
+ *
+ * @param {number} id 目录 id
+ * @returns {Promise<{categoryId:number, categoryName:string, subCategoryCount:number, topicCount:number}>}
+ */
+export function getCategoryDeletePreview(id) {
+  return request.get(`/kp/category/${id}/delete-preview`)
+}
+
+/**
+ * 删除目录：**整棵子树一并删**。
+ *
+ * @param {number} id 目录 id
+ * @param {boolean} [cascadeTopics=false] **true = 连这棵子树里的知识点一起删**（软删）。
+ *   false = 子树里每一层的知识点都回到"未归类"（知识点本身不删，默认行为）。
+ *   <p>为什么给这个开关：删目录后的待归类是**堆积源** —— 目录树改了，
+ *   里面的知识点却整批掉进"待归类"桶里，越整理越脏。而批量清理待归类
+ *   在服务端分页下语义不清（"全选"是当前页还是全部？）。
+ *   ⇒ 从**源头**堵：删目录时让用户明确选择"这些知识点一起删掉"。
+ */
+export function deleteCategory(id, cascadeTopics = false) {
+  return request.delete(`/kp/category/${id}`, {
+    params: { cascadeTopics: cascadeTopics ? 'true' : 'false' }
+  })
 }

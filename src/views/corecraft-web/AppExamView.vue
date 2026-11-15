@@ -9,9 +9,11 @@
         </div>
 
         <div class="exam__ops">
-          <!-- 答题与判分的过程、分数环都在答题器里（**这一块只有两个页面级的按钮**）：
-               答完了才给"重新生成 / 回到目录"。 -->
+          <!-- 答题与判分的过程、分数环都在答题器里（**这一块只有页面级的按钮**）：
+               答完了才给"重做本卷 / 重新生成 / 回到目录"。
+               重做 = 同卷新 attempt（原记录不动，设计 §10.2.1）；重新生成 = 新卷。 -->
           <template v-if="phase === 'running' && runnerPhase === 'done'">
+            <el-button @click="redo">重做本卷</el-button>
             <el-button @click="backToSettings">重新生成</el-button>
             <el-button type="primary" @click="backToTopic">
               {{ categoryId ? '回到目录' : '回到列表' }}
@@ -29,6 +31,14 @@
           <h2 class="setup__title">考试设置</h2>
           <span class="setup__scope">{{ scopeText }}</span>
         </header>
+        <!-- 有作答还没交的旧考试：只提示不自动恢复（目录考试的 scope 是动态筛选集合，
+             上次那批和这次这批对不上；去考试记录里续，TODO-exam-lifecycle §五） -->
+        <div v-if="unfinishedCount" class="setup__unfinished">
+          有 {{ unfinishedCount }} 场未交卷的考试
+          <el-button text type="primary" size="small" @click="router.push({ name: 'AppExamRecords' })">
+            考试记录
+          </el-button>
+        </div>
 
         <div class="setup__grid">
           <!-- 左：题型、道数、分值 -->
@@ -67,8 +77,14 @@
               <p v-if="levelDesc" class="setup__hint">{{ levelDesc }}</p>
             </div>
             <div class="setup__field">
-              <div class="setup__label">我自己的要求</div>
-              <el-input v-model="extra" type="textarea" :rows="3" placeholder="选填" />
+              <!-- 「可跳过」这个信息并进 label（§4.11(l)）：placeholder 一输入就没了，
+                   而"这里不填也行"是这格的属性，不是一次性的提示。 -->
+              <div class="setup__label">我自己的要求（选填）</div>
+              <!-- §4.11(l)：placeholder「选填」删掉。
+                   纪律：placeholder 默认不给，只**格式类**输入留示例；这格不是格式类。
+                   ⚠️ **「可跳过」这个信息要留着**（它告诉用户这里不填也行），
+                   但它属于**label**，不属于 placeholder ⇒ 改进 label，不留占位。 -->
+              <el-input v-model="extra" type="textarea" :rows="3" />
             </div>
           </div>
         </div>
@@ -88,9 +104,15 @@
         </div>
       </section>
 
-      <!-- ========== 生成中 ========== -->
+      <!-- ========== 出题任务在后台跑（可离开，任务中心看进度） ========== -->
+      <div v-else-if="phase === 'task'" class="kb-center">
+        <KbLoader size="sm" />
+        <p>正在生成试卷… 可随时离开</p>
+      </div>
+
+      <!-- ========== 生成中（消费任务：解析建卷） ========== -->
       <div v-else-if="phase === 'loading'" class="kb-center">
-        <el-icon class="is-loading"><Loading /></el-icon>
+        <KbLoader size="sm" />
         <p>正在生成试卷…</p>
       </div>
 
@@ -102,13 +124,13 @@
 
       <!-- ========== 答题 / 判分 / 结果 ==========
            这三段是**答题器**的活（与详情页抽屉里的随堂测验共用同一个组件），
-           这里只负责把卷子递进去。 -->
+           这里只负责把 attempt 递进去：初卷（刚出的）或空（刷新/重做时它自己恢复）。 -->
       <ExamRunner
         v-else
-        :questions="questions"
-        :sections="sections"
+        :initial-questions="questions"
+        :attempt-id="attemptId"
         :note="note"
-        :topic-ids="topicIds"
+        :plan="examPlan"
         @phase="runnerPhase = $event"
       />
     </main>
@@ -117,12 +139,13 @@
 
 <script setup>
 /**
- * 考试模式（**demo**：零存储、零建表，觉得不好用整块删掉）。
+ * 考试模式（试卷与作答**持久化**在服务端，刷新/重进都在）。
  *
  * ## 它是什么
  *
  * 从一条（或一组）知识出发出一份卷子 → **一题一题**作答 → 交卷 → AI 判分并给逐题讲解。
- * **题目和答题记录都不保存**：卷子只活在内存里，刷新就没了。
+ * **试卷、作答、判定都落库**：卷子和结果刷新不丢，答完还能「重做本卷」（同卷新 attempt，
+ * 原记录不动，设计 §10.2.1）。
  *
  * ## 考哪一批知识：URL 说了算
  *
@@ -130,6 +153,7 @@
  * **唯一入口是列表页筛选条上的「考试」**（范围 = 当前筛选出来的那些，未归类的不算）：
  * `ids` = 这批知识的 id，`name` = 范围的名字（目录名或「全部」），
  * `cat` = 选了目录时的目录 id（考完退回那个目录的列表页）。
+ * 生成成功后 URL 追加 `paper`（试卷 id）与 `attempt`（作答 id）⇒ 刷新/分享链接都能恢复现场。
  *
  * **正文由服务端按 id 自己捞**（AiChatReq.topicIds）：前端不传正文，
  * 归属也由服务端按登录态收 —— 与这个项目"客户端不能指定把哪段文本当上下文"的老规矩一致。
@@ -146,13 +170,17 @@
  * 考试设置 → 生成中 → 答题 → 判分中 → 看结果。
  * **判分之前一个字的对错都不显示**——边做边看答案是自测题，不是考试。
  */
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Loading } from '@element-plus/icons-vue'
-import { ensureAiConfigLoaded } from './useAi'
+import KbLoader from '../../components/corecraft-web/KbLoader.vue'
+import { ElMessage } from 'element-plus'
+import { ensureAiConfigLoaded, endpointProblem, resolveEndpoint } from './useAi'
 import { categoryLink } from '../../utils/categoryNav'
 import { DEFAULT_SCORE } from './examParse'
-import { generatePaper, loadExamSpec, maxScoreOf, totalOf, typesBadNote, TYPE_OPTIONS } from './exam'
+import { CFG_KEYS, consumePaperTask, loadExamSpec, maxScoreOf, paperTaskPayload, totalOf, typesBadNote, TYPE_OPTIONS } from './exam'
+import { getPapers, replayAttempt } from '../../api/exam'
+import { ackGenTask, createGenTask } from '../../api/genTask'
+import { genTasks, refreshGenTasksNow } from './useGenTasks'
 import ExamRunner from './ExamRunner.vue'
 
 defineOptions({ name: 'AppExam' })
@@ -189,13 +217,26 @@ const categoryId = computed(() => {
  */
 const phase = ref('idle')
 const error = ref('')
+/** 有作答还没交的旧考试数（设置面板那条提示；0 = 不显示） */
+const unfinishedCount = ref(0)
 /** 这一条是"中性结果"不是错误：「出不了题」= 内容太少，不是坏了 */
 const quiet = ref(false)
 /** 这次考的东西叫什么（= 目录名，URL 带过来） */
 const scopeTitle = ref('')
 const questions = ref([])
+/**
+ * 当前作答 id（URL `attempt`）——**答题器恢复现场的钥匙**。
+ * 生成成功 / 重做后都写回 URL ⇒ 刷新、分享链接都能接着看。
+ * 没有它 = 全新考试（答题器吃 initialQuestions 直接开答）。
+ */
+const attemptId = computed(() => {
+  const n = Number(route.query.attempt)
+  return Number.isFinite(n) && n > 0 ? n : null
+})
 /** 卷面和规范对不上的地方（哪几道没解析出来、哪种题型少了） */
 const note = ref('')
+/** 计划题量结构（出题任务的 plan）——答题器卷面弹窗的"计划 vs 实出" */
+const examPlan = ref([])
 /** 答题器内部的阶段（ready / grading / done）—— 顶栏要据此换按钮 */
 const runnerPhase = ref('ready')
 
@@ -213,9 +254,6 @@ const paperTemplate = ref('')
 const scopeRule = ref('')
 /** 配置有问题时的一句话提示（比如题型没认出来） */
 const specWarning = ref('')
-
-/** 生成中的中止器：离开页面就掐掉，别让请求在后台继续烧 token */
-let abort = null
 
 onMounted(async () => {
   // AI 配置**这个页面自己拉**（不在业务壳里，壳那份它拿不到）
@@ -240,13 +278,24 @@ onMounted(async () => {
   }
   // 范围的名字 = 入口那边给的（目录名 / 「全部」）。范围是**当前筛选出来的那些**。
   scopeTitle.value = String(route.query.name || '')
+  if (attemptId.value) {
+    // URL 带 attempt = 恢复现场（刷新 / 从链接进来）：卷子与作答由答题器按 id 自己拉，
+    // 这里不重新生成。空 questions ⇒ ExamRunner 走 loadAttempt() 分支。
+    questions.value = []
+    phase.value = 'running'
+    return
+  }
   if (!topicIds.value.length) {
     error.value = '没有指定要考的知识'
     phase.value = 'error'
   }
+  // 「有未交卷的考试」提示（只在出全新卷的设置面板上出现；回看/续答不打扰）。
+  // 拉不到就闭嘴（接口挂了不该拦住出卷）。
+  try {
+    const res = await getPapers({ kind: 'exam', unfinished: true, size: 1 })
+    unfinishedCount.value = res?.data?.total || 0
+  } catch { /* 提示可有可无 */ }
 })
-
-onBeforeUnmount(() => abort?.abort())
 
 // ==================== 考试设置 ====================
 
@@ -283,33 +332,105 @@ function bump(i, d) {
 // ==================== 生成试卷 ====================
 
 /**
- * 生成试卷。**走现成的问答通道**，提示词是前端拼的
- * （题量结构 + 出题范围 + 模板 + 难度 + 附加要求）。
+ * 生成试卷 = **提交后台任务**（2026-11-14，与随堂测验同一条链）。
  *
- * 生成试卷那段（拼 prompt / 问模型 / 解析 / 空卷分流）在 `exam.js` 的 `generatePaper()`，
- * **与详情页随堂测验共用**；这里只管本页的阶段状态。
- *
- * 题目解析不出来时**不整卷作废**：能解析几道算几道（见 `examParse.js`）。
+ * 提示词照旧前端拼（题量结构 + 出题范围 + 模板 + 难度 + 附加要求全在材料里），
+ * 出题在服务端跑——这一页只显示进度，人可以走开；任务转「待作答」时
+ * 本页自动消费（人还等在这儿的话），从任务卡「作答」跳回来也走同一段。
  */
 async function generate() {
   if (!topicIds.value.length || !total.value) return
-  abort?.abort()
-  abort = new AbortController()
-  phase.value = 'loading'
   error.value = ''
   quiet.value = false
   note.value = ''
   questions.value = []
+  phase.value = 'task'
   try {
-    const r = await generatePaper({
+    // ⚠️ **端点必须在快照里**（2026-11-15 修「还没选好 API」）：后端建任务时从快照读
+    // endpointId 判端点配全没 —— 没有 ⇒ requireReady(null) ⇒ 每一步都撞同一堵墙。
+    const endpoint = resolveEndpoint()
+    if (!endpoint) throw new Error(endpointProblem() || '还没选好 API')
+    const { material, params } = paperTaskPayload({
       paper: paperTemplate.value,
       scope: scopeRule.value,
       sections: sections.value,
       level: levels.value.find((l) => l.name === levelName.value),
       extra: extra.value,
       topicIds: topicIds.value,
-      signal: abort.signal
+      // 持久化参数：试卷归到这次考的目录下，标题就用范围名（§5.1 证据来源靠 kind 分流）
+      kind: 'exam',
+      categoryId: categoryId.value,
+      title: scopeTitle.value || '考试',
+      scopeName: scopeTitle.value,
+      endpointId: endpoint.id
     })
+    const id = (
+      await createGenTask({
+        type: 'exam',
+        title: params.title,
+        // ⚠️ **promptKey 必须带**（2026-11-15 修随堂「出不了题」）：不带 ⇒ 后端按
+        // 默认问题「写知识点」问模型 ⇒ 它写的是知识梳理，不是题。
+        promptKey: CFG_KEYS.paper,
+        params,
+        steps: [{ seq: 1, phase: 'exam', phaseSeq: 1, title: '出题', material }]
+      })
+    )?.data
+    if (!Number.isFinite(Number(id))) throw new Error('任务没有创建成功')
+    examTaskId.value = Number(id)
+    await refreshGenTasksNow()
+  } catch (e) {
+    error.value = e?.message || '生成试卷失败'
+    phase.value = 'error'
+  }
+}
+
+/** 本页在跟的出题任务（提交后记下 id；离开页面也不丢——任务在服务端） */
+const examTaskId = ref(null)
+
+// 任务状态一变就对账：转「待作答」⇒ 本页自动消费（人还等在这儿）；
+// 失败 ⇒ 把任务的错误摆出来。挂了/删了 ⇒ 回设置态。
+watch(
+  () => genTasks.value.find((t) => t.id === examTaskId.value),
+  (t) => {
+    if (!t || examTaskId.value == null) return
+    if (t.status === 'awaiting') answerTask(t.id)
+    else if (t.status === 'failed') {
+      error.value = t.error || '出题失败'
+      phase.value = 'error'
+      examTaskId.value = null
+    } else if (['canceled', 'succeeded'].includes(t.status)) {
+      examTaskId.value = null
+      // 回设置态是 'idle'（模板里设置区的分支）。写成别的值会落进末尾 v-else
+      // 渲染答题器，而它拿到 null attemptId 就永远停在「恢复中」。
+      if (phase.value === 'task') phase.value = 'idle'
+    }
+  }
+)
+
+// 任务卡「作答」跳回来（?examTask=<id>）：直接消费那个任务
+watch(
+  () => route.query.examTask,
+  (v) => {
+    const id = Number(v)
+    if (!Number.isFinite(id) || id <= 0) return
+    examTaskId.value = id
+    answerTask(id)
+  },
+  { immediate: true }
+)
+
+/**
+ * 消费出题任务：拿原文 → 解析 → 建卷落库 → 进答题；成卷那一刻 ack（任务收档）。
+ */
+async function answerTask(id) {
+  if (phase.value === 'loading') return
+  phase.value = 'loading'
+  error.value = ''
+  quiet.value = false
+  note.value = ''
+  questions.value = []
+  try {
+    const r = await consumePaperTask(id)
     if (r.error) {
       quiet.value = r.quiet
       error.value = r.error
@@ -317,20 +438,48 @@ async function generate() {
       return
     }
     note.value = r.note
+    examPlan.value = r.plan || []
     questions.value = r.questions
+    // ⚠️ **先把 attempt 写回 URL，再切 running**：ExamRunner 挂载即读 attemptId，
+    // router.replace 是异步的，抢在它前面切阶段会让答题器拿到 null ⇒ 卡在「恢复中」。
+    await router.replace({ query: { ...route.query, paper: r.paperId, attempt: r.attemptId } })
     phase.value = 'running'
+    examTaskId.value = null
+    // 成卷收档（幂等）：任务转已完成、角标灭；失败不挡考试
+    ackGenTask(id).finally(refreshGenTasksNow)
   } catch (e) {
-    if (e?.name === 'AbortError') return
     error.value = e?.message || '生成试卷失败'
     phase.value = 'error'
   }
 }
 
-/** 回到考试设置（重新出一份） */
+/**
+ * 重做本卷：**同卷新 attempt**（原记录不动，设计 §10.2.1）。
+ * 服务端复制一份空作答的 attempt 回来 ⇒ 换掉 URL 里的 attempt，答题器从头作答。
+ */
+async function redo() {
+  try {
+    // ⚠️ 信封解包：`request` resolve 的是 `{code, data, message}`，attemptId 在 `data` 里。
+    // 直接取 `a.id` 是 undefined ⇒ URL 丢 attempt 参数 ⇒ 答题器 watch 到 null 直接 return，卡死在旧结果页。
+    const newId = (await replayAttempt(attemptId.value))?.data
+    if (!Number.isFinite(Number(newId)) || Number(newId) <= 0) throw new Error('重做没有拿到新作答 id')
+    questions.value = []
+    runnerPhase.value = 'ready'
+    await router.replace({ query: { ...route.query, attempt: Number(newId) } })
+  } catch (e) {
+    ElMessage.error(e?.message || '重做失败')
+  }
+}
+
+/** 回到考试设置（重新出一份）：URL 里的 paper/attempt 作废，别让「恢复现场」把新卷顶掉 */
 function backToSettings() {
   phase.value = 'idle'
   error.value = ''
   quiet.value = false
+  const query = { ...route.query }
+  delete query.paper
+  delete query.attempt
+  router.replace({ query })
 }
 
 /**
@@ -383,7 +532,8 @@ function backToTopic() {
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-13);
-  max-width: 840px;
+  /* §4.11(r) / §5.4 #44：840px 原来写两份（这里 + 下面的 .exam__body）⇒ 收成 --w-exam。 */
+  max-width: var(--w-exam);
   margin: 0 auto;
   padding: var(--sp-11) var(--sp-15);
 }
@@ -421,9 +571,16 @@ function backToTopic() {
 
 /* ---------- 主体 ---------- */
 .exam__body {
-  max-width: 840px;
+  /* §4.11(r) / §5.4 #44：同 .exam__top-inner ⇒ 840px 收成 --w-exam（只写一处） */
+  max-width: var(--w-exam);
   margin: 0 auto;
   padding: var(--sp-15) var(--sp-15) var(--sp-16);
+  /* §4.11(c)：这一页的 ExamRunner 也挂在容器里 ⇒ 它那条
+     `@container (max-width: 420px)` 的窄屏适配在这一页也能生效
+     （考试页本来够宽、不会触发；这一条是为了"组件放进哪个容器就按哪个容器算"）。
+     ⚠️ 挂了 container-type 之后，这个元素**成为它后代的 absolute/fixed 定位包含块**
+     ⇒ 里面有绝对定位的东西要核一下（这里没有）。 */
+  container-type: inline-size;
 }
 
 /* ---------- 考试设置 ---------- */
@@ -431,8 +588,10 @@ function backToTopic() {
   padding: var(--sp-13);
   background: var(--cc-surface);
   border: 1px solid var(--cc-border);
-  border-radius: var(--radius-xl);
-  box-shadow: 0 10px 32px rgb(31 35 41 / 6%);
+  /* §4.11(i)：卡片圆角统一 --radius-lg（.qcard / .score 也是这一档） */
+  border-radius: var(--radius-lg);
+  /* §4.11(n)：同一条卡片阴影串抄了三份 ⇒ 收成 --cc-shadow-card */
+  box-shadow: var(--cc-shadow-card);
 }
 /* 卡片头：标题 + 范围。范围（考的是什么）在顶栏已经写着，这里只补一个数量 */
 .setup__head {
@@ -442,6 +601,15 @@ function backToTopic() {
   gap: var(--sp-12);
   padding-bottom: var(--sp-12);
   border-bottom: 1px solid var(--cc-border);
+}
+/* 「有未交卷的考试」提示：状态事实 + 入口，中性色不吓人 */
+.setup__unfinished {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  margin-top: var(--sp-10);
+  font-size: var(--text-sm);
+  color: var(--cc-text-3);
 }
 .setup__title {
   margin: 0;
@@ -509,14 +677,16 @@ function backToTopic() {
 .stepper {
   display: flex;
   align-items: center;
-  height: 24px;
+  /* §4.1 第 3 条：按钮 22→--ctl-sm(28) ⇒ 容器跟着到 28。
+     考试页是"一屏一题"，加减道数是主操作，22px 的热区太小。 */
+  height: var(--ctl-sm);
   background: var(--cc-surface-2);
   border: 1px solid var(--cc-border-strong);
   border-radius: var(--radius-sm);
 }
 .stepper__btn {
-  width: 22px;
-  height: 22px;
+  width: var(--ctl-sm);
+  height: var(--ctl-sm);
   padding: 0;
   font-size: var(--text-md);
   line-height: 1;
@@ -585,8 +755,12 @@ function backToTopic() {
   font-size: var(--text-sm);
   color: var(--cc-warning);
 }
-/* 窄屏（手机）两栏挤不下，叠成一条 */
-@media (max-width: 640px) {
+/* 窄屏两栏挤不下，叠成一条
+   ⚠️ §4.11(r)：断点原来 640px ⇒ **641–900px 这个区间没人管**：
+   那一档里 :495 的行内四列 grid 把题型下拉压到 <100px（700px 视口 ≈ **77px**），
+   且 `.exam__setup { min-width:300px }` 在 560px 视口的 grid 列（≈216px）里**必然溢出**。
+   ⇒ 断点提到 900px。 */
+@media (max-width: 900px) {
   .setup__grid {
     grid-template-columns: 1fr;
   }

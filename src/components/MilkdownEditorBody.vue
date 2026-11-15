@@ -14,14 +14,14 @@
          ⚠️ 按钮套 el-tooltip 必须外面再包一层 <span>：<button disabled> 不派发鼠标事件，
          直接套的话"插入链接（先选中文字）"这条**最该被看到的提示反而永远看不到**。 -->
     <div v-if="showToolbar" class="md-toolbar" @mousedown.prevent>
-      <el-tooltip v-for="b in MD_BUTTONS" :key="b.id" :content="b.tip" placement="bottom" :show-after="100">
+      <KbTooltip v-for="b in MD_BUTTONS" :key="b.id" :content="b.tip" placement="bottom" :show-after="100">
         <span class="md-btn-wrap">
           <el-button text size="small" :class="b.cls" :aria-label="b.tip" :disabled="b.disabled" @click="b.run($event)">
             <el-icon v-if="b.icon"><component :is="b.icon" /></el-icon>
             <template v-else>{{ b.text }}</template>
           </el-button>
         </span>
-      </el-tooltip>
+      </KbTooltip>
     </div>
 
     <!-- 使用方塞进来的东西（现在是知识点详情页的标题）。位置：工具栏之下、正文之上。
@@ -39,23 +39,51 @@
 
     <Milkdown />
 
-    <!-- 链接悬浮工具条：正文里单击一个链接就出现（Ctrl/⌘+单击直接新标签打开，不经过它）。
-         四个动作 = 访问 / 编辑 / 复制 / 取消，和 .ctx-menu 一样是 fixed + 视口坐标的浮层。
+    <!-- 链接浮层：正文里单击一个链接就出现（Ctrl/⌘+单击直接新标签打开，不经过它）。
+         **2026-11-09 合并成一条**（用户拍板 ui-preview/link-pop.html）：AI 动作与链接
+         四动作（访问 / 编辑 / 复制 / 取消）同排一条 —— 链接场景**不再叠独立的选区浮层**
+         （原来「问 AI」胶囊会压住「访问」等按钮，见 syncAskFloat 的链接选区判据）。
+         AI 是两态：先按钮，点了才展开输入框（输入框聚焦会吃掉编辑器选区，见 ask-float 注释）。
          @mousedown.prevent：点了不夺编辑器焦点，否则下面两个依赖选区的动作（编辑 / 取消）
-         会因为选区被收成空而反过来给光标处**加**一个链接。 -->
+         会因为选区被收成空而反过来给光标处**加**一个链接（输入框自己 @mousedown.stop 豁免）。
+         定位锚 = 链接 range：滚动/改窗时 reanchorFloat 跟着重算，贴着链接走。 -->
     <div
       v-if="linkBar.visible"
       ref="linkBarEl"
-      class="editor-float link-bar"
+      class="editor-float link-pop"
+      :class="{ 'is-ask': linkBar.askOpen, 'is-away': linkBar.away }"
       :style="{ left: linkBar.x + 'px', top: linkBar.y + 'px' }"
       @mousedown.prevent
       @click.stop
     >
-      <el-tooltip v-for="b in LINK_BUTTONS" :key="b.tip" :content="b.tip" placement="top" :show-after="100">
-        <el-button text size="small" :aria-label="b.tip" @click="b.run()">
-          <el-icon><component :is="b.icon" /></el-icon>
-        </el-button>
-      </el-tooltip>
+      <template v-if="!linkBar.askOpen">
+        <KbTooltip content="让 AI 解读选中的内容" placement="top" :show-after="100">
+          <button type="button" class="float-ai" aria-label="AI 解读" @click="openLinkAsk()">
+            <span class="float-ico"><KbSvgIcon name="sparkle" /></span>
+            AI 解读
+          </button>
+        </KbTooltip>
+        <div class="link-pop__sep" />
+        <KbTooltip v-for="b in visibleLinkButtons" :key="b.tip" :content="b.tip" placement="top" :show-after="100">
+          <button type="button" class="link-pop__act" :class="{ 'is-danger': b.id === 'unlink' }" :aria-label="b.tip" @click="b.run()">
+            <KbSvgIcon :name="b.icon" />
+          </button>
+        </KbTooltip>
+      </template>
+      <template v-else>
+        <input
+          ref="linkAskInput"
+          v-model="linkBar.value"
+          class="float-ai-input"
+          aria-label="AI 解读"
+          placeholder="补充一句你想弄明白的…"
+          @mousedown.stop
+          @keyup.enter="submitLinkAsk()"
+        />
+        <button type="button" class="float-send" aria-label="发送" @click="submitLinkAsk()">
+          <KbSvgIcon name="arrow-up" />
+        </button>
+      </template>
     </div>
 
     <!-- URL 输入气泡：「插入链接」和工具条的「编辑链接」共用这一个。
@@ -82,7 +110,9 @@
          两个气泡互斥出现（都是"先选中文字再点工具栏"），所以放在一起，彼此不会同时在场。
          filterable：目录一多，光靠点开层级找一条会很慢，打两个字能筛。
          teleported=false：下拉不传送到 body，留在浮层里——浮层是 fixed 的，
-         传送到 body 会跑到 body 下的另一个层叠上下文里，被正文盖住。 -->
+         传送到 body 会跑到 body 下的另一个层叠上下文里，被正文盖住。
+         placeholder 留空串而不是删属性：EP 的 select 对 undefined 会 `??` 兜底出语言包
+         默认的「请选择」（2.9.10 useSelect 已核），空串才是真的什么都不显示。 -->
     <div
       v-if="catLink.visible"
       ref="catLinkEl"
@@ -99,7 +129,7 @@
         :teleported="false"
         node-key="value"
         size="small"
-        placeholder="选目录"
+        placeholder=""
         @change="onCategoryPicked"
       />
     </div>
@@ -123,6 +153,59 @@
       >
         {{ opt.label }}
       </button>
+    </div>
+
+    <!-- 选区浮层：正文里选中一段就出现一个「AI 解读」按钮；点了才展开输入框，
+         可补一句问题后交给 AI 解释。
+         和上面几个浮层同一套机制（showFloat 贴着选区，reanchorFloat 跟随滚动）。
+         **只在 AI 开着时才有**（askEnabled）——没开的人不该看见 AI 的影子，
+         而编辑器是通用组件，不该自己去问"AI 开了没"（那件事归上层）。
+         留空回车 = 用默认问题（就是"解读这一段"）。
+         ⚠️ **链接的选区不弹这个浮层**（2026-11-09）：AI 入口在链接浮层里，
+         两个浮层叠在同一处会互相压住（syncAskFloat 的 isLinkOnlySelection 判据）。
+
+         ⚠️ **为什么先弹按钮、再弹输入框**（2026-11-05 用户定）：
+         正文的工具栏（插入链接 / 字号 / 字体…）**全都靠当前选区做事**，
+         而输入框一聚焦，编辑器就失焦、选区随之没了 —— 那几个按钮就都成了空转。
+         所以第一态只给一个按钮；按钮 @mousedown.prevent，**不夺编辑器的焦点**，
+         选区还在，工具栏照样能用。 -->
+    <div
+      v-if="askFloat.visible"
+      ref="askFloatEl"
+      class="editor-float ask-float"
+      :class="{ 'is-open': askFloat.open }"
+      :style="{ left: askFloat.x + 'px', top: askFloat.y + 'px' }"
+      @click.stop
+    >
+      <button
+        v-if="!askFloat.open"
+        type="button"
+        class="float-ai"
+        aria-label="AI 解读"
+        @mousedown.prevent
+        @click.stop="openAskFloat()"
+      >
+        <span class="float-ico"><KbSvgIcon name="sparkle" /></span>
+        AI 解读
+      </button>
+      <template v-else>
+        <input
+          ref="askFloatInput"
+          v-model="askFloat.value"
+          class="float-ai-input"
+          aria-label="AI 解读"
+          @keyup.enter="submitAskFloat()"
+        />
+        <button
+          type="button"
+          class="float-send"
+          aria-label="发送"
+          @mousedown.prevent
+          @click="submitAskFloat()"
+        >
+          <KbSvgIcon name="arrow-up" />
+        </button>
+      </template>
     </div>
 
     <!-- 表格右键菜单：监听 document contextmenu，过滤"在 .ProseMirror 的 td/th 内"
@@ -169,7 +252,7 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
-import { Link, Grid, List, Rank, TopRight, EditPen, CopyDocument, Remove, FolderOpened, MagicStick, Brush } from '@element-plus/icons-vue'
+import { Link, Grid, List, Rank, FolderOpened, MagicStick, Brush } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { Milkdown, useEditor } from '@milkdown/vue'
 import { Editor, rootCtx, commandsCtx, defaultValueCtx, editorViewOptionsCtx, editorViewCtx, parserCtx } from '@milkdown/core'
@@ -180,6 +263,8 @@ import { listener, listenerCtx } from '@milkdown/plugin-listener'
 import { history } from '@milkdown/plugin-history'
 import { clipboard } from '@milkdown/plugin-clipboard'
 import { commonmark, linkSchema } from '@milkdown/preset-commonmark'
+import KbSvgIcon from './corecraft-web/KbSvgIcon.vue'
+import KbTooltip from './corecraft-web/KbTooltip.vue'
 import { gfm } from '@milkdown/preset-gfm'
 import { exitCode, joinBackward, selectAll } from 'prosemirror-commands'
 import { copyText } from '../utils/clipboard'
@@ -191,25 +276,32 @@ import { fontSchema, remarkFontSpan, remarkFontSpanStringify, setFontCommand, cl
 import { fixEmphasisTail } from '../utils/kbMarkdown'
 import { CATEGORY_HREF_PREFIX, TOPIC_HREF_PREFIX } from '../utils/categoryNav'
 import { foldPlugin, getOutline, scrollToHeading as scrollToHeadingInDoc } from './kbHeadingFold'
+import { editorEmits, editorProps } from './milkdownEditorContract'
+import {
+  searchHighlightPlugin,
+  searchHighlightKey,
+  setSearchKeyword as setSearchKeywordInView,
+  gotoMatch as gotoMatchInView
+} from './kbSearchHighlight'
+import { autoLinkPlugin, setAutoLinks as setAutoLinksInView } from './kbAutoLink'
+
+/**
+ * 从视图里读搜索状态（命中列表 / 游标）。
+ *
+ * <p>⚠️ **读 plugin state 而不是自己存一份**：装饰画在文档上、计数显示在界面上 ——
+ * 两份状态各算一遍就会分裂（界面上写着 3 个命中、实际高亮 5 处）。
+ */
+function getSearchState(view) {
+  if (!view) return null
+  return searchHighlightKey.getState(view.state)
+}
 
 // 必须赋值给变量：Vue 3 <script setup> 里 defineProps 不赋值时，编译器只在模板把它当 props，
 // script 代码里访问 props.xxx 会 ReferenceError（这次踩了，所以 props.modelValue 用上时挂了）
-const props = defineProps({
-  modelValue: { type: String, default: '' },
-  // 是否显示工具栏（B/I/H2/H3/...）。默认 false = 简洁模式，只露 ProseMirror 编辑区。
-  showToolbar: { type: Boolean, default: false },
-  /**
-   * 目录树（`utils/categoryTree.js` 的 toCategoryTree 产物），「设为目录链接」那个选择器用。
-   *
-   * **由使用方传进来，编辑器自己不取**：`components/` 里的组件一处都不 import `views/`
-   * 下的 store（这是本项目现成的分层规矩），目录数据住在 `views/corecraft-web/。
-   * 编数据得由使用方拿、算好递进来。
-   *
-   * 空数组 = 没有目录可引，「设为目录链接」按钮直接置灰——不是"点了没反应"。
-   */
-  categoryTree: { type: Array, default: () => [] }
-})
-const emit = defineEmits(['update:modelValue', 'submit', 'ready', 'outline'])
+// ⚠️ **props / emits 的契约只有一份**（`milkdownEditorContract.js`）：本组件是
+// `MilkdownEditor.vue`（薄封装）的实现，父子必须认同一份 ⇒ 改一处两边一起改。
+const props = defineProps(editorProps)
+const emit = defineEmits(editorEmits)
 
 /**
  * markdown → ProseMirror doc（**用编辑器自己的解析器**）。解析不了返回 null。
@@ -246,6 +338,50 @@ defineExpose({
     const view = getView()
     if (!view) return false
     return scrollToHeadingInDoc(view, id)
+  },
+  /**
+   * 正文关键词检索：设词（边打字边调）⇒ 高亮所有命中。
+   *
+   * @returns {number} 命中处数（0 = 没命中）
+   */
+  searchInBody(keyword) {
+    const view = getView()
+    if (!view) return 0
+    setSearchKeywordInView(view, keyword)
+    const st = getSearchState(view)
+    return st ? st.matches.length : 0
+  },
+  /**
+   * 跳到第 n 个命中（0 起）并滚过去。返回是否跳成功。
+   */
+  gotoMatch(index) {
+    const view = getView()
+    if (!view) return false
+    return gotoMatchInView(view, index)
+  },
+  /** 当前命中处数（外面算「N 个命中」用） */
+  searchHitCount() {
+    const view = getView()
+    if (!view) return 0
+    const st = getSearchState(view)
+    return st ? st.matches.length : 0
+  },
+  /**
+   * 知识点自动链接：给正文里**首次出现**的其它知识点标题加链接装饰。
+   *
+   * @param {Array<{term:string,id:number,href?:string}>} entries 词表（标题 → 目标）
+   */
+  setAutoLinks(entries) {
+    const view = getView()
+    if (!view) return
+    setAutoLinksInView(view, entries)
+  },
+  /** 当前在第几个命中（1 起；0 = 还没定位） */
+  searchHitIndex() {
+    const view = getView()
+    if (!view) return 0
+    const st = getSearchState(view)
+    return st ? st.activeIndex + 1 : 0
   },
   /**
    * 整篇替换正文（AI 改写后写回）。返回有没有替换成功。
@@ -309,7 +445,56 @@ defineExpose({
     return true
   },
   /** markdown → ProseMirror doc（**不建视图**）。解析不了返回 null */
-  docOf: parseDoc
+  docOf: parseDoc,
+  /**
+   * 一段范围里的**顶层块**（对比区用）。
+   *
+   * @param from 起点（doc 位置）
+   * @param to   终点（doc 位置）
+   * @returns {Array<{node: object, from: number, to: number}>} 相交的顶层块
+   */
+  blocksInRange(from, to) {
+    const view = getView()
+    if (!view) return []
+    return blocksInRangeNodes(view.state.doc, from, to)
+  },
+  /**
+   * 在某段块**之后**写入新内容（markdown）。
+   *
+   * ## 为什么是「整段替换」而不是 insert
+   *
+   * 直接 `insert` 到块边界上，ProseMirror 的 fitter 可能把新块并进相邻的段落
+   * （"插一段进去，结果变成一段"）—— 结果不确定。
+   * 整段替换的结果是确定的：**原来那几块原样保留，后面接上新块**。
+   *
+   * @param blockFrom 起点块的位置（doc 位置）
+   * @param blockTo   终点块之后的位置
+   * @param markdown  要写进去的内容
+   * @returns 是否写进去了
+   */
+  insertAfter(blockFrom, blockTo, markdown) {
+    const view = getView()
+    if (!view) return false
+    const blocks = blocksInRangeNodes(view.state.doc, blockFrom, blockTo)
+    if (!blocks.length) return false
+    const parsed = parseDoc(markdown)
+    if (!parsed) return false
+    const added = []
+    parsed.content.forEach((node) => added.push(node))
+    if (!added.length) return false
+    const tr = view.state.tr.replaceWith(
+      blockFrom,
+      blockTo,
+      Fragment.from([...blocks.map((b) => b.node), ...added])
+    )
+    // 写完正文会变 ⇒ 视图更新 ⇒ 选区还非空的话浮层会立刻弹回来，
+    // 正好挡在刚写进去的内容上面。这一下不许它弹。
+    suppressAskFloat = true
+    view.dispatch(tr)
+    suppressAskFloat = false
+    hideAskFloat()
+    return true
+  }
 })
 
 // 点目录链接时跳列表页。**和侧边栏点目录走的是同一个地址**（AppLayout 的 goCategory
@@ -333,13 +518,22 @@ const ctxMenu = ref({
 })
 
 // ---------- 链接交互 ----------
-// 链接工具条：正文里单击一个链接就出现，四个动作 = 访问 / 编辑 / 复制 / 取消。
+// 链接浮层（2026-11-09 合并一条）：正文里单击一个链接就出现，
+// 「AI 解读」+ 四个动作（访问 / 编辑 / 复制 / 取消）同排。
 // 光标/选区落在链接上的那串文档位置（不是 href）：编辑和取消都要作用在文档上，
 // 只有 href 的话，"取消链接"根本不知道该摘哪几个字的标记。
 //
 // **range 收在 state 里，不另开模块级变量**：另开一份就得靠"显示时赋值、隐藏时手工置 null"
 // 两边手动同步，漏写一次的症状是浮层还指着上一段文字——而且不报错，只是点取消链接摘错了地方。
-const linkBar = ref({ visible: false, x: 0, y: 0, href: '', range: null })
+// away = 锚点滑出编辑器可视区（reanchorFloat 置，CSS 渐隐）。
+/**
+ * 链接工具条的状态。
+ *
+ * <p>`temp` = 这条链接是**渲染层临时算出来的**（正文自动链接：Decoration，不是 link mark）。
+ * 它只影响按钮列表 —— 「编辑链接 / 取消链接」改的是 doc 里的 mark，对装饰没有作用对象，
+ * 摆上去就是"点了没反应"。见 {@link visibleLinkButtons}。
+ */
+const linkBar = ref({ visible: false, x: 0, y: 0, href: '', range: null, askOpen: false, value: '', away: false, temp: false })
 // URL 输入气泡：「插入链接」和「编辑链接」共用这一个 —— 两种入口做的是同一件事
 // （给某段字改一个 URL），拆成两个弹层就是同一份逻辑写两遍。
 // **cmd 而不是 mode**：两个入口唯一的差别就是"确定之后跑哪条命令"，
@@ -353,6 +547,7 @@ const catLink = ref({ visible: false, x: 0, y: 0, range: null })
 // 插入按钮的置灰依据：没有选中文字就不该能点（"先选中再点"是这个功能的前提）
 const hasSelection = ref(false)
 const linkBarEl = ref(null)
+const linkAskInput = ref(null)
 const linkInputElBox = ref(null)
 const linkInputEl = ref(null)
 const catLinkEl = ref(null)
@@ -397,6 +592,178 @@ function emitOutline() {
 const formatPick = ref({ visible: false, x: 0, y: 0, kind: 'size', range: null })
 const formatPickEl = ref(null)
 
+// ---------- 选区提问（AI 解读） ----------
+// 正文里选中一段 ⇒ 贴着一个「AI 解读」按钮 ⇒ 点它 ⇒ 展开输入框 ⇒ 补一句问题 ⇒ 把这段交给 AI 解释。
+//
+// **为什么第一态是按钮而不是输入框**（2026-11-05 用户定）：正文的工具栏
+// （插入链接 / 字号 / 字体…）全都靠**当前选区**做事，而输入框一聚焦，编辑器就失焦、
+// 选区随之没了 —— 那几个按钮就都成了空转。按钮 @mousedown.prevent，点了不夺焦点。
+//
+// 留空回车 = 用默认问题（"解读这一段"）。
+// 提交负载（text / 块锚）提交时从 range 现算（askPayloadFor），状态里不存第二份。
+const askFloat = ref({ visible: false, x: 0, y: 0, range: null, value: '', open: false, away: false })
+const askFloatEl = ref(null)
+const askFloatInput = ref(null)
+/** 已经为这个选区弹过浮层。空串 = 还没弹过（也用来判"要不要再弹一次"） */
+let askFloatKey = ''
+/** 鼠标按着：拖选过程中不弹（等松手再弹，位置才是最终位置） */
+let mouseDown = false
+/** 写正文那一下不许弹浮层（写完正文一变，选区还非空 ⇒ 会立刻弹回来挡住刚写的内容） */
+let suppressAskFloat = false
+
+/**
+ * 顶层块区间：doc 里那些**与选区相交**的顶层节点。
+ *
+ * **为什么自己遍历而不用 `resolve().start(1)`**：选区正好停在块边界时，
+ * 那套算出来会把**下一块**也带上（用户根本没选它）—— 差一段就是"解释被写到不该在的地方"。
+ * 这里按节点自己的起止判断相交，只认真正被划到的块。
+ *
+ * @param {object} doc ProseMirror doc
+ * @param {number} from 起点（doc 位置）
+ * @param {number} to 终点（doc 位置）
+ * @returns {Array<{node: object, from: number, to: number}>}
+ */
+function blocksInRangeNodes(doc, from, to) {
+  const out = []
+  doc.forEach((node, offset) => {
+    const bFrom = offset
+    const bTo = offset + node.nodeSize
+    if (bTo > from && bFrom < to) out.push({ node, from: bFrom, to: bTo })
+  })
+  return out
+}
+
+function hideAskFloat() {
+  askFloatKey = ''
+  if (askFloat.value.visible) askFloat.value = { ...askFloat.value, visible: false, open: false }
+}
+
+/**
+ * 点「AI 解读」按钮 ⇒ 展开输入框并聚焦。
+ *
+ * **聚焦放在这里，不在 showFloat 里**：showFloat 是"选区定下来"那一刻跑的，
+ * 那时候就给输入框焦点 = 用户还没说要问就把编辑器的焦点抢走了（工具栏的选区就没了）。
+ */
+function openAskFloat() {
+  if (!askFloat.value.visible) return
+  askFloat.value = { ...askFloat.value, open: true }
+  nextTick(() => askFloatInput.value?.focus())
+}
+
+/** 链接浮层的「AI 解读」两态展开。聚焦放这里，理由同 openAskFloat。 */
+function openLinkAsk() {
+  if (!linkBar.value.visible) return
+  linkBar.value = { ...linkBar.value, askOpen: true }
+  nextTick(() => linkAskInput.value?.focus())
+}
+
+/**
+ * 选区定下来了就弹浮层；选区空了就把浮层收掉。
+ *
+ * **同一个选区只弹一次**（askFloatKey）：视图每变一次都会走这里（打字、选中、点击…），
+ * 不去重的话浮层会被反复重画，位置还会跟着抖。
+ *
+ * @param {object} view ProseMirror EditorView
+ */
+/** 链接 mark 类型（linkInteractions 初始化时从 ctx 取一次，选区判据用） */
+let linkMarkType = null
+
+/**
+ * 这段选区**恰好是链接的文字**（不是含链接的更长选区）？
+ * 点链接会把选区落到整个链接上 ⇒ 这种选区的 AI 入口在链接浮层里，
+ * 独立的「AI 解读」单钮不叠上来（两浮层同位会互相压住，2026-11-09 用户报的）。
+ */
+function isLinkOnlySelection(view, from, to) {
+  if (!linkMarkType) return false
+  let sawText = false
+  let ok = true
+  view.state.doc.nodesBetween(from, to, (node) => {
+    if (!node.isText || !ok) return
+    sawText = true
+    if (!linkMarkType.isInSet(node.marks)) ok = false
+  })
+  return ok && sawText
+}
+
+function syncAskFloat(view) {
+  if (!props.askEnabled || suppressAskFloat) {
+    hideAskFloat()
+    return
+  }
+  const sel = view.state.selection
+  if (sel.empty) {
+    hideAskFloat()
+    return
+  }
+  // 链接的选区不弹这个：AI 入口在链接浮层里（见 isLinkOnlySelection）。
+  if (isLinkOnlySelection(view, sel.from, sel.to)) {
+    hideAskFloat()
+    return
+  }
+  const key = sel.from + '-' + sel.to
+  if (key === askFloatKey) return
+  const blocks = blocksInRangeNodes(view.state.doc, sel.from, sel.to)
+  if (!blocks.length) {
+    hideAskFloat()
+    return
+  }
+  askFloatKey = key
+  showFloat(
+    askFloat,
+    askFloatEl,
+    { from: sel.from, to: sel.to },
+    {
+      value: '',
+      // 每次换选区都回到第一态（按钮），别把上一个选区展开着的输入框带过来
+      open: false
+    }
+  )
+}
+
+/**
+ * 「AI 解读」的提交负载：选中的那段 + 顶层块锚（写回时"这段之后另起一段"用，
+ * 所以锚点是块，不是选区）。
+ * **提交时从 range 现算**——在浮层状态里存 text/block* 就得跟文档改动手动同步，
+ * 漏一次的症状是"解释被写到不该在的地方"。
+ * 两个提交口（选区浮层 / 链接浮层的 AI）共用这一条。
+ */
+function askPayloadFor(from, to, supplement) {
+  const view = getView()
+  if (!view) return null
+  const blocks = blocksInRangeNodes(view.state.doc, from, to)
+  if (!blocks.length) return null
+  return {
+    text: view.state.doc.textBetween(from, to, '\n'),
+    supplement,
+    blockFrom: blocks[0].from,
+    blockTo: blocks[blocks.length - 1].to,
+    blockText: blocks.map((b) => b.node.textContent).join('\n')
+  }
+}
+
+/**
+ * 提交这次提问：把「选中的那段 + 用户补的问题」交给上层（详情页）去问 AI。
+ *
+ * **这里不自己发请求**：编辑器是 components/ 下的通用组件，不该知道 AI 怎么调；
+ * 上层拿这个 payload 去开问答抽屉、发一轮问答。
+ */
+function submitAskFloat() {
+  const f = askFloat.value
+  if (!f.visible) return
+  const payload = askPayloadFor(f.range.from, f.range.to, (f.value || '').trim())
+  hideAskFloat()
+  if (payload) emit('ask-ai', payload)
+}
+
+/** 链接浮层的「AI 解读」提交：负载与选区浮层同一条（askPayloadFor）。 */
+function submitLinkAsk() {
+  const f = linkBar.value
+  if (!f.visible) return
+  const payload = askPayloadFor(f.range.from, f.range.to, (f.value || '').trim())
+  hideLinkBar()
+  if (payload) emit('ask-ai', payload)
+}
+
 /**
  * 目录链接的 href 前缀。
  *
@@ -405,7 +772,7 @@ const formatPickEl = ref(null)
  * 那段注释），那里是这个前缀的**另一份拷贝** —— 改的时候两处一起改。
  */
 
-// 两排按钮的清单。**写成表而不是九个写死的 <el-tooltip><el-button>**：
+// 两排按钮的清单。**写成表而不是九个写死的 <KbTooltip><el-button>**：
 // 每个按钮外面都得套一层 el-tooltip（见模板注释），写死就是九份一模一样的壳，
 // 而按钮本身只是"一句提示 + 一个动作"，把它拆散到九个壳里等于让它无处可查。
 // computed 而不是常量：提示文案要跟着置灰状态走（下面「插入链接」那条）。
@@ -476,10 +843,10 @@ const MD_BUTTONS = computed(() => {
 })
 
 const LINK_BUTTONS = [
-  { id: 'visit', tip: '访问链接', icon: TopRight, run: visitLink },
-  { id: 'edit', tip: '编辑链接', icon: EditPen, run: editLink },
-  { id: 'copy', tip: '复制链接文字', icon: CopyDocument, run: copyLink },
-  { id: 'unlink', tip: '取消链接', icon: Remove, run: unlink }
+  { id: 'visit', tip: '访问', icon: 'external', run: visitLink },
+  { id: 'edit', tip: '编辑链接', icon: 'edit', run: editLink },
+  { id: 'copy', tip: '复制文字', icon: 'copy', run: copyLink },
+  { id: 'unlink', tip: '取消链接', icon: 'unlink', run: unlink }
 ]
 
 function onDocumentContextMenu(e) {
@@ -517,6 +884,16 @@ function onDocumentKeydown(e) {
   hideLinkInput()
   hideCatLink()
   hideFormatPick()
+  hideAskFloat()
+}
+
+/**
+ * 鼠标在**编辑器外面**松开时，编辑器那份 mouseup 收不到
+ * （事件没落在 view.dom 里）⇒ "鼠标还按着"那个标记会永远留着，
+ * 之后浮层再也不弹（鼠标明明是松开的）。这里兜一下。
+ */
+function onDocumentMouseUp() {
+  mouseDown = false
 }
 
 // 点浮层以外的地方收起链接浮层。
@@ -525,9 +902,11 @@ function onDocumentKeydown(e) {
 // mousedown 在 click 之前，"点链接开工具条"和"点别处关工具条"才能共存于同一个监听。
 function onDocumentMouseDown(e) {
   // 点到浮层自己时不收，否则刚点"编辑链接"弹出的输入框会被自己的这次点击关掉
-  if (e.target.closest && e.target.closest('.link-bar, .link-input, .cat-link, .format-pick')) return
+  if (e.target.closest && e.target.closest('.link-pop, .link-input, .cat-link, .format-pick, .ask-float')) return
   hideLinkBar()
   hideFormatPick()
+  // 选区浮层：点外面 = 放弃这次提问（没提交的东西不作数）
+  hideAskFloat()
   // 目录气泡点外面 = **取消**，和 URL 气泡那条相反：那里提交的是"框里输到一半的东西"
   // （用户已经打了不少字，点外面丢掉太亏，见上面的注释），这里根本不存在半成品——
   // el-tree-select 是"点一下节点就已经选定了"，没选就等于不想选，按回车提交是凭空多一步。
@@ -541,6 +920,9 @@ onMounted(() => {
   document.addEventListener('click', closeCtxMenu)
   document.addEventListener('keydown', onDocumentKeydown)
   document.addEventListener('mousedown', onDocumentMouseDown)
+  document.addEventListener('mouseup', onDocumentMouseUp)
+  window.addEventListener('scroll', onScrollReanchor, true)
+  window.addEventListener('resize', onScrollReanchor)
 })
 
 onBeforeUnmount(() => {
@@ -548,6 +930,9 @@ onBeforeUnmount(() => {
   document.removeEventListener('click', closeCtxMenu)
   document.removeEventListener('keydown', onDocumentKeydown)
   document.removeEventListener('mousedown', onDocumentMouseDown)
+  document.removeEventListener('mouseup', onDocumentMouseUp)
+  window.removeEventListener('scroll', onScrollReanchor, true)
+  window.removeEventListener('resize', onScrollReanchor)
 })
 
 function hideFloat(state) {
@@ -571,9 +956,16 @@ function hideCatLink() {
 }
 
 // 拿到当前 EditorView。工具条按钮的四个动作都在组件层，而文档位置在编辑器里。
+// ⚠️ **编辑器没建好时必须返回 null，不能抛**（2026-11-09 定位 bug 修出来的）：
+// `useEditor` 的 `get()` 在 `editor.create()` 完成前是 **undefined** ⇒ 原来的
+// `get().action(...)` 直接 TypeError ⇒ 详情页「点进卡片自动定位」那一步整个炸掉
+// （症状：进详情页什么都没发生，连高亮都没有，界面上看不出任何异常）。
+// ⇒ 拿不到视图就当"还没好"，由调用方等 @ready 再来。
 function getView() {
   let view = null
-  get().action((ctx) => {
+  const ed = get()
+  if (!ed) return null
+  ed.action((ctx) => {
     view = ctx.get(editorViewCtx)
   })
   return view
@@ -615,19 +1007,62 @@ function showFloat(state, el, range, extra, after) {
   const view = getView()
   if (!view) return
   const rect = rangeRect(view, range.from, range.to)
-  state.value = { ...state.value, ...extra, visible: true, range, x: rect.left, y: rect.top }
+  state.value = { ...state.value, ...extra, visible: true, away: false, range, x: rect.left, y: rect.top }
   nextTick(() => {
     state.value = { ...state.value, ...floatPos(rect, el.value) }
     after?.()
   })
 }
 
-function showLinkBar(range, href) {
-  showFloat(linkBar, linkBarEl, range, { href })
+/**
+ * 工具条上**当前该显示哪几个**动作。
+ *
+ * <p>自动链接（{@link linkBar.temp}）只给「访问」：它没有 link mark，
+ * 「编辑链接」要往选区上盖 mark、「取消链接」要摘 mark、「复制文字」还算能用但
+ * 三个里两个是空操作 —— 一条工具条上摆两个点了没反应的钮，比少摆更糟。
+ */
+const visibleLinkButtons = computed(() =>
+  linkBar.value.temp ? LINK_BUTTONS.filter((b) => b.id === 'visit') : LINK_BUTTONS
+)
+
+function showLinkBar(range, href, temp = false) {
+  // askOpen / value 归零：上次展开过的输入框不能带到下一个链接上
+  // temp **必须显式写**：showFloat 是 Object.assign 合并，不传就留着上一条链接的值
+  showFloat(linkBar, linkBarEl, range, { href, askOpen: false, value: '', temp })
 }
 
 function openLinkInput(cmd, href, range) {
   showFloat(linkInput, linkInputElBox, range, { cmd, value: href || '' }, () => linkInputEl.value?.focus())
+}
+
+/**
+ * 浮层跟着锚点走（2026-11-09）：滚动 / 改窗时按 range 重算位置 ——
+ * 原来坐标只算一次，正文一滚浮层就和链接 / 选区脱节（用户报的）。
+ * 锚点滑出编辑器可视区 ⇒ 置 away 渐隐；回来自动恢复。
+ * 只管"读的时候要盯着"的两个浮层（链接浮层 / 选区浮层）；
+ * 输入气泡、档位浮层是点完即走的瞬态，不跟。
+ */
+function reanchorFloat(state, el) {
+  if (!state.value.visible || !state.value.range) return
+  const view = getView()
+  if (!view) return
+  const rect = rangeRect(view, state.value.range.from, state.value.range.to)
+  const host = view.dom.getBoundingClientRect()
+  const away = rect.bottom < host.top + 2 || rect.top > host.bottom - 2
+  state.value = { ...state.value, ...floatPos(rect, el.value), away }
+}
+
+// scroll 挂 capture：v10 起正文自己滚（.ProseMirror），scroll 事件不冒泡，
+// capture 才能从 window 一路收到任意滚动容器的滚。rAF 合帧，别每像素都算。
+let reanchorQueued = false
+function onScrollReanchor() {
+  if (reanchorQueued) return
+  reanchorQueued = true
+  requestAnimationFrame(() => {
+    reanchorQueued = false
+    reanchorFloat(linkBar, linkBarEl)
+    reanchorFloat(askFloat, askFloatEl)
+  })
 }
 
 // 把选区按范围设回去。工具条已经 @mousedown.prevent 不夺焦点，理论上选区还在，
@@ -775,6 +1210,8 @@ const submitKeymap = $useKeymap('submitKeymap', {
 // `view.posAtDOM(el, 0)` 把 DOM 位置换回文档位置，剩下的就和 mark 无关了。
 const linkInteractions = $prose((ctx) => {
   const mark = linkSchema.type(ctx)
+  // 选区判据（isLinkOnlySelection）也要用这个 mark，取一次存下
+  linkMarkType = mark
   return new Plugin({
     view: () => ({
       update(view) {
@@ -784,11 +1221,53 @@ const linkInteractions = $prose((ctx) => {
         if (linkBar.value.visible && !view.state.doc.rangeHasMark(view.state.selection.from, view.state.selection.to, mark)) {
           hideLinkBar()
         }
+        // 选区变了就同步「AI 解读」浮层。
+        // **鼠标按着的时候不同步**：拖选过程中选区一路变，浮层会一路跟着重画，
+        // 位置还不是最终位置（松手才算数）。松手那一下由 mouseup 处理。
+        if (!mouseDown) syncAskFloat(view)
       }
     }),
     props: {
       handleDOMEvents: {
+        // 拖选过程中先记着"鼠标还按着"：那时候选区一路变，浮层不该跟着重画。
+        mousedown() {
+          mouseDown = true
+          return false
+        },
+        // 松手 = 选区定了 ⇒ 这时候弹「AI 解读」浮层。
+        //
+        // **为什么不在 update 钩子里弹**：Chrome 的 selectionchange 是在 mouseup
+        // **之后**才发的，那时候视图还没拿到最终选区；拖到一半弹出来的位置是错的。
+        // 这里读 mouseup 时刻的 state，选区已经是对的（拖动过程中 Chrome 就一直在报）。
+        mouseup(view) {
+          mouseDown = false
+          syncAskFloat(view)
+          return false
+        },
         click(view, event) {
+          // ① 正文自动链接（`kbAutoLink` 的 Decoration）—— **不是**真正的 link mark。
+          //
+          // 这里必须单独接一条：下面那套判据（`closest('a')` + `nodeAt(pos).marks` 里有
+          // link）对装饰**一条都不成立** ⇒ 不接的表现就是用户报的那句
+          // 「看着像链接，点了没反应」（连工具条都不弹）。
+          // 交互对齐真链接：单击 = 选中这段并弹同一条工具条（只给「访问」），
+          // Ctrl/⌘ + 单击 = 新标签直接打开。
+          const auto = event.target.closest && event.target.closest('.kb-autolink')
+          if (auto && view.dom.contains(auto)) {
+            const autoHref = auto.getAttribute('data-href') || ''
+            if (!autoHref) return false
+            event.preventDefault()
+            if (event.ctrlKey || event.metaKey) {
+              window.open(autoHref, '_blank', 'noopener,noreferrer')
+              return true
+            }
+            const from = view.posAtDOM(auto, 0)
+            const range = { from, to: from + auto.textContent.length }
+            view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, range.from, range.to)))
+            view.focus()
+            showLinkBar(range, autoHref, true)
+            return true
+          }
           const el = event.target.closest && event.target.closest('a')
           if (!el || !view.dom.contains(el)) return false
           const pos = view.posAtDOM(el, 0)
@@ -1124,6 +1603,10 @@ const { get, loading } = useEditor((root) =>
     .use(clearFormattingCommand)
     // 标题折叠（箭头 + 隐藏后续内容）
     .use(foldPlugin)
+    // 正文关键词高亮 + 定位（详情页的检索框用；纯装饰，不改内容）
+    .use(searchHighlightPlugin)
+    // 知识点自动链接（正文里提到别的知识点时自动变链接；纯装饰，不改内容）
+    .use(autoLinkPlugin)
 )
 
 // 编辑器就绪信号。`@milkdown/vue` 的 useEditor 返回 `{ loading, get }`（见其 types.d.ts），

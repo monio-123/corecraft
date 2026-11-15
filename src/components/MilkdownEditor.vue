@@ -26,9 +26,11 @@
         v-model="markdown"
         :show-toolbar="showToolbar"
         :category-tree="categoryTree"
+        :ask-enabled="askEnabled"
         @submit="emit('submit')"
       @ready="emit('ready')"
       @outline="emit('outline', $event)"
+      @ask-ai="emit('ask-ai', $event)"
       >
         <template #before-content>
           <slot name="before-content" />
@@ -42,25 +44,13 @@
 import { ref, watch } from 'vue'
 import { MilkdownProvider } from '@milkdown/vue'
 import MilkdownEditorBody from './MilkdownEditorBody.vue'
+import { editorEmits, editorProps } from './milkdownEditorContract'
 
-const props = defineProps({
-  modelValue: { type: String, default: '' },
-  // 工具栏显不显示。**由使用方持有**（v-model:show-toolbar），
-  // 因为开关按钮画在编辑器外面的顶栏上，状态得和使用方那份是同一份。
-  showToolbar: { type: Boolean, default: false },
-  // 目录树，「设为目录链接」的选择器要。**纯转发**——正文编辑器不碰目录数据，
-  // 取数在建树的业务层（见 MilkdownEditorBody 里 categoryTree 那段注释）。
-  categoryTree: { type: Array, default: () => [] }
-})
-// 'ready'：编辑器视图建好、正文已渲染完。**纯转发**，判断在 MilkdownEditorBody 的
-// `useEditor().loading` 上；外层（详情页的滚动对齐）靠它知道"现在量得到最终高度了"。
-// 'outline'：正文里的标题结构（右侧大纲栏用）。**纯转发**。
-//
-// ⚠️ **没有 'update:showToolbar'**：工具栏开关画在**父层**（那一排按钮不在编辑器里），
-// 状态由父层持有，编辑器只读。以前声明了却从不 emit，三个使用方却写的是
-// `v-model:show-toolbar` —— 看着是双向绑定，实际是单向，哪天在编辑器内部改它
-// 父层那份不会动、且不报错。
-const emit = defineEmits(['update:modelValue', 'submit', 'ready', 'outline'])
+const props = defineProps(editorProps)
+// ⚠️ **props / emits 的契约只有一份**（`milkdownEditorContract.js`）：本组件是
+// `MilkdownEditorBody.vue` 的薄封装，父递下去的必须和子认的完全一样。
+// 以前两边各抄一份 ⇒ 改一个默认值只改一处就分裂（症状是"传了没反应"，不报错）。
+const emit = defineEmits(editorEmits)
 
 /** Body 的实例，暴露出来的方法靠它转发给外层（大纲点击跳转要滚到编辑器里的某个标题） */
 const bodyRef = ref(null)
@@ -73,7 +63,28 @@ defineExpose({
   /** 换一条知识点：替换正文**并清空撤销栈**（复用编辑器时用它） */
   switchContent: (md) => bodyRef.value?.switchContent(md) ?? false,
   /** markdown → ProseMirror doc（对比区复用编辑器的解析器，保证渲染与正文一致）。解析不了返回 null */
-  docOf: (md) => bodyRef.value?.docOf(md) ?? null
+  docOf: (md) => bodyRef.value?.docOf(md) ?? null,
+  /** 一段范围里的顶层块（AI 写入前的对比区用） */
+  blocksInRange: (from, to) => bodyRef.value?.blocksInRange(from, to) ?? [],
+  /** 在某段块之后写入新内容（markdown）。返回有没有写进去 */
+  insertAfter: (from, to, md) => bodyRef.value?.insertAfter(from, to, md) ?? false,
+  /** 正文关键词检索：设词 ⇒ 高亮所有命中，返回命中处数 */
+  searchInBody: (kw) => bodyRef.value?.searchInBody(kw) ?? 0,
+  /** 跳到第 n 个命中（0 起）并滚过去 */
+  gotoMatch: (i) => bodyRef.value?.gotoMatch(i) ?? false,
+  /** 当前命中处数 */
+  searchHitCount: () => bodyRef.value?.searchHitCount() ?? 0,
+  /** 当前在第几个命中（1 起；0 = 还没定位） */
+  searchHitIndex: () => bodyRef.value?.searchHitIndex() ?? 0,
+  /**
+   * 知识点自动链接：给正文里**首次出现**的其它知识点标题加链接装饰。
+   *
+   * <p>⚠️ **这一层必须转发**：详情页的 `editorRef` 指的是**这个组件**，
+   * 不是里层的 `MilkdownEditorBody`。方法只加在 body 上 ⇒ 外层拿不到 ⇒
+   * `editorRef.value.setAutoLinks is not a function`（异常被 `?.` 吞成"没反应"，
+   * 界面上一条链接都没有、控制台只有一条 Vue warn）。
+   */
+  setAutoLinks: (entries) => bodyRef.value?.setAutoLinks(entries)
 })
 
 // v-model 双向：props.modelValue 进来同步到内部 markdown，内部 markdown 变化 emit 出去

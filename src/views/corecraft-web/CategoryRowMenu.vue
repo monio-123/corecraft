@@ -1,5 +1,5 @@
 <template>
-  <RowMenu title="目录操作" :items="ITEMS" @command="onCommand" />
+  <RowMenu title="目录操作" :items="ITEMS" :btn-class="btnClass" @command="onCommand" />
 </template>
 
 <script setup>
@@ -16,7 +16,9 @@ import RowMenu from './RowMenu.vue'
 import { confirmDeleteCategory } from './useCorecraftWebStore'
 
 const props = defineProps({
-  category: { type: Object, required: true }
+  category: { type: Object, required: true },
+  /** 透传给 RowMenu 触发按钮的额外 class（调用方按所在行定制外观，如树里的幽灵横点）。 */
+  btnClass: { type: String, default: '' }
 })
 const emit = defineEmits(['add', 'points', 'rename', 'removed'])
 
@@ -26,10 +28,10 @@ const emit = defineEmits(['add', 'points', 'rename', 'removed'])
 // ⚠️ 这里**没有**「考试」项：考试入口在**列表页的筛选条**上（范围 = 当前筛选出来的那些，
 // 用户 2026-10-23 定）。放在目录行上会让"考这个目录"和"考当前筛选"变成两件事。
 const ITEMS = [
-  { command: 'add', label: '新增子目录' },
-  { command: 'points', label: '写知识点' },
-  { command: 'rename', label: '重命名' },
-  { command: 'delete', label: '删除目录', divided: true }
+  { command: 'add', label: '新增子目录', icon: 'plus' },
+  { command: 'points', label: '写知识点', icon: 'edit' },
+  { command: 'rename', label: '重命名', icon: 'text' },
+  { command: 'delete', label: '删除目录', icon: 'trash', tone: 'danger', divided: true }
 ]
 
 async function onCommand(cmd) {

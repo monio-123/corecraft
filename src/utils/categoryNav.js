@@ -16,7 +16,7 @@
  * @param {number|string} categoryId 目录 id
  * @returns {{path:string,query:object}} vue-router 的 location 对象
  */
-import { VIEW_TREE, viewOf } from './viewPref'
+import { canUseTree } from './viewPref'
 
 /**
  * 「跳到某个目录的卡片视图」的地址。
@@ -37,7 +37,12 @@ export function categoryLink(categoryId) {
  *
  * <p>⚠️ **侧边栏点书走树视图、正文里点目录走卡片视图** —— 前者是"我要看这本书
  * 有什么"，后者是"我要看这个目录里的内容"，问的不是一件事。
- * 两个参数互斥：写的时候互相清掉 ⇒ 不用判"两个都带时听谁的"。
+ *
+ * <p>⚠️ **两个参数不再互斥**（2026-11-04）：`tree` = **哪本书**，`category` =
+ * **正在看的那个目录**，各管一件事 ⇒ **树视图 = 有 tree 且没有 category**
+ * （判据只有一份，见 AppLearnView 的 `isTree`）。
+ * 写的时候**不再互相清掉**：清掉 `tree` 会让浏览器"返回"回不到刚才那棵树
+ * （用户报的「返回的目录都不对了」）。
  *
  * @param {number|string} categoryId 一级目录 id
  * @returns {{path:string,query:object}} vue-router 的 location 对象
@@ -55,11 +60,21 @@ export function treeLink(categoryId) {
  *
  * <p>偏好在 {@link viewPref}（存在 `sys_config` 的"我的覆盖"那一层）。
  *
+ * <p>⚠️ **搜索态不走这里**（AppLayout 的 `bookLink` 自己拼）：搜索时侧边栏只列命中的书
+ * ⇒ 点进去要看的正是"这本书里命中的那几条" ⇒ **搜索词得跟着走**；
+ * 而且正文档下"再点已选中那本"要**故意不带** `tree`（取消选中）——
+ * 这两种形状 `viewLink` 表达不了（它总是带上 `tree` 或 `category`）。
+ *
  * @param {{id:number, parentId?:number}} category 目录对象
  * @returns {{path:string,query:object}} vue-router 的 location 对象
  */
 export function viewLink(category) {
-  return viewOf(category) === VIEW_TREE ? treeLink(category.id) : categoryLink(category.id)
+  // ⚠️ 2026-11-09 用户：「这个配置还是要保留 只是切换现在是放到目录树上方的切换按钮了
+  // 而已」——书（一级目录）**一律进 ?tree=**：树顶的「目录树|卡片」切换 + 每本书的
+  // 偏好（ui.view.category.<id>）在那里决定形态（带 ?view= 走 URL，不带则跟偏好）。
+  // 不再把偏好=卡片的书送进 ?category= 独立卡片页——那一页**没有切换开关**，
+  // 切走了「没法恢复」（2026-11-09 用户报）。
+  return canUseTree(category) ? treeLink(category.id) : categoryLink(category.id)
 }
 
 /**

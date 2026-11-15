@@ -1,19 +1,32 @@
 <template>
   <!-- 大纲被隐藏后，右边缘留一个常驻的小按钮把它叫回来。
-       藏起来却叫不回来比不藏更糟，所以这个入口不能也跟着一起藏。 -->
+       藏起来却叫不回来比不藏更糟，所以这个入口不能也跟着一起藏。
+       ⚠️ 要带 items.length：窄屏下 hidden 的初值是 true（见 script），
+       而"没有标题就没有大纲"——那时给出一个点了什么也不出现的按钮，
+       正好是它要避免的那个毛病（藏起来叫不回来）。
+       ⚠️ **受控模式不画这个按钮**（hidden 由外层传进来 = 外层有自己的入口，
+       详情页是 meta 行图标排的「大纲」键）——两个入口并存就是"上哪儿关它"的混乱。 -->
   <button
-    v-if="hidden"
+    v-if="selfManaged && isHidden && items.length"
     type="button"
     class="outline__restore"
     aria-label="显示大纲"
-    @click="hidden = false"
+    @click="isHidden = false"
   >
     大纲
   </button>
 
   <!-- 大纲本体。**没有标题就不存在**（v-if="items.length"）——
-       没标题的知识点（大多数）右边挂一个空栏是纯噪音。语雀那套就是这样。 -->
-  <aside v-else-if="items.length" class="outline">
+       没标题的知识点（大多数）右边挂一个空栏是纯噪音。语雀那套就是这样。
+
+       ⚠️ **内部点击一律不冒泡给文档级「点空白收起」**（2026-11-10 用户报
+       「点击后这个大纲弹窗就没了」）：工具按钮/折叠箭头/条目都在浮层**里面**，
+       不是"空白"。踩过的坑：点「全部折叠」时 allFolded 翻转 ⇒ 图标组件
+       `Fold`→`Expand` 换代，**点击目标（svg 的 path）被从 DOM 拔掉**，
+       冒泡到 document 时 `$el.contains(e.target)` 已经判 false
+       ⇒ 整个浮层被当成"点空白"收走。`.stop` 后浮层内任何点击都走不到那条监听
+       （该关的两条路——点条目、隐藏按钮——各自关自己，不依赖它）。 -->
+  <aside v-else-if="items.length && !isHidden" class="outline" :class="{ 'is-floating': isFloating }" @click.stop>
     <div class="outline__head">
       <div class="outline__title">大纲</div>
       <!-- 工具条：**鼠标移到大纲上才出现**（语雀那套）。这两个按钮不常用，
@@ -25,14 +38,14 @@
            提示框往左一弹**正好压住它们**（用户反馈的遮挡问题）。
            语雀那套也是浮在按钮上方。 -->
       <div class="outline__tools">
-        <el-tooltip content="隐藏大纲" placement="top">
-          <button type="button" class="outline__tool" aria-label="隐藏大纲" @click="hidden = true">
+        <KbTooltip content="隐藏大纲" placement="top">
+          <button type="button" class="outline__tool" aria-label="隐藏大纲" @click="isHidden = true">
             <el-icon><Hide /></el-icon>
           </button>
-        </el-tooltip>
+        </KbTooltip>
         <!-- 「全部折叠/全部展开」折的是**大纲自己**：全折之后只剩一级标题。
              折的是大纲、不是正文 —— 正文里那一节折不折由用户自己在正文上点箭头。 -->
-        <el-tooltip :content="allFolded ? '全部展开' : '全部折叠'" placement="top">
+        <KbTooltip :content="allFolded ? '全部展开' : '全部折叠'" placement="top">
           <button
             type="button"
             class="outline__tool"
@@ -41,7 +54,7 @@
           >
             <el-icon><component :is="allFolded ? 'Expand' : 'Fold'" /></el-icon>
           </button>
-        </el-tooltip>
+        </KbTooltip>
       </div>
     </div>
     <nav class="outline__nav">
@@ -67,7 +80,7 @@
         <button
           class="outline__item"
           :class="{ 'is-active': r.id === activeId }"
-          @click="emit('navigate', r.id)"
+          @click="pick(r.id)"
         >
           {{ r.text || '（无标题）' }}
         </button>
@@ -95,7 +108,7 @@
  * 在大纲里点一下就把正文的段落藏起来，是"看目录"的动作顺手改了正文，
  * 误触成本太高。
  *
- * 所以折叠状态**住在大纲自己这里**（`collapsedIds`），跟正文各管各的：
+ * 所以折叠状态**住在大纲自己这里**（`foldedIds`），跟正文各管各的：
  * - 正文那侧：鼠标移到标题上出现箭头，点一下折那一节（kbHeadingFold.js 管）
  * - 大纲这侧：点箭头折掉这一支下级条目（只影响这一栏显示什么）
  *
@@ -103,24 +116,97 @@
  * 下级是谁算的？编辑器（`kbHeadingFold.js` 的 scanHeadings）——
  * 大纲不自己按 level 推，那条规则只有一份。
  */
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
+import KbTooltip from '../../components/corecraft-web/KbTooltip.vue'
 
 const props = defineProps({
   /** 正文里的标题层级：[{ id, level, text, descendants }] */
   items: { type: Array, default: () => [] },
   /** 当前所在章节（高亮它） */
-  activeId: { type: String, default: '' }
+  activeId: { type: String, default: '' },
+  /**
+   * 受控显隐（v-model:hidden）：true = 藏起来，外层决定显不显。
+   * **不传 = 自管**（编辑器实验台那份，行为与从前完全一致：窄屏默认藏、宽屏常驻、
+   * 右边缘留恢复按钮）。
+   *
+   * ⚠️ `default: undefined` 是必须的：Boolean 类型的 prop 缺省时会被 Vue 铸成 false，
+   * 只有显式声明 default 才留得出「没传」这个第三态 —— 否则实验台会被误判成受控模式。
+   */
+  hidden: { type: Boolean, default: undefined },
+  /**
+   * 浮层形态：不占正文旁边的版位，浮在正文右上方（点一条自动收起）。
+   * 详情页用它（2026-11-09：入口是 meta 行图标排的「大纲」按钮，按需弹出）；
+   * 不传 = 宽屏粘性右栏 + 窄屏浮层（原来的双形态）。
+   */
+  floating: { type: Boolean, default: false }
 })
-const emit = defineEmits(['navigate'])
+const emit = defineEmits(['navigate', 'update:hidden'])
 
-// 整栏隐藏
-const hidden = ref(false)
+/**
+ * 窄屏断点。⚠️ 断点值只在这一处（原来 CSS 里还有一份同数的 media，
+ * 2026-11-09 清理时把窄屏形态收成这里的 `is-floating` 类，两份重复样式合一）。
+ */
+const NARROW = '(max-width: 1100px)'
+const narrowMq = window.matchMedia(NARROW)
 
-/** 折起来的大纲条目 id（**只管大纲自己**，跟正文的折叠状态无关） */
-const collapsedIds = ref([])
+/**
+ * 整栏隐藏。**两态**：
+ * - 自管（hidden prop 没传）：初值随屏宽走 —— 窄屏下大纲是**浮在正文上的一层**
+ *   （见样式里那条 media），一进来就展开等于挡住正文 ⇒ 默认收起，用右边缘那个
+ *   「大纲」竖条叫出来；宽屏下它是常驻右栏，默认展开（原来的行为）。
+ * - 受控（hidden prop 由外层传）：显不显听外层的，初值/恢复按钮都不归这里管。
+ *
+ * ⚠️ **判据只有一处**（{@link selfManaged}）：原来 `props.hidden === undefined`
+ * 这个三态判据在四个地方各写一遍 ⇒ 改判据漏一处 ⇒ "自管模式"和"受控模式"
+ * 两套行为会同时存在（症状：受控模式下大纲也自己收起来了）。
+ */
+const selfHidden = ref(narrowMq.matches)
+const selfManaged = computed(() => props.hidden === undefined)
+const isHidden = computed({
+  get: () => (selfManaged.value ? selfHidden.value : props.hidden),
+  set: (v) => {
+    if (selfManaged.value) selfHidden.value = v
+    else emit('update:hidden', v)
+  }
+})
 
-/** 折起来的标题 id */
-const foldedIds = computed(() => new Set(collapsedIds.value))
+/**
+ * 跨过断点时回到那一侧的默认形态（只管自管模式；受控模式外层说了算）。
+ *
+ * 不跟着改的话会留下两条死角：窄屏收起 → 拉宽窗口，浮层样式已经不生效了、
+ * 大纲却一直收着，看着像凭空少了一栏；反过来宽屏展开 → 缩窗，
+ * 浮层会直接盖在正文上。
+ *
+ * ⚠️ **只有一份**（原来 `narrow` 和 `selfHidden` 两个 ref 存的是同一个值，
+ * 每次断点变化都写两遍）⇒ 一份状态、两个用途：
+ * `narrow` 判"当前是不是窄屏"，`selfHidden` 判"自管模式下收没收起"。
+ */
+const narrow = ref(narrowMq.matches)
+/** 浮层形态 = 显式要浮（floating）或 窄屏（浮在正文上，与 floating 同款）。样式只有一份（.is-floating）。 */
+const isFloating = computed(() => props.floating || narrow.value)
+function onNarrowChange(e) {
+  narrow.value = e.matches
+  if (!selfManaged.value) return
+  selfHidden.value = e.matches
+}
+narrowMq.addEventListener('change', onNarrowChange)
+onBeforeUnmount(() => narrowMq.removeEventListener('change', onNarrowChange))
+
+/** 点一条大纲。浮层形态（盖在正文上）点完就收起 —— 不收就一直挡着跳转的目标。 */
+function pick(id) {
+  emit('navigate', id)
+  if (isFloating.value) isHidden.value = true
+}
+
+/**
+ * 折起来的大纲条目 id（**只有一份**）。
+ *
+ * ⚠️ 原来这里是**数组 + Set 两份**（`collapsedIds` 数组、`foldedIds` 它的 Set 视图），
+ * `toggleFold` 里还要再造第三个 Set ⇒ 一次折叠要过三道转换，
+ * 漏一处就出现"点了箭头没反应"（而界面上看不出哪儿不对）。
+ * ⇒ 现在**只有 Set 一份**，要数组的时候现转。
+ */
+const foldedIds = ref(new Set())
 
 /** 这一支还有没有下级条目（有才给箭头） */
 function hasChildren(r) {
@@ -158,12 +244,12 @@ function toggleFold(id) {
   const next = new Set(foldedIds.value)
   if (next.has(id)) next.delete(id)
   else next.add(id)
-  collapsedIds.value = [...next]
+  foldedIds.value = next
 }
 
 /** 全折 = 所有带下级的都折上（于是只剩一级）；全展 = 一个都不折 */
 function toggleFoldAll() {
-  collapsedIds.value = allFolded.value ? [] : [...branchIds.value]
+  foldedIds.value = allFolded.value ? new Set() : new Set(branchIds.value)
 }
 </script>
 
@@ -176,7 +262,13 @@ function toggleFoldAll() {
      不然 flex 子项默认 stretch，会拉成一整屏高，sticky 也就没意义了。 */
   position: sticky;
   top: var(--sp-12);
-  max-height: calc(100vh - var(--sp-24));
+  /* 上下各留 --sp-12：sticky 的 top 是 16，高度就得从 100vh 里减掉两个 16，
+     否则底边正好压在视口下沿、最后一行贴着边。
+     ⚠️ 原来写的是 `calc(100vh - var(--sp-24))`，而间距阶梯只到 --sp-16、
+     **全项目没有 --sp-24 这个变量** ⇒ calc() 无效 ⇒ 整条 max-height 被浏览器丢弃
+     ⇒ 配套的 overflow-y 与 sticky 从来没生效过（大纲跟着页面一起长，
+     条目超过一屏时底部那些既看不见也滚不到）。这类 bug 不报错、不警告。 */
+  max-height: calc(100vh - 2 * var(--sp-12));
   overflow-y: auto;
   font-size: var(--text-sm);
 }
@@ -306,7 +398,9 @@ function toggleFoldAll() {
   padding: var(--sp-3) var(--sp-6);
   border: 1px solid var(--cc-border);
   border-radius: var(--radius-xs);
-  background: var(--cc-surface-1);
+  /* ⚠️ 原来是 `var(--cc-surface-1)` —— token 里只有 --cc-surface 和 --cc-surface-2，
+     **没有 -1** ⇒ 背景是透明的，滚过的正文从这个竖条底下透出来。同 P0-6 那一类：静默失效。 */
+  background: var(--cc-surface);
   color: var(--cc-text-2);
   font-size: var(--text-sm);
   cursor: pointer;
@@ -316,11 +410,39 @@ function toggleFoldAll() {
   color: var(--cc-primary);
   border-color: var(--cc-primary);
 }
-/* 窄屏藏掉大纲：正文宽度优先。留着这一栏正文会被挤成一条窄缝，
-   那比没有大纲更糟。 */
-@media (max-width: 1100px) {
-  .outline {
-    display: none;
+/* **触屏没有 hover**，"移上去才出现"等于永远不出现。
+   照抄 kb-editor.css 里 .kb-img__handle 那套兜底（全站唯一一处做对的范本）。
+   .outline__fold 还带 pointer-events:none —— 不一起放开，那个半透明的箭头也点不动。 */
+@media (hover: none) {
+  .outline__tools,
+  .outline__fold {
+    opacity: 0.5;
+    pointer-events: auto;
   }
+}
+
+/* 浮层形态：不占正文旁边的版位，浮在正文右上方。
+   触发有两条路，**样式只有这一份**（2026-11-09 收敛）：
+   ① `floating` prop（详情页按需弹出的那套）；
+   ② 窄屏（≤1100px）——script 里的 `isFloating` 把两种情况都映射到 .is-floating 类。
+   ⚠️ 窄屏形态**只管"长什么样"，"显不显示"交回 hidden 一个开关**（初值随屏宽，见 script）：
+   原来这里写的是 `display: none`，而恢复按钮只在 hidden=true 时渲染 ⇒ 两头都是死路：
+   ① 窄屏用户（1024 半屏 / 750 / 600）永远没有大纲入口；
+   ② 宽屏手动隐藏 → 缩窗 → 点恢复：hidden=false 了，aside 渲染出来却被 media 藏掉，
+      恢复按钮也因为 hidden=false 不再渲染 ⇒ 再也调不回来。 */
+.outline.is-floating {
+  position: fixed;
+  /* 让开壳的顶栏（--h-top）再留一格 */
+  top: calc(var(--h-top) + var(--sp-12));
+  right: var(--sp-12);
+  width: 240px;
+  max-height: 70vh;
+  padding: var(--sp-12);
+  background: var(--cc-surface);
+  border: 1px solid var(--cc-border-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--cc-shadow-2);
+  /* 压在正文上，但要在壳顶栏（AppLayout 的 .app-top 是 60）之下 */
+  z-index: 30;
 }
 </style>

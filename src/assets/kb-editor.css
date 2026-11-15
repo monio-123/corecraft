@@ -38,7 +38,10 @@
   padding: 0 var(--sp-7);
   font-size: var(--text-sm);
   color: var(--cc-text-2);
-  border-radius: var(--cc-radius-sm);
+  /* §4.4(d)：--cc-radius-sm(8px) 别名已删 ⇒ 26px 高的控件 → --radius-xs(4)。
+     （归档口径：≤24px 高的小件 → xs(4)；这个是 26px，落在 xs 那一档的边界上，
+      工具条那一排按钮全是 26px，统一比 sm(6) 更贴。） */
+  border-radius: var(--radius-xs);
 }
 .md-toolbar .el-button:hover {
   background: var(--cc-surface-2);
@@ -170,6 +173,75 @@
   min-height: 60vh;
 }
 
+/* ---------- 详情页 v10：固定头部 + 正文唯一内滚（2026-11-09，用户拍板） ----------
+   壳 `.app-content:has(.detail)` 收滚改 flex 列，高度沿这条链一路传到正文：
+   .detail → .doc → .content → wrapper → body → [data-milkdown-root] → .ProseMirror。
+   （MilkdownProvider 渲染 Fragment 不占 DOM 层，Milkdown 组件只吐一个
+   <div data-milkdown-root> —— 已核 @milkdown/vue lib/index.js。）
+   头部 = .md-toolbar（可选）+ .editor__before（标题/meta/玉签钮/进度线），flex:none 不滚；
+   正文 = .ProseMirror，flex:1 内滚，**本页唯一滚动条**。
+   ⚠️ 只认 .detail 前缀：首页随手记（.quick 那套）和 EditorLab / AI 弹窗的编辑器不受影响。
+   ⚠️ 写在 .is-immersive 那条**后面**：同权重（0,3,0）靠源序覆盖它的 min-height:60vh，
+   沉浸模式下详情页也是这条内滚链，不是"写满一屏"。 */
+.detail .milkdown-editor-wrapper {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.detail .milkdown-editor-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.detail .milkdown-editor-body .md-toolbar {
+  flex: none;
+}
+.detail .milkdown-editor-body .editor__before {
+  flex: none;
+  /* 玉签返回钮 + 进度线的定位基准（它们是 absolute，钉在卡片左边框/头部底缘上） */
+  position: relative;
+}
+.detail .milkdown-editor-body [data-milkdown-root] {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* ⚠️ 不能漏的一环：root 和 .ProseMirror 之间还有一层 .milkdown
+   （createViewContainer 建的，见下面 .quick 那条链的源码注释）。
+   不写它链就断在这里，症状是"没报错、正文就是不吃满高度"。 */
+.detail .milkdown-editor-body .milkdown {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.detail .milkdown-editor-body .ProseMirror {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  /* 头部底缘（进度线）到正文第一行的呼吸位（2026-11-10 用户：
+     「正文的第一行离这个线太近了 可以稍微往下一点」）。
+     ⚠️ **只给「非标题首行」**（同日用户二改：「对于标题来说本来离顶部就是
+     有一定距离的现在搞的又加了一段距离……如果第一行是标题的话就不动」）：
+     标题自带上方间距（h1 36 / h2 28 / h3 22 / h4 18，--kb-head-gap 系数），
+     再叠这 16px 就成了 38px 的大空档（实测 2413 首行 h3：gap 38）。
+     ⚠️ **用 padding-top 不用 margin**：margin 会跟首子的 margin 折叠/叠加
+     （#843 复现页吃过折叠的亏），padding 不参与折叠、行为可预测；
+     与旧实现（.editor__before 的 margin-bottom）净效果相同——
+     进度线锚 .editor__before 的 padding box，两种写法线都不动、正文一样下移。
+     值与 .md-toolbar 的 margin-bottom 同一变量（--kb-frame-pad-y），
+     开/关工具栏时首行不跳。 */
+  padding-top: var(--kb-frame-pad-y, var(--sp-11));
+}
+/* 首行是标题：呼吸位交回标题自带的 margin-top，这里不加。 */
+.detail .milkdown-editor-body .ProseMirror:has(> :first-child:is(h1, h2, h3, h4, h5, h6)) {
+  padding-top: 0;
+}
+
 /* ---------- 首页录入区随屏幕高度伸缩 ----------
    AppHomeView 的 .quick 现在是 flex:1（吃掉剩余高度），要把这份高度**传下来**，
    .ProseMirror 才跟着长，否则录入框还是那个 135px 的小高度，底部留一大片空白。
@@ -274,10 +346,26 @@
 /* 行内代码 / 代码块：知识库里大量是代码，不上等宽字体没法读。
    prosemirror 官方样式表只管排版不管字体，默认还是正文的无衬线。 */
 .milkdown-editor-body .ProseMirror code {
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-  font-size: var(--text-sm);
+  /* §5.1 #9：mono 字体栈提成 --font-mono（base.css）——
+     原来这里、AppTopicDetailView 的 .sent__body、Config/EditorLab 各写一份。 */
+  font-family: var(--font-mono);
+  /* §4.11(a)：原来是 var(--text-sm)(13px) **固定值**，不随 --editor-fs 走
+     ⇒ 正文调到 18 时代码比正文小 5px，调到 12 时代码反超正文。
+     用户调字号是想整体缩放，代码块掉队就违反"所见即比例相同"这条哲学。
+     ⇒ 改成相对父级的 0.92em ⇒ 跟着 --editor-fs 联动。 */
+  font-size: 0.92em;
   background: var(--cc-surface-2);
-  color: #c7254e;
+  /* 2026-11-09：字色从硬编码 #c7254e 改成 --cc-code-fg。
+     那个玫红是博客园 markdown 主题的行内代码色，2026-10-05 整块抄本文件时带进来的。
+     换成 token 有两个实在的好处：
+     ① **不再占用"红 = 出错了 / 要删了"这个语义**（--cc-danger / --cc-danger-deep
+        只给错误提示、删除按钮、判定不合格）—— 代码标识符是中性信息，
+        染成危险色会让用户把 `System.arraycopy` 读成"这里有问题"；
+     ② **随主题走**（本色墨青 / 素雅藏蓝 / 量子墨绿）。
+     ⚠️ 代码块（pre code）另有一条更具体的规则，字色是 --cc-text-1（下面）——
+     行内代码是"标识符"、代码块是"整段代码"，两者一直就是两种颜色；
+     这次只把**行内代码**那支收进 token，代码块那支本来就是 token。 */
+  color: var(--cc-code-fg);
   padding: var(--sp-1) var(--sp-5);
   border-radius: var(--radius-xs);
 }
@@ -293,50 +381,605 @@
   background: transparent;
   color: var(--cc-text-1);
   padding: 0;
-  font-size: var(--text-sm);
+  /* §4.11(a)：同上面的行内 code → 0.92em（随 --editor-fs 联动） */
+  font-size: 0.92em;
   line-height: 1.7;
 }
-/* ---------- mermaid 图 ----------
-   代码块围栏语言是 mermaid 时，编辑器把它画成图（组件 kbMermaid.js）。
-   **图在上、源码在下**：读者看图，作者还能点进源码改。 */
-.milkdown-editor-body .ProseMirror .kb-mermaid {
+/* ============================================================
+ * 代码块画图：mermaid（```mermaid）与结构化图（```kbfig）
+ *
+ * 两者**同一套外观**：图在上、源码在下（**默认收起**），右上角一个很淡的
+ * 「源码」开关。⇒ 这一段的规则用 `:is()` 合成**一份** —— 以前是两段逐条
+ * 相同的复制粘贴，改一处漏一处的后果是「两个图长得不一样」（无异常、无报错）。
+ *
+ * - **mermaid**：交给 mermaid 的布局器画（方块 + 箭头 + 曲线），组件 kbMermaid.js；
+ * - **kbfig**：模型只填 JSON，布局归组件（分层 / 分组 / 侧翼），组件 kbFig.js。
+ *   mermaid 的布局器只会「方块 + 箭头」，画不了「一个整体包含哪几块」（分层）、
+ *   「这几步同属一个阶段」（分组）、「每一步吃什么吐什么」（侧翼）⇒ 才需要这条路。
+ *   kbfig 用普通 DOM + 网格解决，颜色全走 token ⇒ 三套主题自动跟随，
+ *   不需要 mermaid 那套切主题重画的机制。
+ * ============================================================ */
+
+/* 容器：右上角的开关要定位 ⇒ relative */
+.milkdown-editor-body .ProseMirror :is(.kb-mermaid, .kbfig) {
   margin: var(--kb-para-gap, 12px) 0;
+  position: relative;
 }
-.milkdown-editor-body .ProseMirror .kb-mermaid__fig {
+/* 右上角的「源码」开关：默认只留一个很淡的入口（读者看图，作者改字） */
+.milkdown-editor-body .ProseMirror :is(.kb-mermaid__srcbtn, .kbfig__srcbtn) {
+  position: absolute;
+  top: calc(var(--sp-10) + 4px);
+  right: var(--sp-11);
+  padding: 1px var(--sp-7);
+  font-family: var(--font-body);
+  font-size: 0.72em;
+  line-height: 1.7;
+  color: var(--cc-text-3);
+  background: var(--cc-surface);
+  border: 1px solid var(--cc-border);
+  border-radius: 999px;
+  cursor: pointer;
+  opacity: 0.45;
+  transition: opacity 0.15s, color 0.15s, border-color 0.15s;
+}
+/* 悬停 / 源码已展开 ⇒ 按钮显形 */
+.milkdown-editor-body .ProseMirror :is(.kb-mermaid__srcbtn, .kbfig__srcbtn):hover,
+.milkdown-editor-body .ProseMirror :is(.kb-mermaid, .kbfig).is-src-open
+  :is(.kb-mermaid__srcbtn, .kbfig__srcbtn) {
+  opacity: 1;
+  color: var(--cc-primary);
+  border-color: color-mix(in srgb, var(--cc-primary) 40%, transparent);
+}
+/* 图区 */
+.milkdown-editor-body .ProseMirror :is(.kb-mermaid__fig, .kbfig__fig) {
   padding: var(--sp-10) var(--sp-11);
   background: var(--cc-surface-2);
   border-radius: var(--radius);
   overflow-x: auto;
 }
+/* 画不出来的时候**要说出来**（源码还在下面，可以改） */
+.milkdown-editor-body .ProseMirror :is(.kb-mermaid__canvas, .kbfig__canvas).is-error {
+  color: var(--cc-danger);
+  font-size: var(--text-sm);
+}
+
+/* ---------- 图之上的一行：类型标签 + 图名（两条通道共用同一份 DOM） ---------- */
+/* padding-right 是给右上角「源码」开关让位 —— 不写长标题会压到按钮上 */
+.milkdown-editor-body .ProseMirror :is(.kbfig__head, .kb-mermaid__head) {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-7);
+  margin-bottom: var(--sp-8);
+  padding-right: 52px;
+}
+/* 这一行什么都没有 ⇒ 整行不占高度（没名字的图不该白多 8px，看着像排版错位） */
+.milkdown-editor-body .ProseMirror :is(.kbfig__head, .kb-mermaid__head).is-empty {
+  display: none;
+}
+/* 类型标签：带边框 + 字距 ⇒ 读起来是「标签」而不是正文。
+   颜色压到 text-3：它说明这张图是什么，**图名才是这条知识的内容** */
+.milkdown-editor-body .ProseMirror :is(.kbfig__kind, .kb-mermaid__kind) {
+  flex: none;
+  padding: 0 var(--sp-6);
+  font-size: 0.68em;
+  line-height: 1.7;
+  letter-spacing: 0.08em;
+  color: var(--cc-text-3);
+  border: 1px solid var(--cc-border);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+/* 源码：图下面那一段，弱化成虚线框；**默认收起** */
+.milkdown-editor-body .ProseMirror :is(.kb-mermaid__src, .kbfig__src) {
+  margin: var(--sp-6) 0 0;
+  padding: var(--sp-8) var(--sp-10);
+  background: transparent;
+  border: 1px dashed var(--cc-border);
+  /* §4.11(a)：原来是 var(--text-2xs)(11px) 固定值，同病 ⇒ 0.8em（相对父级） */
+  font-size: 0.8em;
+  line-height: 1.6;
+  display: none;
+}
+/* 点开关 ⇒ 摊开源码 */
+.milkdown-editor-body .ProseMirror :is(.kb-mermaid, .kbfig).is-src-open
+  :is(.kb-mermaid__src, .kbfig__src) {
+  display: block;
+}
+.milkdown-editor-body .ProseMirror :is(.kb-mermaid__src, .kbfig__src) code {
+  /* §4.11(a)：同上，0.8em 而不是固定的 11px */
+  font-size: 0.8em;
+  color: var(--cc-text-3);
+}
+
+/* ---------- 只属于 mermaid 的：画出来的 SVG ---------- */
 .milkdown-editor-body .ProseMirror .kb-mermaid__fig svg {
   display: block;
   margin: 0 auto;
   max-width: 100%;
   height: auto;
 }
-/* 画不出来的时候**要说出来**（源码还在下面，可以改） */
-.milkdown-editor-body .ProseMirror .kb-mermaid__fig.is-error {
-  color: var(--cc-danger);
-  font-size: var(--text-sm);
+
+/* ---------- 只属于 kbfig 的 ---------- */
+/* 图名：和类型标签同一行（在 `.kbfig__head` 里），所以只管字号与颜色，
+   下距和「给按钮让位」都在 head 上 —— 那里两条通道共用一份 */
+.milkdown-editor-body .ProseMirror :is(.kbfig__title, .kb-mermaid__title) {
+  font-family: var(--font-display, var(--font-body));
+  font-size: 0.94em;
+  font-weight: 600;
+  color: var(--cc-text-1);
+  min-width: 0;
 }
-/* 源码：图下面那一段，弱化处理（读者看图，作者改字） */
-.milkdown-editor-body .ProseMirror .kb-mermaid__src {
-  margin: var(--sp-6) 0 0;
-  padding: var(--sp-8) var(--sp-10);
-  background: transparent;
-  border: 1px dashed var(--cc-border);
-  font-size: var(--text-2xs);
-  line-height: 1.6;
+/* JSON 源码比代码长，横向要能滚；且 JSON 不能靠空格折行 ⇒ 强制断行 */
+.milkdown-editor-body .ProseMirror .kbfig__src {
+  overflow-x: auto;
 }
-.milkdown-editor-body .ProseMirror .kb-mermaid__src code {
-  font-size: var(--text-2xs);
+.milkdown-editor-body .ProseMirror .kbfig__src code {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.milkdown-editor-body .ProseMirror .kbfig__src code {
+  font-size: 0.8em;
+  color: var(--cc-text-3);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ---------- layers：分层 / 包含 ---------- */
+.milkdown-editor-body .ProseMirror .kbfig__layers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-8);
+}
+.milkdown-editor-body .ProseMirror .kbfig__group {
+  border: 1px solid color-mix(in srgb, var(--cc-primary) 30%, transparent);
+  background: color-mix(in srgb, var(--cc-primary) 5%, transparent);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-8) var(--sp-9);
+}
+.milkdown-editor-body .ProseMirror .kbfig__group-h {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-6);
+  margin-bottom: var(--sp-6);
+}
+.milkdown-editor-body .ProseMirror .kbfig__group-n {
+  font-size: 0.84em;
+  font-weight: 600;
+  color: var(--cc-primary);
+}
+.milkdown-editor-body .ProseMirror .kbfig__group-note {
+  font-size: 0.76em;
   color: var(--cc-text-3);
 }
+.milkdown-editor-body .ProseMirror .kbfig__items {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: var(--sp-6);
+}
+.milkdown-editor-body .ProseMirror .kbfig__cell {
+  background: var(--cc-surface);
+  border: 1px solid color-mix(in srgb, var(--cc-primary) 26%, transparent);
+  border-radius: var(--radius-xs);
+  padding: var(--sp-6) var(--sp-8);
+  min-width: 0;
+}
+.milkdown-editor-body .ProseMirror .kbfig__cell-t {
+  font-size: 0.84em;
+  font-weight: 600;
+  color: var(--cc-text-1);
+}
+.milkdown-editor-body .ProseMirror .kbfig__cell-d {
+  font-size: 0.76em;
+  color: var(--cc-text-3);
+  line-height: 1.55;
+  margin-top: 1px;
+}
+/* 一排并列小格（如堆的分代 Eden / S0 / S1 / Old） */
+.milkdown-editor-body .ProseMirror .kbfig__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: var(--sp-5);
+}
+.milkdown-editor-body .ProseMirror .kbfig__tag {
+  flex: 1 1 auto;
+  text-align: center;
+  white-space: nowrap;
+  font-size: 0.72em;
+  color: var(--cc-text-2);
+  background: color-mix(in srgb, var(--cc-primary) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--cc-primary) 28%, transparent);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+/* ---------- pairs：两组一一对应 ---------- */
+/* 中轴一条虚线 + 每行一个结点，**一条边框都不给** —— 比 layers 的组框轻一档：
+   layers 表达「包含」（框是容器），pairs 表达「对应」（两列同高的词）。
+   左侧右对齐、右侧左对齐，两边的字都朝中轴收，眼睛才会把「这一行是一组」读出来。 */
+.milkdown-editor-body .ProseMirror .kbfig__pairs {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+/* 行内距放在三个格子上、**不放在行上**：行有 padding 时单元格撑不满整行，
+   虚线会在每两行之间断掉一段；放格子上则 mid 列从行头顶到行底，虚线自然连成一条。 */
+.milkdown-editor-body .ProseMirror .kbfig__prow {
+  display: grid;
+  grid-template-columns: 1fr 34px 1fr;
+  align-items: center;
+}
+/* 表头（组名）：一条细横线把它和内容分开，横线用 --cc-border 而不是主色
+   —— 表头是"说明这两列是什么"，不是图里的一条关系线 */
+.milkdown-editor-body .ProseMirror .kbfig__prow--head {
+  padding-bottom: var(--sp-6);
+  margin-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--cc-border);
+}
+.milkdown-editor-body .ProseMirror .kbfig__ph {
+  font-size: 0.74em;
+  font-weight: 600;
+  color: var(--cc-text-3);
+  letter-spacing: 0.04em;
+}
+.milkdown-editor-body .ProseMirror .kbfig__ph--l { text-align: right; }
+.milkdown-editor-body .ProseMirror .kbfig__ph--r { text-align: left; }
+/* 左：概念本身 —— 比右边重一档（右边是解释它的话） */
+.milkdown-editor-body .ProseMirror .kbfig__pl {
+  text-align: right;
+  padding: var(--sp-5) var(--sp-9) var(--sp-5) 0;
+  font-size: 0.86em;
+  font-weight: 600;
+  color: var(--cc-text-1);
+  line-height: 1.5;
+  min-width: 0;
+}
+/* 右：解释 / 对应物 */
+.milkdown-editor-body .ProseMirror .kbfig__pr {
+  text-align: left;
+  padding: var(--sp-5) 0 var(--sp-5) var(--sp-9);
+  font-size: 0.82em;
+  color: var(--cc-text-2);
+  line-height: 1.6;
+  min-width: 0;
+}
+/* 中轴：一行一段虚线（行内距在左右两格上，所以每段正好相接） */
+.milkdown-editor-body .ProseMirror .kbfig__pd {
+  position: relative;
+  align-self: stretch;
+}
+.milkdown-editor-body .ProseMirror .kbfig__pd::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  border-left: 1px dashed color-mix(in srgb, var(--cc-primary) 26%, transparent);
+}
+/* 中轴上的结点：底色用图区的底色（不是纸色），才像"打在虚线上" */
+.milkdown-editor-body .ProseMirror .kbfig__pd::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  margin: -2.5px 0 0 -2.5px;
+  border-radius: 50%;
+  background: var(--cc-surface-2);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--cc-primary) 40%, transparent);
+}
+/* 表头行没有结点、也没有轴（表头不是一组对应关系） */
+.milkdown-editor-body .ProseMirror .kbfig__prow--head .kbfig__pd::before,
+.milkdown-editor-body .ProseMirror .kbfig__prow--head .kbfig__pd::after { display: none; }
+
+/* ---------- stages：纵向轨道（纯顺序） ---------- */
+.milkdown-editor-body .ProseMirror .kbfig__rail {
+  display: flex;
+  flex-direction: column;
+}
+.milkdown-editor-body .ProseMirror .kbfig__row {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: var(--sp-10);
+  position: relative;
+  padding: var(--sp-3) 0;
+}
+/* 轨道竖线 + 节点圆点 */
+.milkdown-editor-body .ProseMirror .kbfig__row::before {
+  content: "";
+  position: absolute;
+  left: 51px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: color-mix(in srgb, var(--cc-primary) 22%, transparent);
+}
+.milkdown-editor-body .ProseMirror .kbfig__row:first-child::before { top: 16px; }
+.milkdown-editor-body .ProseMirror .kbfig__row:last-child::before { bottom: calc(100% - 16px); }
+.milkdown-editor-body .ProseMirror .kbfig__row::after {
+  content: "";
+  position: absolute;
+  left: 48px;
+  top: 12px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--cc-primary);
+  border: 2px solid var(--cc-surface-2);
+}
+.milkdown-editor-body .ProseMirror .kbfig__k {
+  font-size: 0.74em;
+  color: var(--cc-text-3);
+  text-align: right;
+  padding-right: var(--sp-9);
+  line-height: 2.1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+}
+.milkdown-editor-body .ProseMirror .kbfig__body {
+  background: var(--cc-surface);
+  border: 1px solid color-mix(in srgb, var(--cc-primary) 28%, transparent);
+  border-radius: var(--radius-xs);
+  padding: var(--sp-5) var(--sp-9) var(--sp-6);
+  min-width: 0;
+}
+.milkdown-editor-body .ProseMirror .kbfig__body b,
+.milkdown-editor-body .ProseMirror .kbfig__sub b {
+  font-size: 0.86em;
+  font-weight: 600;
+  color: var(--cc-text-1);
+}
+.milkdown-editor-body .ProseMirror .kbfig__body em,
+.milkdown-editor-body .ProseMirror .kbfig__sub em {
+  font-style: normal;
+  font-size: 0.78em;
+  color: var(--cc-text-3);
+  margin-left: var(--sp-6);
+}
+/* 分组体：虚线包起「验证 / 准备 / 解析 同属连接阶段」—— mermaid 画不出这个 */
+.milkdown-editor-body .ProseMirror .kbfig__group-body {
+  border: 1px dashed color-mix(in srgb, var(--cc-primary) 45%, transparent);
+  background: color-mix(in srgb, var(--cc-primary) 5%, transparent);
+  border-radius: var(--radius-xs);
+  padding: var(--sp-6) var(--sp-9) var(--sp-7);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-width: 0;
+}
+.milkdown-editor-body .ProseMirror .kbfig__group-body .kbfig__group-n {
+  font-size: 0.76em;
+}
+.milkdown-editor-body .ProseMirror .kbfig__sub b { font-size: 0.82em; }
+.milkdown-editor-body .ProseMirror .kbfig__sub em { font-size: 0.76em; }
+
+/* ---------- stages 的侧翼变体：主干 + 左来源 / 右产出 ---------- */
+.milkdown-editor-body .ProseMirror .kbfig__flow {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-2) 0;
+}
+/* 主干竖线：三列等宽 ⇒ 中线就是容器 50% */
+.milkdown-editor-body .ProseMirror .kbfig__flow::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 22px;
+  bottom: 22px;
+  width: 2px;
+  transform: translateX(-1px);
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--cc-primary) 14%, transparent),
+    color-mix(in srgb, var(--cc-primary) 38%, transparent),
+    color-mix(in srgb, var(--cc-primary) 14%, transparent)
+  );
+}
+.milkdown-editor-body .ProseMirror .kbfig__frow {
+  display: grid;
+  grid-template-columns: 1fr minmax(150px, 1.3fr) 1fr;
+  align-items: center;
+  padding: var(--sp-8) 0;
+  position: relative;
+  z-index: 1;
+}
+.milkdown-editor-body .ProseMirror .kbfig__fcol {
+  grid-column: 1;
+  justify-self: end;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--sp-4);
+  padding-right: var(--sp-11);
+}
+.milkdown-editor-body .ProseMirror .kbfig__step {
+  grid-column: 2;
+  position: relative;
+  /* ⚠️ 底色必须不透明：主干竖线在下面，半透明会让线从节点中间穿过去 */
+  background-color: var(--cc-surface);
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--cc-primary) 0%, transparent),
+    color-mix(in srgb, var(--cc-primary) 0%, transparent)
+  );
+  border: 1px solid color-mix(in srgb, var(--cc-primary) 30%, transparent);
+  border-radius: var(--radius-xs);
+  padding: var(--sp-5) var(--sp-9) var(--sp-6);
+  min-width: 0;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--cc-primary) 6%, transparent);
+}
+/* 强调步骤（一条链路里"只出现一次"的那种节点）：整张图最多一个 */
+.milkdown-editor-body .ProseMirror .kbfig__step.is-hl {
+  background-color: var(--cc-surface);
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--cc-primary) 9%, transparent),
+    color-mix(in srgb, var(--cc-primary) 9%, transparent)
+  );
+  border-color: color-mix(in srgb, var(--cc-primary) 50%, transparent);
+  border-left-width: 3px;
+}
+.milkdown-editor-body .ProseMirror .kbfig__fn {
+  position: absolute;
+  left: -10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--cc-primary);
+  color: #fff;
+  /* ⚠️ 居中靠 flex，**不能靠 line-height**：全局是 border-box，20px 高减掉
+     上下 2px 边框只剩 16px 内容区，再写 line-height:20px 行盒就往下溢 2px
+     ⇒ 数字看着偏下（原实现 line-height:18px + height:18px 就是这个毛病）。 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  /* 外圈用 ring 而不是 border：不占内容区，也不会把 11px 的数字挤在小圆里 */
+  box-shadow: 0 0 0 2px var(--cc-surface-2);
+  z-index: 2;
+}
+.milkdown-editor-body .ProseMirror .kbfig__step-t {
+  display: block;
+  font-size: 0.86em;
+  font-weight: 600;
+  color: var(--cc-text-1);
+}
+.milkdown-editor-body .ProseMirror .kbfig__step.is-hl .kbfig__step-t {
+  color: var(--cc-primary);
+}
+.milkdown-editor-body .ProseMirror .kbfig__step-d {
+  display: block;
+  font-size: 0.76em;
+  color: var(--cc-text-3);
+  line-height: 1.5;
+  margin-top: 1px;
+}
+.milkdown-editor-body .ProseMirror .kbfig__side {
+  max-width: 100%;
+  border-radius: var(--radius-xs);
+  padding: var(--sp-4) var(--sp-8) var(--sp-5);
+  position: relative;
+  min-width: 0;
+}
+.milkdown-editor-body .ProseMirror .kbfig__side-t {
+  display: block;
+  font-size: 0.8em;
+  font-weight: 600;
+  color: var(--cc-text-1);
+  line-height: 1.45;
+}
+/* 左：外部来源 —— 灰底表示"不在这条链路上" */
+.milkdown-editor-body .ProseMirror .kbfig__side--src {
+  grid-column: 1;
+  justify-self: end;
+  background: var(--cc-surface);
+  border: 1px solid var(--cc-border-strong);
+  margin-right: var(--sp-11);
+}
+.milkdown-editor-body .ProseMirror .kbfig__fcol .kbfig__side--src { margin-right: 0; }
+.milkdown-editor-body .ProseMirror .kbfig__side--src::after {
+  content: "";
+  position: absolute;
+  left: 100%;
+  top: calc(50% - 1px);
+  width: var(--sp-11);
+  height: 2px;
+  background: color-mix(in srgb, var(--cc-primary) 38%, transparent);
+}
+/* 右：这一环的产出 —— 主色薄底表示"链路产物" */
+.milkdown-editor-body .ProseMirror .kbfig__side--out {
+  grid-column: 3;
+  justify-self: start;
+  background: color-mix(in srgb, var(--cc-primary) 6%, var(--cc-surface));
+  border: 1px solid color-mix(in srgb, var(--cc-primary) 26%, transparent);
+  margin-left: var(--sp-11);
+}
+.milkdown-editor-body .ProseMirror .kbfig__side--out::after {
+  content: "";
+  position: absolute;
+  right: 100%;
+  top: calc(50% - 1px);
+  width: var(--sp-11);
+  height: 2px;
+  background: color-mix(in srgb, var(--cc-primary) 38%, transparent);
+}
+.milkdown-editor-body .ProseMirror .kbfig__note {
+  font-size: 0.72em;
+  color: var(--cc-text-3);
+  line-height: 1.5;
+  text-align: right;
+  padding: 0 1px;
+}
+.milkdown-editor-body .ProseMirror .kbfig__cap {
+  margin-top: var(--sp-6);
+  padding-top: var(--sp-6);
+  border-top: 1px dashed var(--cc-border);
+  font-size: 0.74em;
+  color: var(--cc-text-3);
+  text-align: center;
+}
+
+/* 窄屏：侧翼塌成上下排列（正文区在移动端只有一列宽） */
+@media (max-width: 640px) {
+  .milkdown-editor-body .ProseMirror .kbfig__flow::before { display: none; }
+  .milkdown-editor-body .ProseMirror .kbfig__frow {
+    grid-template-columns: 1fr;
+    row-gap: var(--sp-5);
+    padding: var(--sp-7) 0;
+  }
+  .milkdown-editor-body .ProseMirror .kbfig__step,
+  .milkdown-editor-body .ProseMirror .kbfig__side--src,
+  .milkdown-editor-body .ProseMirror .kbfig__side--out,
+  .milkdown-editor-body .ProseMirror .kbfig__fcol { grid-column: 1; }
+  .milkdown-editor-body .ProseMirror .kbfig__side--src,
+  .milkdown-editor-body .ProseMirror .kbfig__side--out { justify-self: stretch; margin: 0; }
+  .milkdown-editor-body .ProseMirror .kbfig__fcol {
+    justify-self: stretch; align-items: flex-start; padding-right: 0;
+  }
+  .milkdown-editor-body .ProseMirror .kbfig__side--src::after,
+  .milkdown-editor-body .ProseMirror .kbfig__side--out::after { display: none; }
+  .milkdown-editor-body .ProseMirror .kbfig__note { text-align: left; }
+  .milkdown-editor-body .ProseMirror .kbfig__fn { left: auto; right: -6px; }
+
+  /* pairs：单列下没有"左右"，中轴和结点都失去意义 ⇒ 塌成「词 + 解释」两行。
+     ⚠️ 表头一起藏掉：两个并列的组名竖排下来更看不懂，此时靠左侧加粗 /
+     右侧弱化的对比自己就能读（和 kbfig__side 塌单列是同一个取舍）。 */
+  .milkdown-editor-body .ProseMirror .kbfig__prow {
+    grid-template-columns: 1fr;
+    row-gap: 2px;
+  }
+  .milkdown-editor-body .ProseMirror .kbfig__prow--head,
+  .milkdown-editor-body .ProseMirror .kbfig__pd { display: none; }
+  .milkdown-editor-body .ProseMirror .kbfig__pl {
+    text-align: left;
+    padding: var(--sp-5) 0 0;
+  }
+  .milkdown-editor-body .ProseMirror .kbfig__pr { padding: 0 0 var(--sp-5); }
+}
+/* 引用块：原文条款 + 「注意 / 易错 / 经验」提示块共用这一个块（2026-11-09 升级）。
+   原来只有一条 2px 灰竖线、没有底色 —— 在纸色正文里几乎看不出边界，
+   读者扫过去不知道"这一段是不一样的东西"。
+   现在竖线用主色（提示块靠它一眼认出来）、铺一档 surface-2、圆角收边；
+   颜色全走 token，三套主题自动跟随。 */
 .milkdown-editor-body .ProseMirror blockquote {
   margin: var(--kb-para-gap, 12px) 0;
-  padding: var(--sp-2) 0 var(--sp-2) var(--sp-10);
-  border-left: 2px solid var(--cc-border-strong);
+  padding: var(--sp-8) var(--sp-10);
+  border-left: 3px solid var(--cc-primary);
+  border-radius: var(--radius-xs);
+  background: var(--cc-surface-2);
   color: var(--cc-text-2);
+}
+/* 提示块的标识词（`> **注意**：…` 的那个加粗词）用主色：
+   一条提示里读者最需要先看到的就是"这是哪一类提示"。
+   限定 `:first-child`，只认块首那个加粗词，不碰正文里的普通加粗。 */
+.milkdown-editor-body .ProseMirror blockquote > p:first-child > strong:first-child {
+  color: var(--cc-primary);
 }
 .milkdown-editor-body .ProseMirror a {
   color: var(--cc-primary);
@@ -347,6 +990,25 @@
 }
 .milkdown-editor-body .ProseMirror a:hover {
   text-decoration: underline;
+}
+
+/* ---------- 知识点自动链接（渲染层现算，正文里没有链接标记） ----------
+   和下面的站内链接**同一套语言**：主色 + 常驻下划线 + 手掌光标。
+   它本来就是"正文里指向另一条知识点的链接"，只是不是作者写的、是系统按标题现算的。
+   视觉上刻意不区分 —— 对读者来说两者是一回事（点了就跳）。
+
+   ⚠️ 它是个 **Decoration** 包出来的 span（不是 mark，不进正文）：
+   ProseMirror 的 MutationObserver 盯着 DOM，自己改 class 会触发死循环，
+   详见 components/kbAutoLink.js 的注释。 */
+.milkdown-editor-body .ProseMirror .kb-autolink {
+  color: var(--cc-primary);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.milkdown-editor-body .ProseMirror .kb-autolink:hover {
+  text-decoration-thickness: 2px;
 }
 
 /* ---------- 站内链接（目录 / 知识点） ----------
@@ -411,10 +1073,20 @@
 .kb-img.is-resizing > .kb-img__handle {
   pointer-events: none;
 }
-/* **触屏没有 hover**，常隐等于没有 */
+/* **触屏没有 hover**，常隐等于没有
+   ⚠️ §4.10(j)：这里现在管**两个**常隐控件（同一个 media 条件、同一个药：常显半透明）——
+   ① 图片缩放手柄（原来就有的）
+   ② 标题折叠箭头（2026-11-06 加）—— 触屏上没有它就不知道那一节能折。 */
 @media (hover: none) {
   .kb-img__handle {
     opacity: .5;
+  }
+  .milkdown-editor-body .ProseMirror .kb-fold-arrow {
+    opacity: .5;
+    /* 折起来的那一节箭头本来就是常显（:1），不用在这里再抬一次；
+       但 pointer-events 必须放开 —— 常态那条规则把它设成了 none，
+       而触屏上没有 hover 事件去把它打开。 */
+    pointer-events: auto;
   }
 }
 
@@ -472,7 +1144,8 @@
 .table-dialog__label {
   width: 50px;
   font-size: var(--text-md);
-  color: #606266;
+  /* §4.3(d) EP 色板全量替换：#606266（旧 EP 灰）→ --cc-text-2 */
+  color: var(--cc-text-2);
 }
 
 /* 编辑器浮层的公共容器：表格右键菜单 / 链接工具条 / URL 输入气泡。
@@ -482,10 +1155,19 @@
   position: fixed;
   display: flex;
   align-items: center;
-  background: #fff;
-  border: 1px solid #ebeef5;
+  /* §4.3(d) EP 色板全量替换：
+     #fff → --cc-surface、#ebeef5 → --cc-border-strong、
+     0 2px 12px rgba(0,0,0,.1) → --cc-shadow-2（阴影统一用 rgb(31 35 41 / …)） */
+  background: var(--cc-surface);
+  border: 1px solid var(--cc-border-strong);
   border-radius: var(--radius-xs);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--cc-shadow-2);
+  transition: opacity 0.15s;
+}
+/* 锚点滑出编辑器可视区 ⇒ 渐隐（reanchorFloat 置，回来自动恢复） */
+.editor-float.is-away {
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* 表格右键菜单：fixed 定位（不依赖父容器 position），z-index 提到 el-dialog 之上避免被遮 */
@@ -494,55 +1176,155 @@
   min-width: 140px;
   padding: var(--sp-4) 0;
   font-size: var(--text-md);
-  color: #303133;
+  /* #303133（旧 EP 文字色）→ --cc-text-1 */
+  color: var(--cc-text-1);
 }
 .ctx-menu__item {
   padding: var(--sp-8) var(--sp-12);
   cursor: pointer;
   white-space: nowrap;
   user-select: none;
-  transition: background 0.12s, color 0.12s;
+  /* §4.8(d)：0.12s → 0.15s（与全站 hover 过渡一致） */
+  transition: background 0.15s, color 0.15s;
 }
 .ctx-menu__item:hover {
-  background: #ecf5ff;
-  color: #409eff;
+  /* §4.3(d)：#ecf5ff / #409eff 是 **EP 的蓝**（与全站 --cc-primary #2b7fff 不是同一个蓝）
+     ⇒ 编辑器里点出来的蓝和全站按钮蓝不一样，同屏能看出。
+     → 换成 cc token：底 --cc-primary-soft、字 --cc-primary。 */
+  background: var(--cc-primary-soft);
+  color: var(--cc-primary);
 }
 .ctx-menu__item--sep {
   padding: 0;
   margin: var(--sp-4) 0;
   height: 1px;
-  background: #f0f2f5;
+  /* §4.3(d)：#f0f2f5（旧 EP 灰阶）→ --cc-border-strong */
+  background: var(--cc-border-strong);
   cursor: default;
 }
 .ctx-menu__item--sep:hover {
-  background: #f0f2f5;
+  background: var(--cc-border-strong);
 }
 
 /* ---------- 链接浮层 ---------- */
 /* z-index 不用 .ctx-menu 那个 9999：那是给 el-dialog 之上准备的，
    链接浮层只在正文里出现，正文之上加 dialog 的层级没有对应的东西。 */
-.link-bar,
 .link-input,
 .cat-link {
   z-index: 1000;
   gap: var(--sp-2);
   padding: var(--sp-2);
 }
-/* 工具条的按钮跟 .md-toolbar 那一排是同一张脸（text 变体 + 自家 hover 底色），
-   只是尺寸更紧凑——它贴着一个链接，四个按钮不能比正文行还高。 */
-.link-bar .el-button {
-  /* 比 .md-toolbar 那一排大一档：它是浮在正文上的独立控件，用户是"凑近了看"，
-     不是"扫过整排按钮"。--ctl-sm 就是"图标按钮"那一档，再大就压过正文行高了。 */
-  height: var(--ctl-sm);
-  margin: 0;
-  padding: 0 var(--sp-8);
-  font-size: var(--text-md);
-  color: var(--cc-text-2);
-  border-radius: var(--radius-xs);
+/* 链接浮层 = 「AI 解读」+ 四动作同排一条（2026-11-09 合并，蓝本 ui-preview/link-pop.html）。
+   选区浮层（.ask-float）**整套换这张外壳脸**（2026-11-09 用户定）：浮层档圆角 + sp-5 内距；
+   内里按钮与头部 .hact-btn 同一档圆角（--radius-md）、
+   同一张 hover 脸（主题软底 + 主题色，删除/取消 hover 变红）。 */
+.link-pop,
+.ask-float {
+  z-index: 1000;
+  gap: var(--sp-4);
+  padding: var(--sp-5);
+  border-radius: var(--radius-lg);
 }
-.link-bar .el-button:hover {
-  background: var(--cc-surface-2);
+.link-pop__sep {
+  width: 1px;
+  height: 18px;
+  background: var(--cc-border-strong);
+}
+.link-pop__act {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--ctl-sm);
+  height: var(--ctl-sm);
+  font-size: 17px;
+  color: var(--cc-text-2);
+  background: none;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: var(--cc-transition);
+}
+.link-pop__act:hover {
+  background: var(--cc-primary-soft);
+  color: var(--cc-primary);
+}
+.link-pop__act.is-danger:hover {
+  background: var(--cc-danger-soft);
+  color: var(--cc-danger);
+}
+/* 两态的第二态：输入行（点「AI 解读」才来；输入框 @mousedown.stop 不吃 preventDefault）。
+   选区浮层展开（.ask-float.is-open）同一档内距。 */
+.link-pop.is-ask,
+.ask-float.is-open {
+  padding: var(--sp-5) var(--sp-5) var(--sp-5) var(--sp-10);
+}
+.link-pop.is-ask .float-ai,
+.link-pop.is-ask .link-pop__sep,
+.link-pop.is-ask .link-pop__act {
+  display: none;
+}
+/* ---------- 浮层共用件：AI 按钮 / 输入框 / 发送钮 ---------- */
+/* 链接浮层与选区浮层三件控件同一张脸（2026-11-09 收敛：原 .link-pop__ai|__input|__send
+   与 .ask-float__btn|__input|__send 六条逐字重复的规则并成三条）。 */
+/* 文字按钮里的图标尺寸（KbSvgIcon 是 1em 方图） */
+.float-ico {
+  display: flex;
+  font-size: 15px;
+}
+/* AI 动作：主位软底 chip（两浮层同语义、同图标、同文案） */
+.float-ai {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+  height: var(--ctl-sm);
+  padding: 0 var(--sp-10);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--cc-primary);
+  background: var(--cc-primary-soft);
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: var(--cc-transition);
+}
+.float-ai:hover {
+  /* 软底加深一档（soft ≈ 主题色 10% 铺白，hover 用 16%） */
+  background: color-mix(in srgb, var(--cc-primary) 16%, var(--cc-surface));
+}
+/* 输入框宽度是结构量（一个够放下常见问题的固定宽度），不进 --sp-* 阶梯。
+   高度跟右边那个发送钮齐平（不然输入框只有十几像素高，很难点中）。 */
+.float-ai-input {
+  width: 230px;
+  height: var(--ctl-sm);
+  padding: 0;
+  font-size: var(--text-sm);
   color: var(--cc-text-1);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+/* 发送钮跟问答抽屉底部那个（.ask__send）同一张脸 */
+.float-send {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--ctl-sm);
+  height: var(--ctl-sm);
+  padding: 0;
+  font-size: var(--text-base);
+  color: var(--cc-surface);
+  background: var(--cc-primary);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: var(--cc-transition);
+}
+.float-send:hover {
+  opacity: 0.85;
 }
 /* 输入框宽度是结构量（一个够放下常见 URL 的固定宽度），不进 --sp-* 阶梯。 */
 .link-input .el-input {
@@ -553,6 +1335,15 @@
 .cat-link .el-select {
   width: 280px;
 }
+
+/* ---------- 选区提问浮层 ---------- */
+/* **两态**：第一态只有一个「AI 解读」按钮，点了才展开成「输入框 + 发送钮」。
+   为什么不是选中就弹输入框（2026-11-05 用户定）：正文的工具栏（插入链接 / 字号 /
+   字体…）全都靠**当前选区**做事，而输入框一聚焦，编辑器就失焦、选区没了 ——
+   那几个按钮就都成了空转。按钮 @mousedown.prevent，点了不夺焦点，选区还在。
+
+   外壳 / AI 按钮 / 输入框 / 发送钮**整套与链接浮层共用一张脸**（2026-11-09 用户定
+   「选区浮层整套换链接浮层的皮肤」，收敛成 .float-* 共用件，见上一节）。 */
 
 /* 字号 / 字体档位浮层：贴着工具栏下沿，一列档位。 */
 .format-pick {
@@ -596,24 +1387,28 @@
 }
 .milkdown-editor-body .ProseMirror th,
 .milkdown-editor-body .ProseMirror td {
-  border: 1px solid #dcdfe6;
+  /* §4.3(d) EP 色板全量替换：#dcdfe6（旧 EP 灰，≈但≠ #e4e7ed）→ --cc-border-strong */
+  border: 1px solid var(--cc-border-strong);
   padding: var(--sp-6) var(--sp-10);
   vertical-align: top;
   min-width: 80px;
   position: relative;
 }
 .milkdown-editor-body .ProseMirror th {
-  background: #f5f7fa;
+  /* #f5f7fa（旧 EP 灰底）→ --cc-surface-2 */
+  background: var(--cc-surface-2);
   font-weight: 600;
 }
 /* 多 cell 选中态：prosemirror-tables 的 drawCellSelection 自动给选中的 cell 加 class="selectedCell"，
    但 prosemirror-tables 自带 CSS（之前分析过不带 border）也没被我们引入——视觉上看不到高亮，
    用户以为"没选上"。这里用 Element Plus 浅蓝主题色覆盖，跟项目主题一致。
    选 background 直接覆盖而不是用 :after 伪元素（之前 td 已设 position:relative 兜得住，
-   但 background 方案更简单，不需要伪元素 + 透明度计算的额外开销）。 */
+   但 background 方案更简单，不需要伪元素 + 透明度计算的额外开销）。
+   ⚠️ §4.3(d)：原来是 #ecf5ff（**EP 的蓝**）⇒ 换 --cc-primary-soft，
+   否则编辑器里选中的蓝和全站按钮蓝不是同一个蓝。 */
 .milkdown-editor-body .ProseMirror td.selectedCell,
 .milkdown-editor-body .ProseMirror th.selectedCell {
-  background: #ecf5ff;
+  background: var(--cc-primary-soft);
 }
 .milkdown-editor-body .ProseMirror .tableWrapper {
   overflow-x: auto;
@@ -701,6 +1496,10 @@
   opacity: 1;
   pointer-events: auto;
 }
+/* §4.10(j) 触屏兜底：这个折叠箭头常态 opacity:0、只在标题 hover 时显现 ——
+   触屏没有 hover ⇒ **折叠功能在触屏上完全无法发现**。
+   ⇒ 并进下面那个已有的 `@media (hover:none)` 块（.kb-img__handle 那个），
+   同一个 media 条件、同一个药（常显半透明），不新开机制。 */
 /* 字形走 ::after，免得箭头里多出文本。
    ⚠️ **'▾' 和 '▸' 必须成对用**：实测这两个字形在同一字体下的**纵向墨迹完全一样**
    （都在基线上方 0.5em ~ 0.214em 之间），所以展开/折叠两种状态下箭头的高度一致，
@@ -754,7 +1553,7 @@
    区别等等等等 我们系统中并不明确」，参照语雀）。
 
    下面这套比例取语雀那一档：
-     h1 1.8em/800 · h2 1.43em/700 · h3 1.25em/600 · h4 1.1em/600 · h5-h6 1em/600
+     h1 1.8em/700 · h2 1.43em/700 · h3 1.25em/600 · h4 1.1em/600 · h5-h6 1em/600
    ⚠️ **em 的基准是父级字号**（= 正文字号）⇒ 用户把正文调大，标题等比跟着放大，
      层次比例永远不变。
    ⚠️ **--kb-head-scale 是乘数**，偏好面板拖它 = 整体调标题的大小（不改层级比例）。
@@ -765,10 +1564,13 @@
      而且**随层级递减** —— 大标题的上下都松，小标题的上下都紧，
      全用同一个值会变成"小标题也松得离谱"。
    ⚠️ **颜色不单独配**：走全站 token（--cc-text-1 最深，--cc-text-2 次之），
-     颜色调整在上面那层做，这里只定层级。 */
+     颜色调整在上面那层做，这里只定层级。
+   ⚠️ 2026-11-06：h1 的 font-weight **800 → 700**（§4.11(p)）。
+     页面级标题（详情页的 .title）是 700，编辑器里的 h1 是 800 ⇒ 同一条内容的标题
+     在两个地方粗细不一样。**页面级标题 800 过重** ⇒ 两处统一 700。 */
 .milkdown-editor-body .ProseMirror h1 {
   font-size: calc(1.8em * var(--kb-head-scale, 1));
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.35;
   margin-top: calc(var(--kb-head-gap, 20px) * 1.8);
   margin-bottom: calc(var(--kb-head-gap, 20px) * 0.6);
@@ -808,4 +1610,24 @@
 /* 被折叠掉的那段内容 */
 .milkdown-editor-body .ProseMirror .kb-folded-hidden {
   display: none;
+}
+
+/* ============ 正文关键词高亮（详情页的检索框） ============ */
+/*
+  装饰由 ProseMirror 施加（见 kbSearchHighlight.js）—— **一行 DOM 都不自己碰**
+  （自己改 class 会和 PM 的 MutationObserver 打成死循环）。
+
+  两档：普通命中（淡底）· 当前那一个（主色底 + 描边）⇒ 一眼看出"现在在第几处"。
+  用 --cc-* token ⇒ 三套主题自动适配。
+*/
+.milkdown-editor-body .ProseMirror .kb-hit {
+  background: var(--cc-primary-soft);
+  border-radius: 2px;
+  /* 用 box-shadow 而不是 border：border 会撑开行高、让行距跳 */
+  box-shadow: inset 0 -1px 0 var(--cc-primary-border);
+}
+.milkdown-editor-body .ProseMirror .kb-hit--cur {
+  background: var(--cc-primary-soft);
+  box-shadow: inset 0 -2px 0 var(--cc-primary);
+  color: var(--cc-text-1);
 }

@@ -2,13 +2,13 @@
   <el-dialog
     :model-value="modelValue"
     :title="dialogTitle"
-    width="460px"
+    width="var(--cc-dialog-w-sm)"
     @update:model-value="emit('update:modelValue', $event)"
   >
     <!-- 标题 -->
     <template v-if="field === 'title'">
       <p class="adopt__now">现在：{{ topic?.title || '（空）' }}</p>
-      <el-input v-model="draftTitle" placeholder="给它起个名字" />
+      <el-input v-model="draftTitle" />
     </template>
 
     <!-- 目录。树形下拉 + 顶上那个「+ 新建 数据库 / MySQL」——
@@ -20,7 +20,6 @@
         v-model="draftCategoryId"
         :categories="categories"
         :new-category="parsed?.newCategory || null"
-        placeholder="选择目录"
       />
     </template>
 
@@ -34,7 +33,7 @@
     <template v-else-if="field === ORGANIZE_FIELD">
       <div class="adopt__field">
         <span class="adopt__label">标题</span>
-        <el-input v-model="draftTitle" placeholder="给它起个名字" />
+        <el-input v-model="draftTitle" />
       </div>
 
       <div class="adopt__field">
@@ -44,25 +43,26 @@
           v-model="draftCategoryId"
           :categories="categories"
           :new-category="parsed?.newCategory || null"
-          placeholder="选择目录"
         />
       </div>
     </template>
 
 
     <!-- 解析不出来。不是兜底：格式没对上说明 AI 没照 remark 的要求答，
-         硬凑出来的值写进库是垃圾，所以这里只把原文摆出来让人复制 -->
+         硬凑出来的值写进库是垃圾，所以这里只把原文摆出来让人复制。
+         ⚠️ §4.11(m)：原来这句话是「这段回答没能解析成可采纳的值 —— AI 这次没按要求的格式回答。
+         下面是原文，可以复制走。」—— **连说三句且复述界面**。
+         ⇒ 压成两句：一句说结果，一句说能做什么。 -->
     <template v-else>
       <p class="adopt__warn">
-        这段回答没能解析成可采纳的值 —— AI 这次没按要求的格式回答。下面是原文，可以复制走。
+        回答没按约定格式，无法采纳。原文如下
       </p>
       <pre class="adopt__raw">{{ turn?.answer }}</pre>
     </template>
 
     <template #footer>
-      <el-button size="small" @click="emit('update:modelValue', false)">取消</el-button>
+      <el-button @click="emit('update:modelValue', false)">取消</el-button>
       <el-button
-        size="small"
         type="primary"
         :disabled="!canConfirm"
         @click="confirm"
@@ -263,7 +263,8 @@ async function confirm() {
   max-height: 300px;
   overflow: auto;
   padding: var(--sp-10);
-  border-radius: var(--cc-radius);
+  /* §4.4(d)：--cc-radius(=--radius-md 10) 别名已删 ⇒ 卡片/面板/浮层那一档 --radius-lg */
+  border-radius: var(--radius-lg);
   background: var(--cc-surface-2);
   color: var(--cc-text-2);
   font-size: var(--text-xs);

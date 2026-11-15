@@ -15,10 +15,13 @@
   --cc-text-4: #b6bac1; /* 计数、占位、禁用 */
   --cc-icon: #8a9099; /* 纯图标控件，介于 text-2 与 text-3 之间 */
 
-  /* 面：三层，从页面底到卡片 */
+  /* 面：从页面底到卡片，再到"次要控件 hover"那一档 */
   --cc-bg: #fafbfc; /* 页面底 */
   --cc-surface: #ffffff; /* 顶栏、卡片 */
   --cc-surface-2: #f4f6f8; /* hover 底、输入框底 */
+  /* 比 surface-2 再深一档 = 次要按钮的 hover 底。原来这个值以字面量 #eceff3 写在弹窗
+     footer 那条规则里，而组件里另有 #e8eaed 在做同一件事（只差 2 个色阶，并排能看出脏）。 */
+  --cc-surface-3: #eceff3;
 
   /* 线：两级。分隔用轻，面板边框用重 */
   --cc-border: #f0f2f5;
@@ -44,14 +47,50 @@
   --cc-danger: #e5484d;
   --cc-info: #8a9099;
 
+  /* 行内代码的**字色**（2026-11-09）：中性偏冷，**不是语义色**。
+     ⚠️ 原来这里是硬编码 #c7254e —— 博客园 markdown 主题的行内代码色，
+     2026-10-05 整块抄 `kb-editor.css` 时带进来的（连注释都是抄的）。
+     两个问题：① **红的语义是"出错了 / 要删了"**（--cc-danger / --cc-danger-deep
+     只给错误提示、删除按钮、判定不合格用）⇒ 中性的代码标识符套上危险色，
+     用户会把 `System.arraycopy` 读成"这里标红了 = 有问题"，跟正文里真正的
+     错误提示混成一路；② **不随主题走** —— 全项目最后一个没进 token 体系的
+     非语义色（grep 过 assets/*.css + views/corecraft-web/*.vue，只此一处）。
+     ⚠️ 色值别随手改：三个口径验过 —— ① 对行内底（--cc-surface-2）≥ 4.5:1
+     （小字号要能读）；② 与正文色 --cc-text-2 的明度差 ≥ 1.2:1（一眼分得出）；
+     ③ 与链接色 --cc-primary 的色相差 ≥ 40°（别跟链接混）。
+     现在本色 #115e59：7.00:1 / 1.23:1 / 色相 40°。 */
+  --cc-code-fg: #115e59;
+
   /* 危险色的**另一支**：业务壳里"要删的东西"用的深红 + 它的浅底。
      ⚠️ **和 --cc-danger 不是同一个色**（#d4302b vs #e5484d）—— 别合并，
      两支的深浅关系不一样，混了会有一处偏亮。 */
   --cc-danger-deep: #d4302b;
   --cc-danger-soft: #fdecea;
+  /* 警告的浅底，与 --cc-danger-soft 同一个做法（语义色的 10% 铺白）。
+     原来 AiOrganizeDialog / AiAdoptDialog / AiSettingsView 各自取 EP 的
+     --el-color-warning(-light-9)（#e6a23c 系），与 --cc-warning(#d98a1f) 同屏两种黄。 */
+  --cc-warning-soft: #fbf3e9;
+
+  /* 成功的浅底，与 --cc-warning-soft / --cc-danger-soft 同一个做法（语义色的 10% 铺白）。
+     ⚠️ **红的语义是"出错 / 要删"** —— 掌握度低不是错误，所以"薄弱"这一档走**黄**，
+     "熟练"这一档走**绿**。 */
+  --cc-success-soft: #eaf6ee;
 
   /* 品牌徽标渐变 */
   --cc-logo-gradient: linear-gradient(135deg, #409eff, #66b1ff);
+
+  /* 全页环境层（2026-11-14）：body::before 的画面（规则在 themes.css）。
+     本色默认值 = 顶部天光（极淡主色光晕，页面不再纯平）；素雅/曜夜覆盖成纸边晕影 /
+     夜色暗角，量子覆盖成 none（它走动画漂移光晕，规则在 themes.css）。
+     ⚠️ 只放"氛围光"（skylight / vignette / glow），纹理走 --cc-grain-*（body::after）。 */
+  --cc-ambience: radial-gradient(520px 180px at 38% -60px, rgba(43, 127, 255, 0.05), transparent 70%);
+
+  /* 阴影三档。原来全站散着 5 种配方、α 从 .05 到 .18 各写各的（其中 ExamRunner 与
+     AppExamView 把同一条 `0 10px 32px / 6%` 串抄了三份，两处注释还自认"没有 token"）。
+     三档对应三种"离页面多远"：卡片静置 / 卡片 hover / 浮层（弹窗、下拉、抽屉）。 */
+  --cc-shadow-card: 0 10px 32px rgb(31 35 41 / 6%);
+  --cc-shadow-1: 0 3px 14px rgb(31 35 41 / 5%);
+  --cc-shadow-2: 0 8px 28px rgb(31 35 41 / 12%);
 
   /* ---- 界面偏好：没有全局旋钮（2026-10-07 删掉 --ui-scale）----------------
    *
@@ -78,10 +117,17 @@
    * 而自建拖拽和 EP 浮层定位都靠「JS 坐标 = 视口坐标」这条不变式。**这条别动。**
    * ---------------------------------------------------------------- */
 
-  /* 尺度 */
-  --cc-radius: var(--radius-md);
-  --cc-radius-sm: var(--radius);
-  --cc-transition: background 0.15s, color 0.15s;
+  /* 尺度。
+     ⚠️ 2026-11-06 删掉 --cc-radius(= --radius-md 10) 与 --cc-radius-sm(= --radius 8)：
+     这两个别名与下面 --radius-* 七档只差一个前缀、值却不同（--cc-radius-sm 是 8、
+     --radius-sm 是 6），组件里混用 ⇒ 同一批"小方块控件"落在 4 / 6 / 8 三档且看不出规则。
+     **圆角一律走 --radius-***，归档口径写在那一族的注释里。
+     图标尺寸原来全站零 token、四处各写 font-size（18 / 14 / 13 / 11）⇒ 收成 --icon-* 三档。 */
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --icon-lg: 18px;
+  /* border-color 原来漏了 ⇒ ExamRunner 两处只好各自手写 ", border-color 0.15s" 补尾巴。 */
+  --cc-transition: background 0.15s, color 0.15s, border-color 0.15s;
 
   /* ---- 尺寸阶梯：全站唯一的尺寸权威（2026-10-07 建）--------------------
    *
@@ -113,8 +159,10 @@
   --text-xl: 17px;
   --text-2xl: 18px;
   --text-h: 24px;
-  --text-stat: 31px;
+  --text-stat: 34px;
   --text-hero: 72px;
+  /* 等宽栈。原来 Configs 的 value 与 EditorLab 的日志各写一份字面量（零冗余）。 */
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   /* 间距：16 档。1/2/3 单独留着——它们是"描边级"的紧贴，并成 4 会让一堆小控件变肥。 */
   --sp-1: 1px;
@@ -134,7 +182,16 @@
   --sp-15: 32px;
   --sp-16: 40px;
 
-  /* 圆角：7 档 */
+  /* 圆角：7 档。归档口径（2026-11-06 立 —— 在 --cc-radius / --cc-radius-sm 两个别名
+     并存的时候是没有口径的，谁顺手写谁）：
+       ≤24px 高的小件（chip、行内标签、⋯ 按钮）      → --radius-xs(4)
+       28–34px 的控件（图标按钮、输入框、下拉、菜单项）→ --radius-sm(6)
+       卡片 / 面板 / 浮层（弹窗、抽屉、下拉外壳）      → --radius-lg(12)
+     ⚠️ **chip 族是上面第一档的例外**：`.kb-chip` 高约 23px 却用 6px（它是"小标签"不是
+     "小控件"，4px 会显得锐），所以 chip 一律 6px，以 `.kb-chip` 为准。
+     --radius(8) 与 --radius-md(10) 是"介于控件与卡片之间"的两档，现有消费者是弹窗 footer
+     按钮 / 代码块 / 登录框（8）与 AI 气泡 / 题卡 / 树节点（10），值不动，
+     但**新写的东西别再往这两档上加**。 */
   --radius-xs: 4px;
   --radius-sm: 6px;
   --radius: 8px;
@@ -154,13 +211,20 @@
   --w-side: 264px;
   --w-grid: 400px;
   --w-content: 1440px;
+  /* 目录页（树视图）的行宽。**结构量，锁死不缩放** —— 目录页是"扫"着读的：
+     点线一路拉到千像素宽时，眼睛得从行首横到行尾才找得到条数 ⇒ 行长必须收得住。 */
+  --w-toc: 920px;
+  /* 考试页的读宽。原来 AppExamView 里两份字面量 840 各写各的。 */
+  --w-exam: 840px;
 
-  /* 拖拽落点浮层（CategoryTree 的 mode="drop"）的尺寸。
-     **JS 也要读它**：`dropTreeStyle` 靠它算"贴到视口边缘时该往哪边翻"，
-     读的是 getComputedStyle 而不是抄一份常数——抄一份的话两边一改就不同步，
-     症状是"浮层翻到了该翻的反面、还露一半在屏幕外"。 */
-  --w-drop: 264px;
-  --h-drop: 312px;
+  /* 顶栏高。侧栏宽有 --w-side、内容宽有 --w-content、目录行宽有 --w-toc，唯独顶栏高
+     原来是字面量：业务壳 64px 写死一处、admin 壳 56px 写死四处，而"内容离顶栏多远"
+     本该与它成对。两个壳的顶栏不是一样高，所以是两支而不是共用一支。 */
+  --h-top: 64px;
+  --h-top-admin: 56px;
+
+  /* ⚠️ **拖拽落点浮层的尺寸 token（--w-drop / --h-drop）删了**（2026-11-05）：
+     那棵浮层是「拖知识点进目录」时的落点树，知识点不再能拖 ⇒ 浮层没了 ⇒ token 没人读。 */
 
   /* 侧边栏的松紧：面板上「左右」「上下」两个滑块各写一个值（见配置树上的
      ui.side.sidePadX / ui.side.sidePadY）。**写的是具体值，不是一个乘数** —— 乘数会把所有东西重新
@@ -189,6 +253,18 @@
      CSS 变量盖不住；MessageBox 的宽度是 --el-messagebox-width。
      两边各自引用同一个值，才不会改一边漏一边。 */
   --cc-dialog-w-sm: 440px;
+  /* 另外三档（2026-11-06）。原来全站 9 个不同的宽度值散在各组件的 width prop 上，
+     其中 440 / 460 只差 20px，却正是"同一个操作簇里前后脚点出来的两个框"—— 上面那条
+     注释要防的就是这个；520 / 540 / 560 同理收到 md 一档。
+     ⚠️ 860 与 880 也收成了一个 xl(880)：两者只差 20px，留两个值就是把 440/460 那个
+     毛病复刻一遍（这一处与评审文档里"860/880 各自建 token"的写法不同，是按零冗余收的）。 */
+  --cc-dialog-w-md: 520px;
+  --cc-dialog-w-lg: 640px;
+  --cc-dialog-w-xl: 880px;
+  /* "从列表里挑一项"的浮层宽。原来 200 / 220 两种，而那两处是逐条属性几乎相同的同一个
+     控件（只差文字色与圆角写法）。偏好面板不在此列 —— 它装的是 4 组切换栏 + 滑块，
+     是另一种东西，宽度自己写。 */
+  --cc-popover-w: 220px;
 
   /* 内容区宽度。业务壳的"视觉签名"是"内容居中、两侧留白"，不是"内容撑满"——
      这正是它和 admin 壳满宽表格流的区别。
@@ -219,6 +295,16 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+}
+
+/* 按钮字体跟主题走（2026-11-08 用户：「按钮字体没有适配当前的主题 所有字体都要适配主题」）。
+   ⚠️ **`<button>` 默认不继承字体**（UA 样式自己带一套 sans）——素雅是全站衬线，
+   手写按钮却显示成无衬线，主题字体对不上就是这么来的。老稿（theme-bak.css）的 reset
+   里就有这一行：`button { font: inherit }`。
+   ⚠️ EP 组件（.el-button 等）有自己的 font-family 声明（类选择器），不受这条影响；
+   自定义按钮要改字号/字重仍然用各自的 class（类选择器也压得过元素选择器）。 */
+button {
+  font: inherit;
 }
 
 /* ---------- 全局滚动条 ----------
@@ -283,21 +369,24 @@ body {
   --el-color-warning-light-9: #fbf3e9;
   --el-color-warning-dark-2: #ae6e19;
 
+  /* 危险色阶。EP 的 danger 与 error 是**两套别名，但业务上同义**（都是"出错了/要删了"）
+     ⇒ 一次算一次：error 那一组直接引用 danger 那一组，不把 7 个色值抄第二遍
+     （抄两遍 = 改色阶时只改一半 ⇒ 两种组件的红色对不上，界面上看得出色差）。 */
   --el-color-danger: var(--cc-danger);
   --el-color-danger-light-3: #ed7f82;
   --el-color-danger-light-5: #f2a4a6;
   --el-color-danger-light-7: #f7c8ca;
-  --el-color-danger-light-8: #fadaDB;
+  --el-color-danger-light-8: #fadadb;
   --el-color-danger-light-9: #fceded;
   --el-color-danger-dark-2: #b73a3e;
 
-  --el-color-error: var(--cc-danger);
-  --el-color-error-light-3: #ed7f82;
-  --el-color-error-light-5: #f2a4a6;
-  --el-color-error-light-7: #f7c8ca;
-  --el-color-error-light-8: #fadaDB;
-  --el-color-error-light-9: #fceded;
-  --el-color-error-dark-2: #b73a3e;
+  --el-color-error: var(--el-color-danger);
+  --el-color-error-light-3: var(--el-color-danger-light-3);
+  --el-color-error-light-5: var(--el-color-danger-light-5);
+  --el-color-error-light-7: var(--el-color-danger-light-7);
+  --el-color-error-light-8: var(--el-color-danger-light-8);
+  --el-color-error-light-9: var(--el-color-danger-light-9);
+  --el-color-error-dark-2: var(--el-color-danger-dark-2);
 
   --el-color-info: var(--cc-info);
   --el-color-info-light-3: #adb1b8;
@@ -336,14 +425,20 @@ body {
   --el-disabled-text-color: var(--cc-text-3);
   --el-disabled-border-color: var(--cc-border-strong);
 
-  /* 圆角：EP 默认 base=4px，和壳的 8px 卡片不是一套，一眼就是"外来件"。
-     控件用小一档的 6px（= --cc-radius-sm），卡片 8px，正好是 sm / base 的层级。 */
-  --el-border-radius-base: var(--cc-radius-sm);
-  --el-border-radius-small: 4px;
+  /* 圆角：EP 默认 base=4px，和壳的卡片不是一套，一眼就是"外来件"。
+     控件走 --radius-sm(6)、small 走 --radius-xs(4)，与上面那族的归档口径是同一条：
+     28–34px 的控件 6px、≤24px 的小件 4px。
+     ⚠️ 2026-11-06 这里从 8px（旧的 --cc-radius-sm）降到 6px ⇒ **所有 EP 控件的圆角
+     跟着变**（输入框 / 下拉 / 按钮 / 日期选择器……）。这是删掉 --cc-radius* 两个别名时
+     按归档口径重判的结果，不是手滑：8px 那一档在口径里属于"介于控件与卡片之间"，
+     控件不该用它。 */
+  --el-border-radius-base: var(--radius-sm);
+  --el-border-radius-small: var(--radius-xs);
 
   /* 全高链的起点，见 main.css 的说明：不能用 100vh，那会被 body 上的 zoom 再乘一遍 */
   min-height: 100%;
-  font-family:
+  font-size: 14px;
+  font-family: var(--font-body,
     Inter,
     -apple-system,
     BlinkMacSystemFont,
@@ -355,9 +450,13 @@ body {
     'Fira Sans',
     'Droid Sans',
     'Helvetica Neue',
-    sans-serif;
+    sans-serif);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* 正文颜色 / 行高（2026-11-08 复刻 book-bak 的 body：color=--text、line-height 1.6）。
+     text-2 = 各主题的"正文色"（素雅 #55503f = 老稿 --text，逐值同源）。 */
+  color: var(--cc-text-2);
+  line-height: 1.6;
 }
 
 /* ============================================================
@@ -379,7 +478,7 @@ body {
   /* 标题跟 .card__title / 面包屑同一档，不要 EP 的 large 再叠一层粗细差 */
   --el-dialog-title-font-size: var(--text-2xl);
   --el-dialog-padding-primary: 22px;
-  --el-dialog-box-shadow: 0 10px 36px rgb(31 35 41 / 10%);
+  --el-dialog-box-shadow: var(--cc-shadow-2);
 }
 .el-dialog__title {
   font-weight: 600;
@@ -410,7 +509,7 @@ body {
   --el-messagebox-font-size: var(--text-2xl);
   /* 跟 --el-dialog-padding-primary 一样，两个框的左右留白才对得上 */
   --el-messagebox-padding-primary: 22px;
-  --el-messagebox-box-shadow: 0 10px 36px rgb(31 35 41 / 10%);
+  --el-messagebox-box-shadow: var(--cc-shadow-2);
   /* 跟 CategoryNameDialog 同一个 token，两者挨着出现时宽度必须一样 */
   --el-messagebox-width: var(--cc-dialog-w-sm);
   /* EP 的 .el-message-box__message p 直接读这个变量。写父级
@@ -443,7 +542,10 @@ body {
    浅色界面上显脏。非 primary / 非 danger 的一律按次要处理。 */
 .el-dialog__footer .el-button,
 .el-message-box__btns .el-button {
-  height: var(--ctl-lg);
+  /* 原来是 --ctl-lg(40)。footer 那一排除了按钮还有 EP default 档的 select(32) 与
+     checkbox(~14)，40 高的一排按钮把它们衬得上下沿全不对齐 ⇒ 降到 --ctl-md(34)，
+     34 / 32 才是一排。 */
+  height: var(--ctl-md);
   padding: 0 var(--sp-13);
   border-radius: var(--radius);
   font-weight: 500;
@@ -456,7 +558,7 @@ body {
 }
 .el-dialog__footer .el-button:not(.el-button--primary):not(.el-button--danger):hover,
 .el-message-box__btns .el-button:not(.el-button--primary):not(.el-button--danger):hover {
-  background: #eceff3;
+  background: var(--cc-surface-3);
   color: var(--cc-text-1);
 }
 
@@ -467,27 +569,31 @@ body {
  * 14px 字号、左右 16px padding（实测菜单项 102×32，整块 119px 高）——比它所属的
  * 行还粗，撑在窄侧边栏边上很笨重（用户反馈"不是很好看，有点大"）。
  *
- * 三处不是同一套，叠起来才是"外来件"的观感：
- * ① hover 是主色蓝块 + 蓝字（--el-dropdown-menuItem-hover-fill / -color），
- *    全站别处 hover 都是灰底 --cc-surface-2
- * ② 边框挂在 .el-dropdown__popper 外壳上，圆角却只给了内层 .el-dropdown-menu，
- *    结果外面直角、里面圆 —— 最显眼的一处
- * ③ 阴影用的是 EP 的 --el-box-shadow-light（0 2px 12px rgb(0 0 0 / 10%)），
- *    比卡片那档重一倍，浅色界面上显脏
+ * ⚠️ **壳的背景/边框/阴影走变量覆盖，不拼选择器**（2026-11-13 订正）：
+ * EP 用 `.el-dropdown__popper.el-popper` 双类规则（特异度 0,2,0）设 background /
+ * border / box-shadow，`.el-dropdown__popper`（0,1,0）拼不过——原来的皮肤其实
+ * **只生效了一半**（圆角赢了，因为它不在那条双类规则里；阴影一直是 EP 默认的
+ * --el-box-shadow-lighter，实测核对才发现）。⇒ 改在变量层盖：那条双类规则读的是
+ * var(--el-bg-color-overlay / --el-border-color-light / --el-dropdown-menu-box-shadow)，
+ * 在本元素上重定义同名变量即生效，不用赌源码顺序。
  *
+ * 菜单项形态（2026-11-13）：图标 + 文字 + 可选右对齐状态值（meta），
+ * 删除类动作 tone='danger' 红字红 hover。数据由调用方（RowMenu 的 items）给。
  * 放 base.css 而不是组件里：菜单 teleport 到 body，scoped 样式到不了；而且
  * Layout.vue 的用户菜单（编辑个人信息 / 修改密码 / 退出登录）是同一个组件，
  * 一起收口，不用两处各改一遍。
  * ============================================================ */
 
 .el-dropdown__popper {
-  /* 补上外壳圆角，跟 .card 同档 */
-  border-radius: var(--cc-radius);
-  box-shadow: 0 6px 20px rgb(31 35 41 / 8%);
+  /* 壳：三个变量盖 EP 双类规则；圆角不在那条规则里，直接写 */
+  --el-bg-color-overlay: var(--cc-surface);
+  --el-border-color-light: var(--cc-border-card);
+  --el-dropdown-menu-box-shadow: var(--cc-shadow-2);
+  border-radius: var(--radius-lg);
 }
 .el-dropdown-menu {
   padding: var(--sp-4);
-  border-radius: var(--cc-radius);
+  border-radius: var(--radius-lg);
   /* EP 把这两个定义在 .el-dropdown__popper 上。在后代同名重定义对整棵子树生效，
      比重写 :hover 规则干净。 */
   --el-dropdown-menuItem-hover-fill: var(--cc-surface-2);
@@ -497,14 +603,75 @@ body {
   /* 字号 / 行高 / 内边距 EP 全是硬编码的，没有对应变量，只能写选择器。
      字号跟侧边栏目录行对齐（.app-cats__item 同为 15px）—— 同一个"菜单里挑一项"
      在两处的字高必须一样，否则点开菜单会觉得界面换了一套字号。 */
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
   font-size: var(--text-base);
   line-height: 24px;
-  padding: var(--sp-6) var(--sp-10);
-  border-radius: var(--cc-radius-sm);
+  padding: var(--sp-6) var(--sp-8);
+  /* 菜单项约 30px 高 ⇒ 归档到控件那一档 6px（原来是 --cc-radius-sm 的 8px） */
+  border-radius: var(--radius-sm);
   color: var(--cc-text-2);
+}
+/* 图标 16px（KbSvgIcon 是 1em 跟字号走，这里给盒尺寸）：颜色继承项的文字色
+   ⇒ hover 变深、danger 变红都自动跟着走，不用逐态写图标色 */
+.row-menu__item-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+/* 右对齐状态值（如掌握度的「不参与」）：弱灰小字，状态不再塞进 label 的括号里 */
+.row-menu__item-meta {
+  margin-left: auto;
+  font-size: var(--text-sm);
+  color: var(--cc-text-4);
+}
+/* 带状态值的行给最小宽度：菜单宽度 = 最宽那行的内容宽 ⇒ 那行自己的 auto 边距
+   恒等于 0（自己撑出来的宽度自己填满），meta 会贴着 label。给一个超出内容宽的
+   min-width 才有"label 靠左、状态靠右"的两头对齐。 */
+.row-menu__item--has-meta {
+  min-width: 172px;
+}
+/* 删除类动作：红字 + 红 hover。EP 的 hover 是 :not(.is-disabled):hover（0,3,0）
+   ⇒ 这里同构再加一级类（0,4,0）压过它，不赌源码顺序 */
+.el-dropdown-menu__item.row-menu__item--danger {
+  color: var(--cc-danger);
+}
+.el-dropdown-menu__item.row-menu__item--danger:not(.is-disabled):hover,
+.el-dropdown-menu__item.row-menu__item--danger:not(.is-disabled):focus {
+  background-color: var(--cc-danger-soft);
+  color: var(--cc-danger-deep);
 }
 .el-dropdown-menu__item--divided {
   /* 三项的菜单，分隔线只留够"这是另一组"的分量，别撑高度 */
   margin: var(--sp-4) 0;
   border-top-color: var(--cc-border);
+}
+
+/* ============================================================
+ * 下拉弹层出现动画 —— 淡入 + 6px 上移（2026-11-13，性能 + 观感）
+ *
+ * EP 默认 el-zoom-in-top 是 scaleY(0→1) + opacity 0.3s。弹层定位是 left/top，
+ * transform 专用于动画 ⇒ **每一帧都要按新的缩放比例重绘文字和阴影**（scaleY 在
+ * 改光栅化比例），弹层越大、页面越重越像幻灯片 —— 用户报的「点 ⋯ 到弹出这段很卡、
+ * 帧数很低」就是它（2026-11-13 探测确认动画确实在跑：冻结帧 transform 是
+ * matrix(1,0,0,0,0,0) = scaleY(0)，定位却是 inset/left/top）。
+ * ⇒ 换成 opacity + translate（独立于 transform 的位移属性，不触发光栅化重算），
+ * 140ms。只作用于 .el-dropdown__popper（el-select 等别的弹层保持 EP 原样）。
+ * ============================================================ */
+.el-dropdown__popper.el-zoom-in-top-enter-from,
+.el-dropdown__popper.el-zoom-in-top-leave-to,
+.el-dropdown__popper.el-zoom-in-top-leave-active {
+  opacity: 0;
+  translate: 0 6px;
+}
+.el-dropdown__popper.el-zoom-in-top-enter-active,
+.el-dropdown__popper.el-zoom-in-top-leave-active {
+  transition: opacity 0.14s ease, translate 0.14s ease;
+}
+/* EP 有两条规则在写 scaleY 的 transform 动画态，全部中立掉 */
+.el-dropdown__popper.el-zoom-in-top-enter-from,
+.el-dropdown__popper.el-zoom-in-top-leave-to,
+.el-dropdown__popper.el-zoom-in-top-enter-active,
+.el-dropdown__popper.el-zoom-in-top-leave-active {
+  transform: none;
 }

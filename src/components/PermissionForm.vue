@@ -41,7 +41,7 @@
         <el-input v-model="form.menuPath" placeholder="/app/learn" />
       </el-form-item>
       <el-form-item label="图标">
-        <el-select v-model="form.menuIcon" clearable placeholder="选择图标" style="width: 220px">
+        <el-select v-model="form.menuIcon" clearable style="width: 220px">
           <el-option v-for="icon in ICONS" :key="icon" :label="icon" :value="icon">
             <div class="icon-option">
               <el-icon><component :is="Icons[icon]" /></el-icon>

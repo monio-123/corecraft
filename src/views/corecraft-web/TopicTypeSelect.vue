@@ -1,28 +1,33 @@
 <template>
-  <!-- 类型切换 chip。首页录入和详情页改类型是**同一个交互**，两处共用这一个组件 ——
-       写两遍的话，改了其中一处的形态，另一处就跟不上了。 -->
+  <!-- 类型切换。首页录入和详情页改类型是**同一个数据动作**，两处共用这一个组件 ——
+       写两遍的话，改了其中一处的形态，另一处就跟不上了。
+       形态 = 下拉 chip（2026-11-08 曾为 v6 详情页加过 segmented 分段形态，
+       2026-11-09 v10 用户拍板「学习/笔记使用频率非常少，收起来」⇒ 详情页也改回 chip、
+       分支与样式整个删除，别再往回加）。 -->
   <el-popover
     v-model:visible="panelVisible"
-    :width="220"
+    width="var(--cc-popover-w)"
     trigger="click"
     placement="bottom-start"
     :teleported="false"
   >
     <template #reference>
       <button class="tt" :aria-label="`类型：${currentLabel}`">
-        <el-icon class="tt__icon"><Memo /></el-icon>
+        <KbSvgIcon class="tt__icon" name="note" />
         <span class="tt__label">{{ currentLabel }}</span>
-        <el-icon class="tt__caret"><ArrowDown /></el-icon>
+        <KbSvgIcon class="tt__caret" name="caret-down" :sw="2" />
       </button>
     </template>
 
-    <div class="ttp">
-      <p v-if="!types.length" class="ttp__empty">没有类型</p>
+    <!-- 面板样式用全局 .kb-pick* 一族（kb.css）：和其它「从一列里挑一个」的浮层同形，
+         本地不再留一份副本。 -->
+    <div class="kb-pick">
+      <p v-if="!types.length" class="kb-pick__empty">没有类型</p>
       <template v-else>
         <button
           v-for="t in types"
           :key="t.id"
-          class="ttp__item"
+          class="kb-pick__item"
           :class="{ 'is-on': t.id === current }"
           @click="pick(t.id)"
         >
@@ -40,7 +45,7 @@
  * 排第一的那条是**默认档**——新建知识点时它就是默认值，不用额外标记。
  */
 import { ref, computed, watch } from 'vue'
-import { Memo, ArrowDown } from '@element-plus/icons-vue'
+import KbSvgIcon from '../../components/corecraft-web/KbSvgIcon.vue'
 import { getTopicTypes, resolveTopicTypeId } from './useCorecraftWebStore'
 
 const props = defineProps({
@@ -73,17 +78,20 @@ function pick(id) {
 </script>
 
 <style scoped>
-/* 形态照抄全局 .kb-chip（20px 高的小圆角块），但颜色重刷了一遍：
+/* ---------- chip：下拉 chip（首页录入区 + 详情页 meta 行） ---------- */
+/* 形态对齐全局 .kb-chip —— chip 没有定高（字号 × 行高 + 内边距撑出来，实际约 23px），
+   这里定高 24px，视觉上同高。但颜色重刷了一遍：
    标签是"涉及什么"（中性信息），类型是"这条是什么"（带分类意味），
    两者在一条行里出现时必须一眼能分开。 */
 .tt {
   display: inline-flex;
   align-items: center;
   gap: var(--sp-5);
-  height: 24px;
-  padding: 0 var(--sp-9);
+  height: 26px;
+  padding: 0 var(--sp-10);
   border: none;
-  border-radius: var(--radius-xs);
+  /* chip 族圆角例外 6px：和全局 .kb-chip 一致（按控件高度归档 24px 本该是 xs=4） */
+  border-radius: var(--radius-sm);
   background: var(--cc-primary-soft);
   color: var(--cc-primary);
   font-size: var(--text-sm);
@@ -94,44 +102,14 @@ function pick(id) {
   transition: var(--cc-transition);
 }
 .tt:hover {
-  background: #e3efff;
+  background: var(--el-color-primary-light-8);
 }
 .tt__icon {
-  font-size: var(--text-sm);
+  font-size: var(--icon-sm);
 }
 .tt__caret {
-  font-size: var(--text-2xs);
+  /* 12px 是符号级字形（小箭头），刻意不进 --icon-*(14/16/18) 的尺寸阶梯 */
+  font-size: 12px;
   opacity: 0.6;
-}
-.ttp {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
-}
-.ttp__item {
-  border: none;
-  background: transparent;
-  text-align: left;
-  padding: var(--sp-7) var(--sp-10);
-  border-radius: var(--cc-radius-sm);
-  font-size: var(--text-base);
-  color: var(--cc-text-2);
-  cursor: pointer;
-}
-.ttp__item:hover {
-  background: var(--cc-surface-2);
-  color: var(--cc-text-1);
-}
-.ttp__item.is-on {
-  background: var(--cc-primary-soft);
-  color: var(--cc-primary);
-  font-weight: 500;
-}
-.ttp__empty {
-  margin: 0;
-  padding: var(--sp-7) var(--sp-10);
-  font-size: var(--text-sm);
-  color: var(--cc-text-4);
-  line-height: 1.6;
 }
 </style>

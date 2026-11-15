@@ -7,18 +7,19 @@
           <el-icon><Plus /></el-icon>
           新增字典类型
         </el-button>
-        <el-button @click="fetchDictTypes">
-          <el-icon><Refresh /></el-icon>
-          刷新
-        </el-button>
+        <!-- 图标走 :icon 而不是默认插槽：EP 在 loading 时只跳过 icon 插槽，
+             默认插槽照渲染 ⇒ 写在里面会和转圈叠成两个图标 -->
+        <el-button :icon="Refresh" :loading="typesLoading" @click="fetchDictTypes">刷新</el-button>
       </div>
     </div>
 
     <div class="dict-content">
-      <div class="panel">
+      <!-- 左栏要有"加载中"：列表为空的那一瞬用户分不清"在拉"还是"真的没有"（§8 ④） -->
+      <div class="panel" v-loading="typesLoading">
         <el-input
           v-model="keyword"
-          placeholder="搜索字典名称 / 编码"
+          placeholder="名称 / 编码"
+          :prefix-icon="Search"
           clearable
           class="search-input"
         />
@@ -46,9 +47,9 @@
       </div>
 
       <div class="panel">
-        <el-empty v-if="!currentType" description="请选择左侧字典类型" />
-
-        <template v-else>
+        <!-- 没选中类型时这一格什么都不画（本页会自动选中第一项）：
+             左边有选中项就说明加载完了，用户分得清"空的"和"坏的" -->
+        <template v-if="currentType">
           <div class="panel-head">
             <div>
               <div class="panel__title">{{ currentType.name }}</div>
@@ -62,7 +63,7 @@
                 <el-icon><Plus /></el-icon>
                 新增字典项
               </el-button>
-              <el-button link type="danger" @click="removeType(currentType.id)">删除类型</el-button>
+              <el-button link type="danger" @click="removeType(currentType)">删除类型</el-button>
             </div>
           </div>
 
@@ -72,6 +73,14 @@
             <el-table-column prop="sort" label="排序" width="80" />
             <el-table-column prop="cssClass" label="样式标记" min-width="110" show-overflow-tooltip />
             <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip />
+            <!-- 「参与掌握度」只在知识点类型这套字典上有意义（其它字典项没这个概念） -->
+            <el-table-column v-if="isTopicTypeDict" label="掌握度" width="90">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.masteryEnabled ? 'success' : 'info'">
+                  {{ row.masteryEnabled ? '参与' : '不参与' }}
+                </el-tag>
+              </template>
+            </el-table-column>
             <el-table-column label="状态" width="90">
               <template #default="{ row }">
                 <el-tag size="small" :type="row.enabled ? 'success' : 'info'">
@@ -83,7 +92,7 @@
               <template #default="{ row }">
                 <div class="ops">
                   <el-button link type="primary" @click="openItemDialog(row)">编辑</el-button>
-                  <el-button link type="danger" @click="removeItem(row.id)">删除</el-button>
+                  <el-button link type="danger" @click="removeItem(row)">删除</el-button>
                 </div>
               </template>
             </el-table-column>
@@ -141,6 +150,17 @@
         <el-form-item label="备注">
           <el-input v-model="itemForm.remark" type="textarea" :rows="3" />
         </el-form-item>
+        <!-- 「参与掌握度」只对知识点类型这一套字典有意义（其它字典项没这个概念），
+             所以按字典类型编码决定显不显示，而不是给所有字典项都摆一个看不懂的开关。
+             类型层只有「参与 / 不参与」两种有效状态（未配置与不参与行为一致），
+             所以用开关而不是三态选择器。 -->
+        <el-form-item v-if="isTopicTypeDict" label="参与掌握度">
+          <el-switch v-model="itemForm.masteryEnabled" active-text="参与" inactive-text="不参与" />
+          <div class="hint">
+            该类型下的知识点默认是否参与掌握度统计（学习默认参与、笔记默认不参与）。<br />
+            单条知识点可以在卡片菜单里单独覆盖这一条。
+          </div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="itemDialogVisible = false">取消</el-button>
@@ -152,8 +172,9 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { Plus, Refresh, Search } from '@element-plus/icons-vue'
+import { confirmAction } from '../utils/confirm'
 import {
   createDictItem,
   createDictType,
@@ -170,6 +191,7 @@ const dictItems = ref([])
 const currentTypeId = ref(null)
 const keyword = ref('')
 const itemsLoading = ref(false)
+const typesLoading = ref(false)
 
 const typeSaving = ref(false)
 const itemSaving = ref(false)
@@ -191,8 +213,12 @@ const itemForm = reactive({
   sort: 0,
   enabled: true,
   cssClass: '',
-  remark: ''
+  remark: '',
+  masteryEnabled: false
 })
+
+/** 只有知识点类型这一套字典有「参与掌握度」的概念 */
+const isTopicTypeDict = computed(() => currentType.value?.code === 'kp_topic_type')
 
 const filteredDictTypes = computed(() => {
   const text = keyword.value.trim().toLowerCase()
@@ -213,20 +239,25 @@ const selectType = (item) => {
 }
 
 const fetchDictTypes = async () => {
-  const res = await getDictTypeList()
-  const types = (res?.data || []).map(item => ({
-    ...item,
-    itemCount: item.itemCount || 0
-  }))
-  dictTypes.value = types
-  if (!types.length) {
-    currentTypeId.value = null
-    dictItems.value = []
-    return
-  }
-  const exists = types.some(item => item.id === currentTypeId.value)
-  if (!exists) {
-    currentTypeId.value = types[0].id
+  typesLoading.value = true
+  try {
+    const res = await getDictTypeList()
+    const types = (res?.data || []).map(item => ({
+      ...item,
+      itemCount: item.itemCount || 0
+    }))
+    dictTypes.value = types
+    if (!types.length) {
+      currentTypeId.value = null
+      dictItems.value = []
+      return
+    }
+    const exists = types.some(item => item.id === currentTypeId.value)
+    if (!exists) {
+      currentTypeId.value = types[0].id
+    }
+  } finally {
+    typesLoading.value = false
   }
 }
 
@@ -291,9 +322,9 @@ const saveType = async () => {
   }
 }
 
-const removeType = async (id) => {
-  await ElMessageBox.confirm('确认删除该字典类型及其下所有字典项吗？', '提示', { type: 'warning' })
-  await deleteDictType(id)
+const removeType = async (type) => {
+  if (!(await confirmAction('删除字典类型'))) return
+  await deleteDictType(type.id)
   ElMessage.success('已删除')
   await fetchDictTypes()
 }
@@ -310,6 +341,8 @@ const openItemDialog = (item) => {
   itemForm.enabled = item?.enabled ?? true
   itemForm.cssClass = item?.cssClass ?? ''
   itemForm.remark = item?.remark ?? ''
+  // 类型层：null（未配置）与 false（明确不参与）行为一致 ⇒ 统一落成 false
+  itemForm.masteryEnabled = item?.masteryEnabled === true
   itemDialogVisible.value = true
 }
 
@@ -331,7 +364,9 @@ const saveItem = async () => {
       sort: itemForm.sort,
       enabled: itemForm.enabled,
       cssClass: itemForm.cssClass,
-      remark: itemForm.remark
+      remark: itemForm.remark,
+      // 只在知识点类型这套字典上带这个字段：其它字典项传了也是白传
+      ...(isTopicTypeDict.value ? { masteryEnabled: itemForm.masteryEnabled } : {})
     }
     if (itemForm.id) {
       await updateDictItem({ id: itemForm.id, ...payload })
@@ -347,9 +382,9 @@ const saveItem = async () => {
   }
 }
 
-const removeItem = async (id) => {
-  await ElMessageBox.confirm('确认删除该字典项吗？', '提示', { type: 'warning' })
-  await deleteDictItem(id)
+const removeItem = async (row) => {
+  if (!(await confirmAction('删除字典项'))) return
+  await deleteDictItem(row.id)
   ElMessage.success('已删除')
   await fetchDictItems(currentType.value?.id)
 }
@@ -368,8 +403,8 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-/* 页面骨架（.page / .page-head / .page-head__title / .panel / .panel-head / .panel__title）
-   在 assets/admin-page.css，这里只留本页专有样式 */
+/* 页面骨架（.page / .page-head / .page-head__title / .panel / .panel-head /
+   .panel__title / .panel-subtitle）在 assets/admin-page.css，这里只留本页专有样式 */
 
 .dict-content {
   display: grid;
@@ -394,7 +429,7 @@ onMounted(async () => {
   gap: var(--sp-10);
   padding: var(--sp-10);
   border: 1px solid var(--cc-border);
-  border-radius: var(--cc-radius);
+  border-radius: var(--radius-lg);
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
 }
@@ -411,10 +446,11 @@ onMounted(async () => {
   font-weight: 500;
   color: var(--cc-text-1);
 }
+/* 编码是要读的主数据，不是装饰 ⇒ text-2（text-3 对白底只有 2.48:1） */
 .dict-type-item__code {
   margin-top: var(--sp-4);
   font-size: var(--text-xs);
-  color: var(--cc-text-3);
+  color: var(--cc-text-2);
 }
 
 .dict-type-item__meta {
@@ -427,11 +463,5 @@ onMounted(async () => {
 .dict-type-item__count {
   font-size: var(--text-xs);
   color: var(--cc-text-3);
-}
-
-.panel-subtitle {
-  margin-top: var(--sp-4);
-  color: var(--cc-text-3);
-  font-size: var(--text-sm);
 }
 </style>

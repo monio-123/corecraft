@@ -26,7 +26,7 @@
           <div class="ops">
             <el-button link type="primary" @click="openRoleDialog(row.id)">编辑</el-button>
             <el-button link @click="openPermDialog(row.id)">资源分配</el-button>
-            <el-button link type="danger" @click="removeRole(row.id)">删除</el-button>
+            <el-button link type="danger" @click="removeRole(row)">删除</el-button>
           </div>
         </template>
       </el-table-column>
@@ -91,9 +91,10 @@
 
 <script setup>
 import { nextTick, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import request from '../utils/request'
+import { confirmAction } from '../utils/confirm'
 import { createRole, deleteRole, getRoleDetail, getRoleList, updateRole } from '../api/role'
 
 const loading = ref(false)
@@ -235,9 +236,9 @@ const saveRolePermissions = async () => {
   }
 }
 
-const removeRole = async (id) => {
-  await ElMessageBox.confirm('确认删除该角色吗？', '提示', { type: 'warning' })
-  await deleteRole(id)
+const removeRole = async (row) => {
+  if (!(await confirmAction('删除角色'))) return
+  await deleteRole(row.id)
   ElMessage.success('已删除')
   await fetchRoles()
 }
@@ -252,20 +253,15 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-/* 页面骨架（.page / .page-head / .page-head__title）在 assets/admin-page.css */
+/* 页面骨架（.page / .page-head / .page-head__title / .permission-node）
+   在 assets/admin-page.css */
 
 .permission-panel {
   border: 1px solid var(--cc-border-strong);
-  border-radius: var(--cc-radius);
+  border-radius: var(--radius-lg);
   padding: var(--sp-12);
   min-height: 360px;
   overflow: auto;
-}
-
-.permission-node {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-8);
 }
 
 .permission-node__tag {

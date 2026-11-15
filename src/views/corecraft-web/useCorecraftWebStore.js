@@ -1,16 +1,27 @@
 import { computed, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { confirmAction } from '../../utils/confirm'
 import {
   getTopicList, getTopicIndex as apiGetTopicIndex, getTopicById, getTagList, getCategoryList,
   createTopic as apiCreateTopic, updateTopic as apiUpdateTopic, deleteTopic as apiDeleteTopic,
+  setTopicMastery as apiSetTopicMastery,
   createCategory as apiCreateCategory, renameCategory as apiRenameCategory,
   moveCategory as apiMoveCategory, deleteCategory as apiDeleteCategory,
+  getCategoryDeletePreview as apiGetCategoryDeletePreview,
   importCategories as apiImportCategories,
   renameTag as apiRenameTag, deleteTag as apiDeleteTag
 } from '../../api/knowledge'
 import { getDictTypeList, getDictItemList } from '../../api/dict'
+import {
+  getLearningTree as apiGetLearningTree,
+  getMasteryLevels as apiGetMasteryLevels
+} from '../../api/learning'
 import { onAuthChange } from '../../utils/auth'
 import { createLoadSlot, loadOnce, resetSlot } from '../../utils/lazyLoad'
+import { normalizeSearchScope, SEARCH_SCOPE_BOTH } from '../../utils/searchMode'
+// ⚠️ **原来这里还 import 了 `DEFAULT_RANGE` / `rangeBounds` / `withinRange`** ——
+// 时间筛选的判据已经全搬到 `AppHomeView.vue` / `AppLearnView.vue`（列表页与首页），
+// store 这份是搬迁后残留的零使用导入 ⇒ 删除。口径仍只有 `utils/timeRange.js` 一份。
 
 // ==================== 内部状态 ====================
 
@@ -25,13 +36,42 @@ import { createLoadSlot, loadOnce, resetSlot } from '../../utils/lazyLoad'
  */
 const topicIndex = ref(new Map())
 const topicIndexSlot = createLoadSlot()
+
+/**
+ * **全集索引**（不按关键词筛）：**目录树要的"完整的书"**。
+ *
+ * <p>⚠️ **为什么要有第二份**（用户 2026-11-05：「对于目录树搜索既然加了命中栏
+ * 那么展示的树就要是完整的啊 你把目录数据过滤了然后加个命中栏的意义在哪？」）：
+ * 搜索索引是"**当前关键词下的**全集"（服务端按 `q` 筛过的）⇒ 用它画树，
+ * 树上就只剩命中的那些条目 ⇒ **树被过滤了** ⇒ 再加个命中栏等于把同一件事做了两遍。
+ * ⇒ 树要画**完整的书**，就得有一份**不筛**的索引。
+ *
+ * <p>⚠️ **没搜索词时两份是同一份**（搜索索引 = ('', both) = 全集）
+ * ⇒ 那时直接共用，**不重复打接口**（见 {@link ensureFullTopicIndexLoaded}）。
+ */
+const fullTopicIndex = ref(new Map())
+const fullIndexSlot = createLoadSlot()
+
 /**
  * 当前这份索引对应的关键词。**换了就是另一份数据**，必须重拉。
  *
  * <p>它是这份数据的**身份**的一部分（和"哪个账号的数据"同级），所以记住它：
  * 两个调用方拿同一个关键词时不必各拉一次。
+ *
+ * <p>⚠️ **它是 ref 不是普通变量**：改关键词之后，**拿着这份数据在渲染的人**
+ * （树视图那棵树、侧边栏的计数）得知道"这份数据是按哪个词筛的" ⇒ 得能触发重算。
  */
-let indexKeyword = null
+const indexKeyword = ref(null)
+
+/**
+ * 当前这份索引对应的 **scope**（搜哪一块：标题 / 正文 / 都搜）。
+ *
+ * <p>⚠️ **它和关键词一样是这份数据的"身份"的一部分** —— 同一个词、
+ * 一档搜标题一档搜正文，**是两批完全不同的命中集** ⇒ scope 变了也得重拉。
+ *
+ * <p>（2026-11-05 新增：搜索分成「正文」「目录」两档，各搜各的。）
+ */
+const indexScope = ref(null)
 
 /**
  * **当前页**的知识点（带正文）—— **不在这儿存**。
@@ -56,6 +96,22 @@ const dataVersion = ref(0)
 /** 数据版本号（视图 watch 它来重拉当前页） */
 export function getDataVersion() {
   return dataVersion.value
+}
+
+/**
+ * **说一声"数据变了"**（数据版本号 +1）。
+ *
+ * <p>给**从 store 外面**改库的那些地方用：任务中心的"采纳 AI 归类"
+ * （在 {@code GenTaskPanel} 里，碰不到 store 的内部函数）、
+ * 别的跨模块写路径。它们改了 kp_topic，列表页那一页得跟着变。
+ *
+ * <p>⚠️ **只说"变了"，不替视图重拉**：怎么拉是视图的事（它知道自己在第几页、筛了什么）。
+ * store 内部那些写路径走的是 {@link refreshAfterTopicChange}，
+ * 它除了 +1 还会刷索引缓存 —— **外面直接调这个不会刷缓存**，
+ * 所以调用点要自己刷（或者本来就用 store 的写函数）。
+ */
+export function bumpDataVersion() {
+  dataVersion.value++
 }
 
 // 标签缓存：{ name, count }。原本从 topicMap 聚合，要先 ensureTopicsLoaded 拉全部 topic。
@@ -91,7 +147,14 @@ const topicTypes = ref([])
 const topicTypesSlot = createLoadSlot()
 
 function normalizeCategory(c) {
-  return { id: c.id, name: c.name, parentId: c.parentId || ROOT_CATEGORY }
+  return {
+    id: c.id,
+    name: c.name,
+    parentId: c.parentId || ROOT_CATEGORY,
+    // 「生成于 …」（树视图 meta 行用）。后端目录接口不带这个字段 ⇒ undefined，
+    // 组件按 falsy 不渲染 —— demo 假数据里有，就显示。
+    createdAt: c.createdAt || null
+  }
 }
 
 // 几个缓存都是模块级的，只有整页刷新才会重建。换账号时不丢，B 会看到 A 的知识点/目录/标签。
@@ -99,13 +162,19 @@ function normalizeCategory(c) {
 onAuthChange(() => {
   topicIndex.value = new Map()
   resetSlot(topicIndexSlot)
-  indexKeyword = null
+  indexKeyword.value = null
+  indexScope.value = null
+  fullTopicIndex.value = new Map()
+  resetSlot(fullIndexSlot)
   allTags.value = []
   resetSlot(allTagsSlot)
   categories.value = []
   resetSlot(categoriesSlot)
   topicTypes.value = []
   resetSlot(topicTypesSlot)
+  // 学习数据也是账号级的：B 不能看到 A 的掌握度
+  categoryMasteryMap.value = new Map()
+  resetSlot(categoryMasterySlot)
   // 数据换人了 ⇒ 视图手里那一页也是旧账号的 ⇒ 说一声，让它重拉。
   dataVersion.value++
 })
@@ -174,6 +243,15 @@ function normalizeTopic(item) {
     parentTopicId: item.parentTopicId ?? null,
     categoryId: item.categoryId ?? null,
     typeId: item.typeId ?? null,
+    // ⚠️ **掌握度相关字段（2026-11-12）**：
+    //   masteryEnabled —— 后端**已解析**的最终判据（单条 > 类型 > 兜底），前端不自己判；
+    //   masteryOverride —— **原始**单条覆盖（null=跟随类型 / true=参与 / false=不参与），
+    //     和 masteryEnabled 分开带：两者在"明确关掉"和"跟随类型(而类型默认关)"时长得一样，
+    //     设置弹窗要靠 override 才分得清自己停在哪一档；
+    //   masteryLevel   —— 后端算好的档位词；**null = 没有有效评估** ⇒ 卡片上完全不画标记。
+    masteryEnabled: item.masteryEnabled ?? false,
+    masteryOverride: item.masteryOverride ?? null,
+    masteryLevel: item.masteryLevel ?? null,
     tags: parseJson(item.tags, []).map(decodeTag),
     relatedTopicIds: item.relatedTopicIds || [],
     createdAt: item.createTime || '',
@@ -193,9 +271,15 @@ function normalizeIndexEntry(item) {
     title: item.title || '',
     categoryId: item.categoryId ?? null,
     typeId: item.typeId ?? null,
+    // 已解析的「是否参与掌握度」（后端判据，前端不自己判）
+    masteryEnabled: item.masteryEnabled ?? false,
     tags: parseJson(item.tags, []).map(decodeTag),
     hasContent: !!item.hasContent,
-    createdAt: item.createTime || ''
+    createdAt: item.createTime || '',
+    // 「更新于」的时间戳：保存类动作（applyPatch）强刷索引后从这儿补新值
+    //（2026-11-09 用户报「更新正文后时间不变，只有刷新页面才会变」——
+    // applyPatch 一直想补 fresh.updatedAt，但索引条目从来没带过这个字段）。
+    updatedAt: item.updateTime || ''
   }
 }
 
@@ -207,16 +291,26 @@ function normalizeIndexEntry(item) {
  * @param {boolean} force 强制重拉（改完库要刷）
  * @param {string} keyword 当前关键词。**关键词是这份数据的身份的一部分** ——
  *        换了就得重拉，而且必须服务端筛：浏览器这边没有正文，筛不了正文。
+ * @param {string} scope 搜哪一块（标题 / 正文 / 都搜，见 utils/searchMode.js）。
+ *        ⚠️ **它也是身份的一部分**：同一个词，一档搜标题一档搜正文，是两批数据。
  */
-export async function ensureTopicIndexLoaded(force = false, keyword = indexKeyword || '') {
+export async function ensureTopicIndexLoaded(
+  force = false,
+  keyword = indexKeyword.value || '',
+  scope = indexScope.value || SEARCH_SCOPE_BOTH
+) {
   const kw = String(keyword || '').trim()
-  const changed = kw !== indexKeyword
+  const sc = normalizeSearchScope(scope)
+  const changed = kw !== indexKeyword.value || sc !== indexScope.value
   if (!force && !changed && topicIndexSlot.state.value === 'ready') return getTopicIndex()
-  // 先记住新关键词：两个调用方（壳 / 列表页）拿同一个关键词时，
+  // 先记住新关键词/新 scope：两个调用方（壳 / 列表页）拿同一份时，
   // 第二个会算成"没变" ⇒ 复用第一个的**在途**请求，不会打两遍接口。
-  if (changed) indexKeyword = kw
+  if (changed) {
+    indexKeyword.value = kw
+    indexScope.value = sc
+  }
   await loadOnce(topicIndexSlot, force || changed, async (isCurrent) => {
-    const res = await apiGetTopicIndex({ q: kw })
+    const res = await apiGetTopicIndex({ q: kw, scope: sc })
     const nextMap = new Map()
     ;(res?.data || []).map(normalizeIndexEntry).forEach((t) => nextMap.set(t.id, t))
     // **只有最新发起的那次才落缓存**：旧请求晚回来时它带的是**更早的库状态**
@@ -246,9 +340,103 @@ export async function fetchTopicIndexFresh() {
   return (res?.data || []).map(normalizeIndexEntry)
 }
 
-/** 结构索引（全集，不含正文）。目录树、计数、筛选范围都用它。 */
+/**
+ * 结构索引（全集，不含正文）。目录树、计数、筛选范围都用它。
+ */
 export function getTopicIndex() {
   return [...topicIndex.value.values()]
+}
+
+/**
+ * **全集索引**（不按关键词筛）：**目录树要的"完整的书"**。
+ *
+ * <p>⚠️ **它和 {@link getTopicIndex} 不是一回事**：
+ * 那份是"**当前关键词下的**全集"（搜索索引，命中集靠它数），
+ * 这份是**什么词都不筛**的全集（**树画的是它** —— 搜索态下树也要完整）。
+ *
+ * @returns {Array} 结构索引条目（与 getTopicIndex 同一个形状）
+ */
+export function getFullTopicIndex() {
+  return [...fullTopicIndex.value.values()]
+}
+
+/**
+ * **把全集索引拉到位**（目录树要它）。
+ *
+ * <p>⚠️ **没搜索词时不重复打接口**：搜索索引本身就是全集（('', both)）
+ * ⇒ 等它到位后直接复用（`ensureTopicIndexLoaded` 认得"同一份在途请求"）。
+ *
+ * <p>⚠️ **身份是"当前搜索索引的身份"**：搜索索引被换成按词筛的那份之后，
+ * 全集索引就**不能**再从它那儿拿了 ⇒ 这时才真的发一次请求（不筛）。
+ *
+ * @param {boolean} force 强制重来（改了库要刷缓存）
+ */
+export async function ensureFullTopicIndexLoaded(force = false) {
+  // **搜索索引本身就是全集**（没有搜索词时，服务端不筛 ⇒ 它就是全部）
+  // ⇒ 等它到位后直接复用，不重复打接口。
+  // ⚠️ **判据只看"有没有搜索词"，不看 scope**：没有词的时候 scope 筛不出任何东西
+  // （服务端那条 SQL 的 `q != ''` 才进分支）⇒ scope 是 title 还是 both 都一样。
+  // ⚠️ **这里不 force**：刷不刷由调用方决定（调用方刷完搜索索引，这里自然拿到新那份）。
+  if (indexKeyword.value === '') {
+    await ensureTopicIndexLoaded(false)
+    fullTopicIndex.value = topicIndex.value
+    return getFullTopicIndex()
+  }
+  if (!force && fullIndexSlot.state.value === 'ready') return getFullTopicIndex()
+  await loadOnce(fullIndexSlot, force, async (isCurrent) => {
+    const res = await apiGetTopicIndex({})
+    const nextMap = new Map()
+    ;(res?.data || []).map(normalizeIndexEntry).forEach((t) => nextMap.set(t.id, t))
+    // **只有最新发起的那次才落缓存**（同 topicIndex 那份的理由：旧请求晚回来会把缓存倒退）。
+    if (isCurrent()) fullTopicIndex.value = nextMap
+    return nextMap
+  })
+  return getFullTopicIndex()
+}
+
+/**
+ * 「当前目录范围 = URL 上的 `?category=`」这条推导。**只有这一份** ——
+ * 列表页用它筛，**详情页用它还原"这次搜索的命中集"**（浮条上的序号）。
+ *
+ * <p>⚠️ 两处各写一遍的话，详情页算出来的命中集和列表页看到的不是一批
+ * ⇒ 序号错位，而界面上什么异常都看不出来。
+ *
+ * @param {object} query 路由上的 query
+ * @returns {string|number} ALL / UNCATEGORIZED / 目录 id
+ */
+export function categoryScopeFromQuery(query) {
+  const c = query?.category
+  if (c !== undefined) {
+    if (c === UNCATEGORIZED) return UNCATEGORIZED
+    return Number(c)
+  }
+  // ⚠️ **没有 `?category=`、而有 `?tree=`（哪本书）时 ⇒ 范围 = 那本书**
+  // （2026-11-05 晚用户拍板：正文档那档点侧边栏的书 = 卡片收窄到那本书；
+  // 「默认没有选择一级目录的时候是直接展示所有符合的卡片的」）。
+  //
+  // ⚠️ **这条规则必须只写这一份**：列表页（列表的范围、命中浮条的条数）和
+  // 详情页（"我是第几个命中"）都要它 —— 各写一遍的话两边算出的命中集不是一批
+  // ⇒ 序号错位，**而界面上什么异常都看不到**。
+  const t = query?.tree
+  const id = t == null ? NaN : Number(t)
+  return Number.isFinite(id) && id ? id : ALL
+}
+
+/**
+ * **改了库之后刷索引**：**两份都刷**（搜索索引 + 全集索引）。
+ *
+ * <p>⚠️ **为什么是两份**：搜索索引是"当前关键词下的全集"（侧边栏的命中计数靠它），
+ * 全集索引是"什么词都不筛的全集"（**树画的是它**）。刷一份漏一份 ⇒
+ * 树的条数和侧边栏的条数对不上，**而界面上什么异常都看不出来**。
+ *
+ * <p>⚠️ **谁改了库就用这个，别自己写半份**（2026-11-09 用户报「生成主题后目录树
+ * 计数全是 0，必须刷新才有」）：生成流程当初写的是裸的 `ensureTopicIndexLoaded(true)`
+ * ⇒ 只刷了搜索索引，树的计数读的 `fullTopicIndex` 还是生成前的旧快照
+ * ⇒ 树上每个章/节的数字都是 0，**界面上什么异常都看不出来**。
+ */
+export async function refreshTopicIndexes() {
+  await ensureTopicIndexLoaded(true)
+  await ensureFullTopicIndexLoaded(true)
 }
 
 /**
@@ -270,7 +458,7 @@ export async function loadTopicPage(params = {}) {
 }
 
 /**
- * 按 id 取一条（**结构索引里的那份**：有标题/目录/类型/标签，**没有正文**）。
+ * 按 id 取一条（**结构索引里的那份**：有标题/目录/类型/标签/时间戳，**没有正文**）。
  *
  * <p>要正文走 {@link fetchTopic}（详情接口）或列表页那一页。
  *
@@ -288,6 +476,78 @@ export async function fetchTopic(id) {
   if (!res?.data) return null
   return normalizeTopic(res.data)
 }
+
+/**
+ * **知识点详情页当前打开那条的目录归属**（顶栏面包屑的数据源）。
+ *
+ * <p>`topic` 是详情页自己的局部状态，壳（AppLayout 顶栏）拿不到 —— 顶栏那条
+ * 「一级目录/二级目录/…」要显示这条知识在哪，只能由详情页**报**上来。
+ * 这里只放顶栏用得上的最小值（目录 id），不复制 topic 本体。
+ *
+ * <p>⚠️ **写方只有详情页一个**（watch topic.categoryId —— 载入、AI 采纳改归类
+ * 都走它）；读方按 `route.name === 'AppTopicDetail'` 门控，别的页面不看它，
+ * 所以切走之后的残留值不会漏到别处。
+ */
+export const openTopicCategoryId = ref(null)
+
+/**
+ * **顶栏搜索框 → 详情页正文** 的实时检索通道（2026-11-09）。
+ *
+ * <p>用户在详情页时，顶栏那个搜索框**边打字边**在这篇正文里检索并高亮
+ * （用户：「如果我在详情正文中的视图的时候 就变为实时生效查询」）。
+ * 列表页仍然是回车才搜（整库检索，回车触发才对）。
+ *
+ * <p>⚠️ **写方只有壳一个**（AppLayout 的输入框）、读方只有详情页一个
+ * ⇒ 与 {@link openTopicCategoryId} 同一个形状：壳拿不到详情页的编辑器实例，
+ * 详情页拿不到壳的输入框 ⇒ 两边只能通过这一处共享状态对话。
+ *
+ * <p>⚠️ **检索词只有这一份**（2026-11-09 用户报「搜过一个东西就删不掉了」）：
+ * 顶栏框的字 = 本通道 = URL 的 `?q=`（壳在详情页打字时同步 replace）。
+ * 原来正文里还有一个独立检索栏（BodySearchBar），它自持一份词 ⇒ 清它清不掉
+ * URL 和顶栏框那份，刷新 / 进新目录又冒出来。独立栏已删，词收敛到这一条。
+ */
+export const bodySearchKeyword = ref('')
+
+/**
+ * **正文检索的命中计数**（详情页 → 壳）：这次检索命中几处、现在在第几个。
+ *
+ * <p>壳（AppLayout）把它印在顶栏搜索框的 suffix 区（「3/12」或「12 处」）——
+ * 命中数据只在编辑器那边有（ProseMirror 插件算的），显示却在顶栏 ⇒ 反向通道。
+ *
+ * <p>⚠️ `index` **0 = 还没定位**（只印总数「N 处」），1 起 = 在第 k 处（印「k/N」）。
+ * 口径与顶栏搜索框里那套一致（定位了印「k/N」，没定位印「N 处」）。
+ */
+export const bodySearchHits = ref({ total: 0, index: 0 })
+
+/**
+ * **目录树那档的命中计数**（目录树 → 壳）：这次搜索在树里命中几行、现在在第几行。
+ *
+ * <p>⚠️ **和 {@link bodySearchHits} 是两件事，别混**：
+ * - `bodySearchHits` = **正文**里命中几处（详情页那档）；
+ * - `treeSearchHits` = **目录树**里命中几行（目录那档，命中的是目录名 / 知识点标题）。
+ *
+ * <p>用户 2026-11-09：「目录树的那个定位框也跟这里一样复用上面那个就行」
+ * ⇒ 树里原来那个独立的命中浮条（可拖）**撤掉**，
+ * 计数与 ↑↓ 统一到顶栏搜索框的 suffix 区 ⇒ **同一个框、同一套 ↑↓**。
+ */
+export const treeSearchHits = ref({ total: 0, index: 0 })
+
+/**
+ * **目录树那档的跳转命令**（壳 → 目录树）：`'next'` / `'prev'`。
+ *
+ * <p>与 {@link bodySearchJump} 同一个形状：写方是壳（顶栏 ↑↓ 按钮），
+ * 读方是目录树（`CategoryTree`），消费后置回 `''`（连点两次跳两次）。
+ */
+export const treeSearchJump = ref('')
+
+/**
+ * **正文检索的跳转命令**（壳 → 详情页）：`'next'` / `'prev'`。
+ *
+ * <p>顶栏搜索框 suffix 区的 ↑↓ 按钮写它，详情页 watch 到就调编辑器
+ * `gotoMatch` 跳过去、更新 {@link bodySearchHits}，**消费后置回 `''`**
+ * ⇒ 同一个方向连点两次也会跳两次（命令是边沿触发，不是电平）。
+ */
+export const bodySearchJump = ref('')
 
 /**
  * 这条知识点**现在的**目录归属（**权威值**）。
@@ -311,9 +571,10 @@ async function currentCategoryIdOf(id) {
 // 之前三条路径（建 / 改 / 删知识点）都只刷了 topicMap，标签下拉里的计数于是永远是旧的，
 // 表现为"详情页移掉一个标签 → 返回列表 → 计数没变，得刷新页面"。
 // 收敛成一个函数，调用点只回答"这次动没动标签"，没动就不发那个多余请求。
-async function refreshAfterTopicChange(tagsChanged) {
-  // 索引（结构：目录/计数/范围）要刷。
-  await ensureTopicIndexLoaded(true)
+export async function refreshAfterTopicChange(tagsChanged) {
+  // 索引（结构：目录/计数/范围）要刷。**两份都刷** —— 搜索索引（按词筛）和
+  // 全集索引（树的"完整的书"），少刷一份就会出现"树的条数和侧边栏对不上"。
+  await refreshTopicIndexes()
   if (tagsChanged) await ensureAllTagsLoaded(true)
   // **当前页（内容：正文/摘要）归视图管** ⇒ 这里只说"变了"。
   // 视图 watch getDataVersion 来重拉那一页 —— store 不再替它缓存一份。
@@ -386,45 +647,204 @@ export async function updateTopic(id, patch, opts = {}) {
   return getTopic(id)
 }
 
-export async function deleteTopic(id) {
+/**
+ * 设置单条知识点是否参与掌握度（**三态**，2026-11-12）。
+ *
+ * <p>true = 参与 / false = 明确不参与 / **null = 恢复继承类型默认**。
+ *
+ * <p>⚠️ **判据全在后端**（`MasteryScope`：单条覆盖 > 类型默认值 > 安全兜底）。
+ * 前端**只把用户的选择原样发过去**，不自己算"最终参与不参与"——
+ * 自己算一遍就会出现"界面上说不参与、后端统计里却算进去了"。
+ *
+ * <p>改完要刷两处：
+ * <ul>
+ *   <li>**目录聚合**（eligibleCount / levelCounts 会变）；</li>
+ *   <li>**当前页列表**（卡片右上角的档位签要消失/出现）⇒ 数据版本号 +1。</li>
+ * </ul>
+ *
+ * @param {number} id 知识点 id
+ * @param {boolean|null} enabled
+ */
+export async function setTopicMasteryEnabled(id, enabled) {
+  await apiSetTopicMastery(id, enabled === undefined ? null : enabled)
+  invalidateCategoryMastery()
+  dataVersion.value++
+}
+
+/**
+ * 删一条知识点。
+ *
+ * @param {number} id 知识点 id
+ * @param {{refresh?: boolean}} [opts] `refresh: false` = 删完不刷新缓存。
+ *        **批量删除时用它**：每删一条都刷一遍索引（两份：搜索索引 + 全集索引）
+ *        就是 20 条 × 2 次请求，而且页面会被数据版本号推着重拉 20 次。
+ *        批量结束自己刷一次 —— 和 `updateTopic` / `createTopic` 同一个口径。
+ */
+export async function deleteTopic(id, opts = {}) {
   await apiDeleteTopic(id)
+  if (opts.refresh === false) return
   // 删一条一定会带走它身上的标签引用（哪怕它本来没标签），所以这里没法省那个请求
   await refreshAfterTopicChange(true)
 }
 
 /**
- * 删除知识点的**交互流**（确认框 → 删 → 提示）。
+ * **批量归类**：把一批知识点放进同一个目录（或移回「待归类」）。
  *
- * 列表页卡片和详情页顶栏是两个删除入口，规则必须一致：
- * 确认框的整句文案、按钮文案、删完的提示都各写一份的话，
- * 以后改其中一处（比如提示改成"已删除并归档"）就只改得动一处 ⇒ 两边行为漂移。
- * 和 `confirmDeleteTag` / `confirmDeleteCategory` 同一个形状。
+ * <p>为什么要有这个函数、而不是让页面自己 `for` 一遍 `updateTopic`：
+ * 每条 `updateTopic` 都会刷一次索引 + 数据版本号 +1（视图跟着重拉一页）
+ * ⇒ 勾 17 条就是把列表重拉 17 遍，中间还能看见卡片一条条消失。
+ * 这里**逐条写库、最后只刷一次**：用户点完确定，页面只动一次。
  *
+ * <p>⚠️ **失败不中断**：一条写失败（网络抖、被别处删了）不该让剩下的全不执行。
+ * 用 `allSettled` 数成功/失败，最后如实报数 —— 报"已归类 15 条、2 条失败"
+ * 比一句"已保存"强，比静默失败强得多。
+ *
+ * @param {Array<{id:number}>} topics 选中的知识点
+ * @param {number|null} categoryId 目标目录；null = 移回「待归类」
+ * @returns {Promise<{ok:number, failed:number}>}
+ */
+export async function updateTopicsCategory(topics, categoryId) {
+  const list = (topics || []).filter((t) => t && t.id != null)
+  if (!list.length) return { ok: 0, failed: 0 }
+  const results = await Promise.allSettled(
+    list.map((t) => updateTopic(t.id, { categoryId }, { refresh: false }))
+  )
+  const ok = results.filter((r) => r.status === 'fulfilled').length
+  const failed = results.length - ok
+  // 一条都没写成功就**不刷**（刷了也白刷，还让页面重拉一次）。
+  if (ok) await refreshAfterTopicChange(false)
+  return { ok, failed }
+}
+
+/**
+ * **批量删除**的交互流（统一确认框 → 逐条删 → 一次刷新 → 提示）。
+ *
+ * <p>和单条 `confirmDeleteTopic` 分开写：批量要一次发 N 个请求、最后只刷一次列表。
+ * <p>⚠️ 确认框**不带数量、不带后果说明**（2026-11-13 用户定的口径）：
+ * 勾了哪几张在弹框之前就看得见，数量是复述界面。见 `utils/confirm.js`。
+ *
+ * @returns {Promise<boolean>} 是否真的删了
+ */
+export async function confirmDeleteTopics(topics) {
+  const list = (topics || []).filter((t) => t && t.id != null)
+  if (!list.length) return false
+  if (!(await confirmAction('批量删除知识点'))) return false
+  const results = await Promise.allSettled(list.map((t) => deleteTopic(t.id, { refresh: false })))
+  const ok = results.filter((r) => r.status === 'fulfilled').length
+  if (ok) await refreshAfterTopicChange(true)
+  if (ok === list.length) ElMessage.success(`已删除 ${ok} 条`)
+  else ElMessage.warning(`已删除 ${ok} 条，${list.length - ok} 条失败`)
+  return ok > 0
+}
+
+/**
+ * 删除知识点的**交互流**（统一确认框 → 删 → 提示）。
+ *
+ * 列表页卡片和详情页顶栏是两个删除入口，但只走 `confirmAction` 一个出口
+ * ⇒ 文案、按钮、取消行为不可能漂移（见 `utils/confirm.js`）。
  * **删除后各自要做什么由调用方决定**（列表页要刷新，详情页要返回上一页），
  * 所以这里只做"确认 + 删 + 提示"，返回是否真的执行了。
  */
 export async function confirmDeleteTopic(topic) {
-  try {
-    await ElMessageBox.confirm(
-      deleteConfirmMessage(topic),
-      '删除知识点',
-      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
-    )
-  } catch {
-    return false // 用户取消
-  }
+  if (!(await confirmAction('删除知识点'))) return false
   await deleteTopic(topic.id)
   ElMessage.success('已删除')
   return true
 }
 
-// ==================== 标签 ====================
+// ==================== 目录掌握度聚合 ====================
+//
+// 学习数据只剩**一层缓存**：
+// - {@link categoryMasteryMap}：目录三指标聚合（`GET /kp/learning/tree` 一次拉全树），
+//   侧边栏徽章 / 目录树徽章 / 书页顶部概览吃它（设计 §8.3 / 方案 C）。
+//
+// ⚠️ **单条知识点的学习投影缓存撤了**（2026-11-12）：详情页不再显示掌握度、
+// 也没有「标记已学」按钮 ⇒ 那一页没有"看单条投影"的需求。
+// 卡片的档位签走**列表响应里的字段**（masteryLevel）⇒ 判分后靠重拉那一页刷新。
+//
+// ⚠️ **掌握度的权威值在后端**（加权聚合、档位都是服务端算好的，设计 §8.1/§6.5），
+// 这里只缓存和转发，**不在客户端另算一套公式**——目录无第二份掌握度。
 
-export function getAllTags() {
-  // 直接返回缓存（懒加载见 ensureAllTagsLoaded）。不再从 topicMap 聚合——避免详情页打开时
-  // 必须先 ensureTopicsLoaded 拉全部 topic。
-  return allTags.value
+/** categoryId → 三指标聚合 {eligibleCount, learnedCount, assessedCount, mastery, levelCounts} */
+const categoryMasteryMap = ref(new Map())
+const categoryMasterySlot = createLoadSlot()
+
+/**
+ * 目录三指标聚合：一次拉整棵树（设计 §11.1「不让前端逐目录请求」），按 categoryId 存。
+ */
+export async function ensureCategoryMasteryLoaded(force = false) {
+  await loadOnce(categoryMasterySlot, force, async (isCurrent) => {
+    const res = await apiGetLearningTree()
+    const nextMap = new Map()
+    for (const row of res?.data || []) nextMap.set(row.categoryId, row)
+    // 同 topicIndex 的理由：旧请求晚回来不能把缓存倒退
+    if (isCurrent()) categoryMasteryMap.value = nextMap
+    return nextMap
+  })
+  return categoryMasteryMap.value
 }
+
+/**
+ * 目录三指标（{eligibleCount, learnedCount, assessedCount, mastery}）；没拉过返回 null。
+ * mastery 为 null = 没有合格条目 ⇒ 中性空态，**不是 0**（§8.1）。
+ */
+export function getCategoryMastery(categoryId) {
+  return categoryMasteryMap.value.get(Number(categoryId)) || null
+}
+
+/** 学习数据变了（标记已学）⇒ 作废聚合，下次读重拉 */
+export function invalidateCategoryMastery() {
+  categoryMasteryMap.value = new Map()
+  resetSlot(categoryMasterySlot)
+}
+
+/**
+ * topicId → 单条档位 {level, mastery}（2026-11-14，目录树知识点行数据源）。
+ *
+ * <p>`GET /kp/learning/levels` 一次拉**当前用户全部有评估的知识点**（行数 = 考过的
+ * 条数，量小）；没有评估的知识点不在 map 里 ⇒ 树行保持原样（不染色不画条）。
+ * 与 categoryMasteryMap 同一套缓存纪律：权威值在后端，这里只缓存转发。
+ */
+const topicLevelsMap = ref(new Map())
+const topicLevelsSlot = createLoadSlot()
+
+export async function ensureTopicLevelsLoaded(force = false) {
+  await loadOnce(topicLevelsSlot, force, async (isCurrent) => {
+    const res = await apiGetMasteryLevels()
+    const nextMap = new Map()
+    for (const row of res?.data || []) nextMap.set(Number(row.topicId), row)
+    if (isCurrent()) topicLevelsMap.value = nextMap
+    return nextMap
+  })
+  return topicLevelsMap.value
+}
+
+/** 单条档位（{level, mastery}）；没有评估返回 null —— 树行据此不染色不画条 */
+export function getTopicLevel(topicId) {
+  return topicLevelsMap.value.get(Number(topicId)) || null
+}
+
+/**
+ * 学习数据整体作废（判分一次会写一批知识点的证据/投影，逐条对账不值得）。
+ * 答题器判分成功后调它。
+ *
+ * <p>⚠️ **还要 bump 数据版本号**（2026-11-12）：卡片的掌握度档位签是
+ * **列表响应里的字段**（masteryLevel）⇒ 判分之后那一页的卡片标签是**旧的**。
+ * 只清学习缓存不够 —— 那一页得**重拉**，标签才会变成新的档位。
+ * ⇒ 学习缓存清了 + 数据版本号 +1（视图 watch 它重拉当前页）。
+ */
+export function invalidateLearningData() {
+  invalidateCategoryMastery()
+  resetSlot(topicLevelsSlot)
+  topicLevelsMap.value = new Map()
+  dataVersion.value++
+}
+
+// ==================== 标签 ====================
+// ⚠️ **原来这里有个 `getAllTags()`**（返回缓存里的标签清单）—— 标签功能 2026-11-03
+// 已从界面下线（`AppLearnView` 不再拉标签、不再渲染标签筛选），这个导出**全项目零调用**
+// ⇒ 删除。标签数据的真实消费方只剩 `ensureAllTagsLoaded` / `renameTag` /
+// `confirmDeleteTag`（后台逻辑暂时不去），它们读的是 `allTags` 缓存本身，不需要这个出口。
 
 // ==================== 知识点类型 ====================
 
@@ -548,25 +968,17 @@ export async function renameTag(tag) {
   // 后端按名字定位（KpTagRenameReq 只有 oldName / newName，没有 id）
   await apiRenameTag({ oldName: tag.name, newName: next })
   await ensureAllTagsLoaded(true)
-  await ensureTopicIndexLoaded(true)  // topic 上的 tags 字段带着旧名字，不刷就是脏的
+  await refreshTopicIndexes()  // topic 上的 tags 字段带着旧名字，不刷就是脏的
   ElMessage.success('已更新')
   return true
 }
 
 /** 删标签。后端会同时清掉所有 topic 上的关联，topic 本身不删（和删目录一个语义）。 */
 export async function confirmDeleteTag(tag) {
-  try {
-    await ElMessageBox.confirm(
-      `「${tag.name}」会从 ${tag.count || 0} 条知识点上移除，知识点本身不删。确定删除？`,
-      '删除标签',
-      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
-    )
-  } catch {
-    return false  // 用户取消
-  }
+  if (!(await confirmAction('删除标签'))) return false
   await apiDeleteTag(tag.id)
   await ensureAllTagsLoaded(true)
-  await ensureTopicIndexLoaded(true)
+  await refreshTopicIndexes()
   ElMessage.success('已删除')
   return true
 }
@@ -585,18 +997,6 @@ export function excerptOf(content, max = 90) {
     .trim()
   if (!text) return ''
   return text.length > max ? `${text.slice(0, max)}…` : text
-}
-
-/**
- * 删除确认框的整句文案。有标题用标题，没标题退回正文首句，都没有就用兜底句。
- * 列表页卡片和详情页顶栏是两个删除入口，规则必须一致：随手记存进来的知识点
- * title 本来就是空的，一屏卡片全是「未命名」时两个弹框长得一模一样，
- * 删错了都不知道删了哪条。两个入口调 ElMessageBox 的参数（按钮文案等）也相同，
- * 所以整句一起收敛在这里，而不是只共享"叫什么"再各自拼三元。
- */
-export function deleteConfirmMessage(topic) {
-  const label = String(topic?.title || excerptOf(topic?.content, 20) || '').trim()
-  return label ? `确定删除「${label}」吗？` : '确定删除这条知识点吗？'
 }
 
 // ==================== 知识目录（树的骨架） ====================
@@ -745,7 +1145,19 @@ export function flattenCategoryTree(roots, { withTopics = false } = {}) {
       if (seen.has(c.id)) continue
       seen.add(c.id)
       rows.push({ kind: 'cat', c, depth })
-      // 知识点和子目录**同层**（都在目录的下一层）：「总览」于是和自己的子目录并排。
+      // ⚠️ **直挂知识点在前、子目录在后**（2026-11-10 用户：「这里展示的一个目录的总览
+      // 应该放在这个目录下的第一个 而不是放在子目录之后」）。
+      //
+      // <p>之前是反过来的（子目录在前、总览在整张卡片身的末尾，像"本章小结"）——
+      // 那是 2026-11-08 复刻 book-bak 老稿时的判断，现在按用户要求改成
+      // **「这个目录的第一条就是它的总览」**：读一本书的目录时，
+      // 「这一章讲什么」的总览就该紧跟在章标题后面，而不是翻到最后才看到。
+      //
+      // <p>⚠️ **前序不变式不破**：父行仍在自己所有后代（子目录**和**知识点）之前，
+      // `branchyIds` / `ancestorIds` / `visibleRows` 都只依赖这一点 ⇒
+      // 把知识点提到子目录之前不影响它们（知识点是叶子，提到自己父行后面仍然是前序）。
+      // ⚠️ `branchyIds` 的判据是"下一行更深" ⇒ 直挂知识点在子目录之前时，
+      // 章行后面紧跟的是知识点行（depth 更大）⇒ 章**仍然**算"有下级"、仍有箭头（与现状一致）。
       for (const t of byCat.get(c.id) || []) {
         rows.push({ kind: 'topic', t, depth: depth + 1 })
       }
@@ -777,7 +1189,11 @@ export function flattenCategoryTree(roots, { withTopics = false } = {}) {
 function topicsByCategory() {
   const byCat = new Map()
   const learnId = topicTypeIdByValue(TOPIC_TYPE_LEARN)
-  for (const t of getTopicIndex()) {
+  // ⚠️ **用全集索引**（不是搜索索引）：树的知识点行是"这本书里全部的知识点"。
+  // 用搜索索引的话，搜索态下树上就只剩命中的那些 ⇒ **树被过滤了**
+  // （用户 2026-11-05：「展示的树就要是完整的啊 你把目录数据过滤了
+  // 然后加个命中栏的意义在哪？」）。
+  for (const t of getFullTopicIndex()) {
     if (t.categoryId == null) continue
     const list = byCat.get(t.categoryId)
     if (list) list.push(t)
@@ -794,56 +1210,51 @@ function topicsByCategory() {
   return byCat
 }
 
-// ==================== 归类 ====================
+// ==================== 拖拽（挪目录） ====================
 
 /**
- * 归类的唯一入口：卡片的 chip 点选、侧边栏目录树的拖拽落点、「待归类」的拖拽落点，
- * 最终都调它。原来这逻辑写在 AppLearnView 里，落点搬到 AppLayout 后就得有两份，
- * 收到这里——三条路径、同一套写入和同一句反馈。
- */
-export async function categorizeTopic(topic, categoryId) {
-  if (categoryId === topic.categoryId) return
-  await updateTopic(topic.id, { categoryId })
-  // **通用结果词**：不按业务场景定制（准则见 brove-shared §8）——
-  // 「已归入「MySQL」」是把界面刚发生的事又说了一遍，而且每个场景各写各的。
-  ElMessage.success('已保存')
-}
-
-// ==================== 拖拽归类 ====================
-
-/**
- * 拖拽状态。卡片在 AppLearnView，落点浮层在 AppLayout 侧边栏外——跨组件共享这一份。
+ * 拖拽状态。**只挪目录**（把一个目录拖到另一个目录下面 = 换父级）。
+ *
+ * ⚠️ **知识点拖拽归类整套没了**（2026-11-05 用户：「图二是最早做的拖动归类 也直接删掉吧」）：
+ * 卡片拖进目录、树里知识点行拖拽、触屏「归类到目录」菜单，三条路一起撤。
+ * ⇒ 拖的东西只剩一种（目录），`topicId` / `picking` 两个状态字段也跟着没了。
  *
  * ⚠️ 这里**不用 HTML5 Drag and Drop**：那套 API 在触摸设备上不工作（iOS Safari 完全
  * 不支持，Android Chrome 长按会先触发原生文本选择菜单，dragstart 根本轮不到触发），
- * 平板上表现为"长按没反应"。现在由自建的 Pointer Events 接管三端，见 useTopicDrag.js。
- *
- * 原来靠 dataTransfer 传 topicId，现在直接放 topicId —— 省掉一次序列化，
- * 也让命中检测（elementFromPoint）能独立于拖拽协议存在。
- *
- * 拖的东西有两种（2026-10-07）：**知识点**挪到目录下、**目录**挪到别的目录下。
- * `topicId` 和 `catId` 二选一，同时非空是状态坏了。
+ * 平板上表现为"长按没反应"。现在由自建的 Pointer Events 接管三端，见 useCategoryDrag.js。
  */
 export const dnd = reactive({
-  live: false,      // 浮层可见（PC 拖拽中 / 触屏点了「⋯」）
-  picking: false,   // 触屏的"点选归类"模式：点树上一行即归类，不拖东西进去
-  topicId: null,    // 正在归类哪条知识
-  catId: null,      // 正在移动哪个目录
-  over: null,       // 当前命中的目标：目录 id，或 ROOT_CATEGORY（= 移到顶层）
+  live: false,      // 拖拽中
+  catId: null,      // 正在挪哪个目录
+  over: null,       // 当前命中的目标：目录 id，或 ROOT_CATEGORY（= 挪到顶层）
   overOk: false,    // 命中的目标能不能放（成环 / 重名时置灰）
   x: 0, y: 0,       // 指针当前位置（幽灵跟这个走）
-  ax: 0, ay: 0,     // 浮层锚点：起拖那一刻记下来，拖拽期间不再变
   label: ''         // 幽灵上显示的一行文字
 })
 
 /**
- * 命中检测。**先找具体的目录行，再退到侧边栏整块**：
- * 指针落在侧边栏某个一级目录那一行上 → 那个目录 id（拖过去 = 挪到它下面）；
- * 落在侧边栏目录区的空白处（间隙、过滤框周围）→ ROOT_CATEGORY（挪成一级）。
+ * 命中检测。**先找具体的目录行，再处理侧边栏目录区**：
+ * 指针落在任意目录行上 → 那个目录 id（拖过去 = 挪到它下面）；
+ * 落在侧边栏**书列上方**的目录区抬头 → ROOT_CATEGORY（挪成一级目录）。
  *
  * **顺序不能反**：`.app-cats__item` 是 `.app-side__section` 的后代，
  * `closest('[data-cat-root]')` 从那一行往上找**也会命中**那个整块。
  * 先判 data-cat-id 才有"拖到 JAVA 上 = 进 JAVA"这个说法。
+ *
+ * ⚠️ **没落在书行上就是「升为一级」**（2026-11-13 用户追加反馈）：
+ * 「进某一本一级书内部」有**明显的深色 hover 高亮**，拖的人看得见自己落在哪，
+ * 不需要拿空白去替他猜「其实想进哪本书」。
+ * ⇒ 同日早那版「书列起点及以下所有留白按垂直距离吸附到最近书行」整个撤掉：
+ * `.app-cats` 是 `flex:1` 吃满剩余高度，书列下方那一大片空白也在它里面，
+ * 吸附会把那里判成「进最后一本书」⇒ 想把二级目录升为一级时只能挤到顶部
+ * 抬头那一小条，直觉上说不通。
+ * 现在**一个位置只有一个语义**：命中 `[data-cat-id]` = 进那一本书；
+ * 还在 `[data-cat-root]` 内但没命中行（抬头 / 行间空隙 / 书列之后的整片留白）
+ * = `ROOT_CATEGORY`，升为一级。
+ *
+ * ⚠️ 配套：`checkDrop` 加了「目标就是当前父级 ⇒ 不可放」—— 一本本来就顶层的
+ * 书落到空白时后端 `moveCategory` 见 parent_id 没变会直接 return，界面若还
+ * 显示「可放」就是零反馈。现在这种落点直接标红，不骗人。
  *
  * 侧边栏行当落点不是可选项，是**必须**：弹层铺的是 `childrenOf(那个目录)`、
  * 不含它自己，所以「把 Hashmap 拖回 JAVA」和「把知识点放进一个没有下级的目录」
@@ -857,60 +1268,55 @@ function hitCategory(x, y) {
   const el = document.elementFromPoint(x, y)
   const node = el?.closest?.('[data-cat-id]')
   if (node) return Number(node.dataset.catId)
-  return el?.closest?.('[data-cat-root]') ? ROOT_CATEGORY : null
+  const block = el?.closest?.('[data-cat-root]')
+  if (!block) return null
+  return ROOT_CATEGORY
 }
 
 /**
  * 这个目标能不能放。**判断在这里做一次、结果放进 `dnd.overOk`**，
  * 界面直接读那个布尔去置灰，不要在模板里每行重算一遍。
  *
- * 拖知识点时没有限制（任何目录都能放）。拖目录时挡两种：
+ * 挡三种：
  * 1. **成环** —— 放到自己或自己的后代下，之后这棵树再也遍历不出根
  * 2. **重名** —— 撞 DB 的 uk_user_parent_name
+ * 3. **没挪窝** —— 目标父级就是它现在的父级。后端 `moveCategory` 见两边相等
+ *    会直接 return（连失败都不算）⇒ 界面若还显示「可放」，松手就是零反馈，
+ *    看着像拖不动。这里提前判掉，标红比假装成功诚实。
  *
- * 这两条后端也会再挡一次（HTTP 入口是外部输入边界）。前端置灰只是提前告知，
+ * 前两条后端也会再挡一次（HTTP 入口是外部输入边界）。前端置灰只是提前告知，
  * 真正的保证在后端。
  */
 function checkDrop(over) {
   if (over == null) return false
-  if (dnd.catId == null) return dnd.topicId != null
   if (over === dnd.catId) return false
   if (over !== ROOT_CATEGORY && getCategorySubtreeIds(dnd.catId).has(over)) return false
   const cat = getCategory(dnd.catId)
   if (!cat) return false
+  const target = over || ROOT_CATEGORY
+  if ((cat.parentId || ROOT_CATEGORY) === target) return false
   return !categories.value.some(
     (c) => c.id !== cat.id &&
-      (c.parentId || ROOT_CATEGORY) === (over || ROOT_CATEGORY) &&
+      (c.parentId || ROOT_CATEGORY) === target &&
       c.name === cat.name
   )
 }
 
 /**
- * 开一次拖拽/点选，把状态一次性摆好。
+ * 起一次拖拽：把状态一次性摆好。
  *
- * `dndStart`（拖）和 `dndPick`（触屏点选）之前各写一遍这十个字段——加一个字段
- * 要记得改两处，漏一处就是"某种打开方式下幽灵还留着上一次的文字"这种症状。
- * 参数化的只有两个：**拖什么**、**是不是点选模式**，其余完全一样。
+ * ⚠️ **只挪目录**（知识点归类那套 2026-11-05 删了）⇒ 没有"拖什么"的选择题，
+ * 也没有第二套打开方式（触屏点选）需要同步 —— 以前这里是两处各写一遍字段，
+ * 漏一处就是"某种打开方式下幽灵还留着上一次的文字"。
  */
-function openDnd(what, x, y, label, picking) {
+export function dndStart(catId, x, y, label = '') {
   dnd.live = true
-  dnd.picking = picking
-  dnd.topicId = what.topicId ?? null
-  dnd.catId = what.catId ?? null
+  dnd.catId = catId
   dnd.over = null
   dnd.overOk = false
   dnd.x = x
   dnd.y = y
   dnd.label = label
-  // 落点浮层锚在起拖的位置，整个拖拽过程中**不动**。
-  // 之前浮层跟着指针走，结果是想把卡片拖进某一行时，浮层一直在飘，
-  // 要追着它挪才能命中 —— 而且指针压在浮层上还会挡住命中检测。
-  dnd.ax = x
-  dnd.ay = y
-}
-
-export function dndStart(what, x, y, label = '') {
-  openDnd(what, x, y, label, false)
 }
 
 export function dndMove(x, y) {
@@ -918,28 +1324,6 @@ export function dndMove(x, y) {
   dnd.y = y
   dnd.over = hitCategory(x, y)
   dnd.overOk = checkDrop(dnd.over)
-}
-
-/**
- * 触屏的"点选归类"：点卡片的「⋯」→ 打开同一个落点浮层，改成点树上一行即归类。
- * 和 PC 拖拽共用这一个浮层 / 这棵树 / 这一套 data-cat-id，只是打开方式不同，
- * 所以两端看到的东西和操作结果完全一致（见 TopicCard 的 pick 入口）。
- */
-export function dndPick(topicId, anchorEl) {
-  const r = anchorEl?.getBoundingClientRect()
-  const x = r ? r.left + r.width / 2 : window.innerWidth / 2
-  const y = r ? r.bottom : window.innerHeight / 3
-  // 点选模式没有"拖"的东西，所以 label 传空：幽灵在 picking 时本来就不渲染
-  // （AppLayout 的 v-if 带 !dnd.picking），留着上一次的文字只会让人以为还能拖。
-  openDnd({ topicId }, x, y, '', true)
-}
-
-/** 触屏点选：直接归类，不拖东西进去。浮层关掉。 */
-export async function dndPickTo(categoryId) {
-  const topicId = dnd.topicId
-  dndReset()
-  const topic = getTopic(topicId)
-  if (topic) await categorizeTopic(topic, categoryId)
 }
 
 /**
@@ -961,21 +1345,14 @@ export async function moveCategory(categoryId, parentId) {
 
 /** 放下：命中了、而且那是个合法落点，才真的动手。没命中/非法 = 取消。 */
 export async function dndDrop() {
-  const { topicId, catId, over, overOk } = dnd
+  const { catId, over, overOk } = dnd
   dndReset()
   if (over == null || !overOk) return
-  if (catId != null) {
-    await moveCategory(catId, over)
-    return
-  }
-  const topic = getTopic(topicId)
-  if (topic) await categorizeTopic(topic, over)
+  await moveCategory(catId, over)
 }
 
 export function dndReset() {
   dnd.live = false
-  dnd.picking = false
-  dnd.topicId = null
   dnd.catId = null
   dnd.over = null
   dnd.overOk = false
@@ -993,12 +1370,45 @@ export function dndReset() {
  * ⚠️ **这一份是模块级 computed，不是每次调用现算**（2026-11-03 晚 · 性能）：
  * 侧边栏和目录树**各有一处调用**，两处都在渲染时读同一批数据 ⇒ 同一份活算了两次。
  * 提成模块级 computed 之后两边读的是**同一个缓存**，数据没变就只算一次。
+ *
+ * ⚠️ **它数的是"搜索索引"**（当前关键词下的全集）⇒ 搜索态下它是**命中数**
+ * （侧边栏那一列要的就是这个："这一本命中了几条"）。
  */
-const categoryCountMap = computed(() => {
+const categoryCountMap = computed(() => countByCategory(topicIndex.value.values()))
+
+export function getCategoryCountMap() {
+  return categoryCountMap.value
+}
+
+/**
+ * **各目录下的条数（全量口径）**：目录树那一列要的是这个。
+ *
+ * <p>⚠️ **为什么要有两份**（2026-11-05 用户：「目录树的搜索展示完整
+ * 不要把目录树和数据做任何过滤了」）：树的行尾那个数字说的是
+ * **"这一节一共多少条"**（树画的是完整的书，数字就得是总数），
+ * 侧边栏那个数字说的是**"这一本命中了几条"**（它是一份筛选结果）。
+ * 一个数字两个意思 ⇒ 界面上什么异常都看不出来。
+ *
+ * <p>⚠️ **无搜索词时两份是同一份**（那时搜索索引就是全集）。
+ */
+const fullCategoryCountMap = computed(() => countByCategory(fullTopicIndex.value.values()))
+
+export function getFullCategoryCountMap() {
+  return fullCategoryCountMap.value
+}
+
+/**
+ * **按目录聚合计数**（含子树）：沿祖先链逐层 +1。
+ *
+ * <p>⚠️ **上限 MAX_TREE_DEPTH 层防环**，坏数据不至于把渲染卡死。
+ *
+ * @param {Iterable} topics 知识点（结构索引条目）
+ * @returns {object} { [categoryId]: n }
+ */
+function countByCategory(topics) {
   const counts = {}
-  for (const t of topicIndex.value.values()) {
+  for (const t of topics) {
     if (t.categoryId == null) continue
-    // 沿祖先链逐层 +1。上限 MAX_TREE_DEPTH 层防环，坏数据不至于把渲染卡死。
     let cur = getCategory(t.categoryId)
     for (let i = 0; cur && i < MAX_TREE_DEPTH; i++) {
       counts[cur.id] = (counts[cur.id] || 0) + 1
@@ -1006,10 +1416,6 @@ const categoryCountMap = computed(() => {
     }
   }
   return counts
-})
-
-export function getCategoryCountMap() {
-  return categoryCountMap.value
 }
 
 /**
@@ -1071,44 +1477,122 @@ export async function renameCategory(id, newName) {
   await ensureCategoriesLoaded(true)
 }
 
-export async function deleteCategory(id) {
-  await apiDeleteCategory(id)
-  // 目录下知识点回到了"未归类"，topic 缓存也得刷
+/**
+ * 「删目录」那个对话框的状态（**模块级一份**，不是组件里一份）。
+ *
+ * <p>为什么放在 store 而不是 `CategoryRowMenu` 里：那个菜单在树上出现**三次**
+ * （书名那行、章行、节行），每个都挂一个弹窗就是三个实例；
+ * 而弹窗**必须只有一个**（它遮着整棵树）。
+ * ⇒ 状态收在这里，`DeleteCategoryDialog.vue` 挂一次，菜单只负责"发起"。
+ */
+export const deleteCategoryState = reactive({
+  visible: false,
+  /** 要删的目录（{ id, name }） */
+  category: null,
+  /** 服务端现查的预检结果 { subCategoryCount, topicCount } */
+  preview: null,
+  saving: false,
+  /** 本次调用的 resolve（用户答了什么） */
+  resolver: null
+})
+
+/**
+ * 打开「删目录」对话框，返回用户的选择。
+ *
+ * @param {object} c 要删的目录
+ * @param {object} preview 服务端预检结果
+ * @returns {Promise<boolean>} true = 确认删了，false = 取消
+ */
+export function openDeleteCategoryDialog(c, preview) {
+  // 同一时刻只该有一个对话框：上一个没结掉就再开一个，前一个的 resolve 就丢了
+  // ⇒ 上一个直接判成"取消"。
+  if (deleteCategoryState.resolver) {
+    deleteCategoryState.resolver(false)
+  }
+  deleteCategoryState.category = c
+  deleteCategoryState.preview = preview
+  deleteCategoryState.visible = true
+  return new Promise((resolve) => {
+    deleteCategoryState.resolver = resolve
+  })
+}
+
+/** 对话框的出口：把用户的答复交回给发起方。**只有这一处改 visible** */
+function closeDeleteCategoryDialog(answer) {
+  const resolve = deleteCategoryState.resolver
+  deleteCategoryState.visible = false
+  deleteCategoryState.category = null
+  deleteCategoryState.preview = null
+  deleteCategoryState.resolver = null
+  resolve?.(answer)
+}
+
+/** 用户点了「取消」 */
+export function cancelDeleteCategory() {
+  closeDeleteCategoryDialog(false)
+}
+
+/**
+ * 用户点了「删除」：按勾选决定要不要连带删知识点。
+ *
+ * @param {boolean} cascadeTopics true = 连子树里的知识点一起删（软删）
+ */
+export async function submitDeleteCategory(cascadeTopics) {
+  const c = deleteCategoryState.category
+  if (!c || deleteCategoryState.saving) return
+  deleteCategoryState.saving = true
+  try {
+    await deleteCategory(c.id, cascadeTopics)
+    ElMessage.success('已删除')
+    closeDeleteCategoryDialog(true)
+  } catch (e) {
+    // 提示归 request.js（走 axios 实例，唯一提示出口）
+    closeDeleteCategoryDialog(false)
+  } finally {
+    deleteCategoryState.saving = false
+  }
+}
+
+export async function deleteCategory(id, cascadeTopics = false) {
+  await apiDeleteCategory(id, cascadeTopics)
+  // 目录下知识点回到了"未归类"（或被一起删了），topic 缓存也得刷
   await ensureCategoriesLoaded(true)
-  await ensureTopicIndexLoaded(true)
+  await refreshTopicIndexes()
+  // ⚠️ **数据版本号也要 +1**（2026-11-06）：删目录改的是**列表页看到的东西**
+  // （那条目录下的知识点回到未归类、目录本身从树上消失）⇒ 视图得重拉当前页。
+  // 原来只有知识点增删改才 +1 ⇒ 删完目录视图不重拉 ⇒
+  // ① 卡片页里"这个目录下的知识点"还挂着刚被删掉的那批；
+  // ② 树视图里把**那本书**删掉之后，这一屏从树变成卡片，**卡片是空的**
+  // （树视图期间列表根本没拉过）—— 用户看到的是一片空白。
+  dataVersion.value++
 }
 
 /**
  * 删除目录的交互流。入口在目录行「⋯」菜单里的"删除目录"。
  * 返回是否真的执行了：调用方据此决定要不要把整条树收走（删的可能正是它锚定的那个节点）。
+ *
+ * ## 为什么这个确认框要**自己画**而不是走 `confirmAction`
+ *
+ * 它要多一个**真实选项**：「同时删除 N 条知识点」（默认不勾）。
+ * 统一确认框只接受一句纯文本，塞不进复选框 —— 这不是文案自由度，是功能。
+ * ⇒ 自己画对话框（`DeleteCategoryDialog.vue`），但标题 / 正文 / 按钮 / 无图标
+ * **全部照 `confirmAction` 那一套**，弹窗里除了这个复选框不放别的东西
+ * （2026-11-13 用户口径，见 `utils/confirm.js`）。
+ *
+ * ## 数量为什么来自服务端
+ *
+ * 复选框标签里的「N 条」由服务端现查（`delete-preview`）：前端那份结构索引是
+ * **当前关键词下的缓存快照**（用户搜着词时数出来偏小），还会过期。
  */
 export async function confirmDeleteCategory(c) {
-  // 确认框得说清**会删掉什么**。级联删除不可逆，只说"知识点回到未归类"等于让人瞎点。
-  const subtree = getCategorySubtreeIds(c.id)
-  const kidCount = subtree.size - 1
-  const topicCount = getTopicIndex().filter((t) => t.categoryId != null && subtree.has(t.categoryId)).length
-  const lines = [`确定删除「${c.name}」？`]
-  if (kidCount > 0) {
-    lines.push(`${kidCount} 个下级目录会一起删除。`)
-  }
-  if (topicCount > 0) {
-    lines.push(`${topicCount} 条知识点回到未归类。`)
-  }
+  let preview
   try {
-    await ElMessageBox.confirm(
-      lines.join('\n'),
-      '删除目录',
-      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
-    )
+    const res = await apiGetCategoryDeletePreview(c.id)
+    preview = res?.data || null
   } catch {
+    // 预检拉不到就**不让删**：数不清代价的操作不该在没有数字的情况下执行。
+    ElMessage.error('拿不到这个目录的删除预览，先不删')
     return false
   }
-  try {
-    await deleteCategory(c.id)
-    ElMessage.success('已删除')
-    return true
-  } catch (e) {
-    // 提示归 request.js（走 axios 实例，唯一提示出口）
-    return false
-  }
+  return openDeleteCategoryDialog(c, preview)
 }

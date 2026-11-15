@@ -56,6 +56,19 @@ function nodeToHtml(node) {
 }
 
 /**
+ * 一组顶层节点 → 块数组。
+ *
+ * @param {Array} nodes 顶层节点数组
+ * @returns {Array<{key: string, html: string}>}
+ */
+export function blocksOfNodes(nodes) {
+  return (nodes || []).map((node) => ({
+    key: fingerprint(node),
+    html: nodeToHtml(node)
+  }))
+}
+
+/**
  * doc → 顶层块数组。
  *
  * **顶层节点 = 块**：ProseMirror 的 doc 内容就是若干顶层块（段落 / 标题 / 列表 / 表格…），
@@ -66,11 +79,29 @@ function nodeToHtml(node) {
  */
 export function blocksOf(doc) {
   if (!doc) return []
-  const out = []
-  doc.content.forEach((node) => {
-    out.push({ key: fingerprint(node), html: nodeToHtml(node) })
-  })
-  return out
+  const nodes = []
+  doc.content.forEach((node) => nodes.push(node))
+  return blocksOfNodes(nodes)
+}
+
+/**
+ * doc → 整篇 HTML（不切块）。
+ *
+ * **和 `blocksOf` 是同一套序列化**（`DOMSerializer`）—— 只是不按块切开，
+ * 给"整段渲染"用：问答抽屉里那条 AI 回答。
+ *
+ * ⚠️ **模型输出的是 markdown**。直接 `{{ answer }}` 打印出来就是一堆 `##`、`|`、
+ * `**` 符号 —— 用户看到的是**源码**，不是回答。渲染成 HTML 之后才是"排好版的回答"。
+ *
+ * @param {object|null} doc ProseMirror doc
+ * @returns {string}
+ */
+export function htmlOf(doc) {
+  if (!doc) return ''
+  const fragment = DOMSerializer.fromSchema(doc.type.schema).serializeFragment(doc.content)
+  const box = document.createElement('div')
+  box.appendChild(fragment)
+  return box.innerHTML
 }
 
 /** DP 规模上限：超过就不做 LCS（退化成按序对位），免得长文卡住界面 */

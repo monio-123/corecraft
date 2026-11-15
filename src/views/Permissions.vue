@@ -7,15 +7,16 @@
           <el-icon><Plus /></el-icon>
           新增根节点
         </el-button>
-        <el-button @click="fetchTree">
-          <el-icon><Refresh /></el-icon>
-          刷新
-        </el-button>
+        <!-- 图标走 :icon 而不是默认插槽：EP 在 loading 时只跳过 icon 插槽，
+             默认插槽照渲染 ⇒ 写在里面会和转圈叠成两个图标 -->
+        <el-button :icon="Refresh" :loading="treeLoading" @click="fetchTree">刷新</el-button>
       </div>
     </div>
 
     <div class="content">
-      <div class="panel">
+      <!-- 左栏要有"加载中"：表格空态的「暂无数据」被 admin-page.css 收掉了，
+           不给 loading 的话"正在拉"和"真的没有"看起来一模一样（§8 ④） -->
+      <div class="panel" v-loading="treeLoading">
         <el-tree
           :data="treeData"
           node-key="id"
@@ -34,9 +35,9 @@
       </div>
 
       <div class="panel">
-        <el-empty v-if="!currentNode" description="请选择左侧节点" />
-
-        <div v-else>
+        <!-- 没选中节点时这一格什么都不画：左边有选中项就说明加载完了，
+             用户分得清"空的"和"坏的"，再写一句「请选择左侧节点」就是指令口气 -->
+        <div v-if="currentNode">
           <div class="panel-head">
             <div class="panel__title">{{ currentNode.name }}</div>
             <div class="panel-head__actions">
@@ -67,14 +68,16 @@
 
 <script setup>
 import { onMounted, reactive, ref, computed } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import PermissionForm from '../components/PermissionForm.vue'
 import request from '../utils/request'
+import { confirmAction } from '../utils/confirm'
 import { parseMeta } from '../utils/menu'
 
 const treeData = ref([])
 const currentNode = ref(null)
+const treeLoading = ref(false)
 
 const saving = ref(false)
 const creating = ref(false)
@@ -131,8 +134,13 @@ const tagType = (type) => {
 }
 
 const fetchTree = async () => {
-  const res = await request.get('/permission/tree')
-  treeData.value = res?.data || []
+  treeLoading.value = true
+  try {
+    const res = await request.get('/permission/tree')
+    treeData.value = res?.data || []
+  } finally {
+    treeLoading.value = false
+  }
 }
 
 const onNodeClick = (data) => {
@@ -222,7 +230,7 @@ const removeNode = async (node) => {
   if (!node?.id) {
     return
   }
-  await ElMessageBox.confirm(`确认删除 "${node.name}" ?`, '提示', { type: 'warning' })
+  if (!(await confirmAction('删除资源'))) return
   await request.delete(`/permission/${node.id}`)
   ElMessage.success('已删除')
   currentNode.value = null
@@ -240,17 +248,11 @@ onMounted(async () => {
 
 <style scoped>
 /* 页面骨架（.page / .page-head / .page-head__title / .panel / .panel-head /
-   .panel__title / .hint / .tree-node__tag）在 assets/admin-page.css */
+   .panel__title / .hint / .tree-node / .tree-node__tag）在 assets/admin-page.css */
 
 .content {
   display: grid;
   grid-template-columns: 360px 1fr;
   gap: var(--sp-12);
-}
-
-.tree-node {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-8);
 }
 </style>

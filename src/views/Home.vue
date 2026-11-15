@@ -3,7 +3,6 @@
     <div class="welcome">
       <span class="welcome__eyebrow">管理后台</span>
       <h1 class="welcome__title">欢迎回来{{ userName ? `，${userName}` : '' }}</h1>
-      <p class="welcome__sub">在这里配置菜单、角色与用户</p>
     </div>
 
     <!-- 入口由当前用户的菜单配置生成，不在前端硬编码菜单清单 -->
@@ -68,12 +67,6 @@ onMounted(async () => {
   color: var(--cc-text-1);
   letter-spacing: var(--ls-tight);
 }
-.welcome__sub {
-  margin: var(--sp-6) 0 0;
-  font-size: var(--text-md);
-  color: var(--cc-text-2);
-}
-
 .entries {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -87,13 +80,13 @@ onMounted(async () => {
   padding: var(--sp-12);
   background: var(--cc-surface);
   border: 1px solid var(--cc-border);
-  border-radius: var(--cc-radius);
+  border-radius: var(--radius-lg);
   text-decoration: none;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .entry:hover {
   border-color: var(--cc-primary);
-  box-shadow: 0 2px 10px rgba(43, 127, 255, 0.1);
+  box-shadow: var(--cc-shadow-1);
 }
 .entry__icon {
   display: flex;
@@ -102,7 +95,7 @@ onMounted(async () => {
   width: var(--ctl-md);
   height: var(--ctl-md);
   flex-shrink: 0;
-  border-radius: var(--cc-radius-sm);
+  border-radius: var(--radius-sm);
   background: var(--cc-primary-soft);
   color: var(--cc-primary);
   font-size: var(--text-lg);

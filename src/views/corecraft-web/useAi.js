@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue'
 import { createLoadSlot, loadOnce, resetSlot } from '../../utils/lazyLoad'
 import { onAuthChange } from '../../utils/auth'
+import { getDictTypeList, getDictItemList } from '../../api/dict'
 // api 层的方法统一改名（fetchXxx / saveApi / createApi…）：本文件对外导出的同名封装
 // （saveAiConfig）和它们在模块顶层撞名，会变成 "Identifier has already been declared"
 // ——白屏，且只在控制台报错。统一改名之后，"这一行属于哪一层"在文件里是一眼能看出来的。
@@ -14,7 +15,9 @@ import {
   streamChat,
   listAiQuestions as fetchQuestions,
   listAiVendors as fetchVendors,
-  refreshAiModels as refreshModels
+  refreshAiModels as refreshModels,
+  testAiEndpoint as testApi,
+  setCurrentAiEndpoint as pushCurrentEndpoint
 } from '../../api/ai'
 
 /**
@@ -39,11 +42,16 @@ import {
  * - `enabled` —— 用户想不想用（控制按钮显不显示）
  * - `ready` —— 开了之后有没有配全的 API（决定调用前要不要拦一道）
  *
- * ## 「当前选中哪个 API」为什么存 localStorage 不落库
+ * ## 「当前选中哪个 API」为什么**必须落库**（2026-11-13 改的）
  *
- * 选哪个 API 是**当下的临时选择**，不是用户资料。存后端要多一列 + 一次更新，
- * 换来的只是"多设备同步一个下拉选择"，而这是个单人知识库，不值当。
- * 退出登录时 clearAuth() 会 localStorage.clear()，顺带清掉，不会把 A 的选择带给 B。
+ * 原来只存 `localStorage['ai-current-endpoint']`，理由写的是「单人知识库，多设备同步不值当」。
+ * 那个判断错了：**端点列表本身就是账号级的**（`ai_endpoint` 带 user_id，换设备照样看到全部），
+ * 只有「选哪一条」掉回默认 ⇒ 用户看到的是「我明明配了 mimo，怎么又是 deepseek」，
+ * 而且这个默认还偏偏是列表第一条（deepseek-flash）。
+ *
+ * 现在：`ai_config.current_endpoint_id` 是**唯一真相**，localStorage 只当离线缓存。
+ * 服务端为空（老账号 / 刚上线）时认本地那份并**补写上去** ⇒ 存量用户不会被重置。
+ * 退出登录时 clearAuth() 仍会清 localStorage，但服务端那份是自己的，不会串给别人。
  */
 
 const CURRENT_KEY = 'ai-current-endpoint'
@@ -55,6 +63,8 @@ export const aiEndpoints = ref([])
 export const aiQuestions = ref([])
 /** 厂商清单（厂商 + 各自的模型）。**全局的**（字典表没有 user_id），跟着登录态作废 */
 export const aiVendors = ref([])
+/** 协议清单（字典 ai_protocol）。**全局的**，跟着登录态作废；初值是界面兜底，见下面那段 */
+export const aiProtocols = ref([])
 /** 当前选中的 API id。设置页的"当前"标记直接读它，不用再包一个 computed */
 export const currentEndpointId = ref(readCurrentId())
 
@@ -82,10 +92,19 @@ export async function ensureAiConfigLoaded(force = false) {
       aiConfig.value = config
       aiEndpoints.value = endpoints
     }
-    // 选中的那条可能已经被删了，兜回第一条能用的
-    if (!endpoints.some((e) => e.id === currentEndpointId.value)) {
+    // **服务端说了算**（账号级，跨设备一致）；服务端没有就认本地那份并补写上去（存量迁移）；
+    // 两边都没有 / 指向的那条已被删 ⇒ 兜回第一条能用的。
+    const serverId = config?.currentEndpointId ?? null
+    const pick = [serverId, readCurrentId()].find(
+      (v) => v != null && endpoints.some((e) => e.id === v)
+    )
+    if (pick != null) {
+      applyEndpoint(pick)
+      if (serverId !== pick) persistEndpoint(pick)
+    } else {
       const first = endpoints.find((e) => e.ready) || endpoints[0]
-      useEndpoint(first ? first.id : null)
+      applyEndpoint(first ? first.id : null)
+      if (first) persistEndpoint(first.id)
     }
     return { config, endpoints }
   })
@@ -125,10 +144,34 @@ export async function removeAiEndpoint(id) {
   return ensureAiConfigLoaded(true)
 }
 
-export function useEndpoint(id) {
+/**
+ * **只改本地**（ref + localStorage），不写后端。
+ *
+ * <p>给"装载时对齐"用：那时服务端刚给过值，再回写一次是多余的往返。
+ */
+function applyEndpoint(id) {
   currentEndpointId.value = id ?? null
   if (id) localStorage.setItem(CURRENT_KEY, String(id))
   else localStorage.removeItem(CURRENT_KEY)
+}
+
+/**
+ * 把选择**写回账号**（失败不打断界面）。
+ *
+ * <p>⚠️ **不吞错但要静默**：这条是"记住我的选择"，失败最多是下次进页面掉回旧值 ——
+ * 不该因为它让"点一下换模型"这个动作报错弹窗。
+ */
+function persistEndpoint(id) {
+  if (id == null) return
+  pushCurrentEndpoint(id).catch(() => {})
+}
+
+/**
+ * **用户点选某条 API**：先改本地（界面立刻响应），再写回账号。
+ */
+export function useEndpoint(id) {
+  applyEndpoint(id)
+  persistEndpoint(id)
 }
 
 // ---------- 厂商与模型清单（全局字典） ----------
@@ -148,10 +191,70 @@ export async function ensureAiVendorsLoaded(force = false) {
   })
 }
 
+// ---------- 协议清单（全局字典） ----------
+//
+// 协议下拉的选项不写死在组件里：和厂商一样由字典维护（code = ai_protocol）。
+// ⚠️ 后端 `AiEndpoint.protocolOf` 只认 openai / anthropic（认不出来退回 openai），
+// 所以字典里加第三项只是"界面上能选"，要真接通还得改 AiProtocol —— 这不是 bug，
+// 是「字典 = 选项来源，代码 = 能力边界」的分工。
+//
+// **字典项的 remark = 该协议默认 API 地址**：和厂商字典**类型**的 remark 存地址是
+// 同一个口径（`AiVendorServiceImpl` 把类型 remark 下发成 baseUrl），只是协议是
+// 一个类型下的多个项，所以地址落在项上。`SysDictItemResp` 原生带 remark ⇒ 后端零改动。
+// 切协议时前端把这个地址带进「API 地址」框，见 AiSettingsPanel.onProtocolChange。
+//
+// **label 统一纯品牌名**（OpenAI / Anthropic），和 value 一一对应；别再一个带中文
+// 后缀、一个不带 —— 字典改了也要守住这个格式，否则下拉两项看着不像一伙的。
+
+const AI_PROTOCOL_DICT = 'ai_protocol'
+
+/**
+ * 字典还没落库 / 这次没读到时的界面兜底。
+ * **value 必须和后端 protocolOf 一致**，baseUrl 必须和字典项 remark 一致
+ * ⇒ 字典接口挂了，切协议照样能带出地址，不会变成一个没反应的下拉。
+ */
+const FALLBACK_PROTOCOLS = [
+  { value: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1' },
+  { value: 'anthropic', label: 'Anthropic', baseUrl: 'https://api.anthropic.com' }
+]
+
+// 初值就是兜底清单 ⇒ 字典接口挂了，设置页也不会出现一个空下拉。
+aiProtocols.value = [...FALLBACK_PROTOCOLS]
+const protocolSlot = createLoadSlot()
+
+/**
+ * 读协议字典。**没读到就不落缓存**（return undefined = 这次没拿到，下次还会重试），
+ * 界面继续用兜底那两项 —— 和 `ensureTopicTypesLoaded` 同一套口径：
+ * 不能把"这次查不到"存成"字典里就是没有"这个结论。
+ */
+export async function ensureAiProtocolsLoaded(force = false) {
+  return loadOnce(protocolSlot, force, async (isCurrent) => {
+    const typeRes = await getDictTypeList({ code: AI_PROTOCOL_DICT })
+    const dictType = (typeRes?.data || [])[0]
+    if (!dictType) return undefined
+    const itemRes = await getDictItemList({ dictTypeId: dictType.id })
+    const next = (itemRes?.data || [])
+      .filter((i) => i.enabled && i.value)
+      .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0))
+      // remark 是协议默认 API 地址（见上面那段约定）；空 remark = 这项没配地址，
+      // 切过去就不动地址框，不拿别的协议的地址去顶（兜底不写）
+      .map((i) => ({
+        value: i.value,
+        label: i.label || i.value,
+        baseUrl: (i.remark || '').trim()
+      }))
+    if (!next.length) return undefined
+    if (isCurrent()) aiProtocols.value = next
+    return next
+  })
+}
+
 /**
  * 拉厂商最新模型清单（后端写回字典），把这个厂商换成最新的那份。
  *
- * @param payload { vendor, baseUrl?, apiKey?, endpointId? }
+ * @param payload { vendor, baseUrl?, apiKey?, protocol?, endpointId? }
+ *   ⚠️ `protocol` 必须和保存端点时选的同一个：拉模型的 URL 和请求头都跟着协议变
+ *   （Bearer + /models vs x-api-key + /v1/models），不传后端会退回这条端点存的那份。
  * @returns 厂商最新的模型清单
  */
 export async function refreshVendorModels(payload) {
@@ -166,6 +269,21 @@ export async function refreshVendorModels(payload) {
   return vendor
 }
 
+/**
+ * 测一条配置能不能真调通。
+ *
+ * **AI 能力的唯一出口仍在本文件**（和开关 / 列表 / 调用同一个约定）；
+ * 这里只做透传：结果里的 `ok` / `message` 由调用方原样显示，不在这里改写上游原文。
+ *
+ * @param payload { endpointId?, baseUrl?, apiKey?, protocol?, model? }
+ *   只传 endpointId = 测库里存的那条（列表行）；带草稿字段 = 测弹窗里还没保存的那份。
+ * @returns {Promise<{ok:boolean, latencyMs:number, model:string, message:string}>}
+ */
+export async function testAiEndpoint(payload) {
+  const res = await testApi(payload)
+  return res?.data || { ok: false, message: '没有返回内容' }
+}
+
 /** 界面各处控制 AI 入口显不显示，一律用这个 */
 export const aiEnabled = computed(() => Boolean(aiConfig.value.enabled))
 
@@ -173,6 +291,51 @@ export const aiEnabled = computed(() => Boolean(aiConfig.value.enabled))
 export const currentEndpoint = computed(
   () => aiEndpoints.value.find((e) => e.id === currentEndpointId.value) || null
 )
+
+/**
+ * **这次能用哪条 API**：显式指定的那条优先，否则全局当前选中的那条。
+ *
+ * <p>⚠️ **这是「能不能调」的前端判据，全站只有这一份**（2026-11-11 加）：
+ * 后台任务那条路（AI 归类）以前**没把端点传过去** ⇒
+ * 参数快照里没有 `endpointId` ⇒ 后端 `requireReady(null)` 抛「还没选好 API」
+ * ⇒ **100 条全部失败**，界面上只看得见一堆红字，看不出根因。
+ *
+ * <p>所以「选端点」这件事必须**和 `ask()` 用同一个解析口径**：
+ * `ask()` 里是「显式传的优先、否则全局当前选中的、然后判 `ready`」，
+ * 这里必须一字不差 —— 两处各写一份的话，改了一处另一处就悄悄不一样了
+ * （症状：同步归类能跑、批量归类全失败，或者反过来）。
+ *
+ * @param {number|null} [endpointId] 显式指定用哪条（不传 = 用全局当前选中的）
+ * @returns {{id:number, ready:boolean}|null} 能用的那条；一条都没有返回 null
+ */
+export function resolveEndpoint(endpointId = null) {
+  const ep = endpointId != null
+    ? aiEndpoints.value.find((e) => e.id === endpointId)
+    : currentEndpoint.value
+  return ep?.ready ? ep : null
+}
+
+/**
+ * **能不能调模型**：开关 + 端点配全，两条都要满足。
+ *
+ * <p>⚠️ **和后端 `AiEndpointService.requireReady` 是同一个判据**：
+ * 开关开没开 → 用的那条自己配全没配全。
+ * 前端判一道是为了**别建出一个注定失败的任务**（后台任务一建就是几十上百步），
+ * 但**真正的判据在后端**（前端能改，服务端才是权威）⇒ 两边都判，各管各的。
+ *
+ * @returns {string} 空 = 能调；非空 = 不能调，值是**给用户看的原因**
+ */
+export function endpointProblem() {
+  if (!aiEnabled.value) return 'AI 开关没打开'
+  const ep = resolveEndpoint()
+  if (!ep) {
+    // ⚠️ **两种情况要说不同的话**：「一个都没配」和「配了但没配全」，
+    // 用户要做的动作不一样（去配 vs 去补全）。
+    const any = aiEndpoints.value.length
+    return any ? '选中的 API 还没配全' : '还没选好 API'
+  }
+  return ''
+}
 
 /**
  * 就某条知识提问，**流式**。**零写入**：答完一个字都不回写到 kp_topic。
@@ -195,11 +358,13 @@ export const currentEndpoint = computed(
  * @param history 之前几轮 `[{question, answer}]`。**协议无状态，不带过去模型就不记得**
  *   （曾经就是这样：抽屉里明明是同一个对话，AI 却答"我没有上下文记忆"）。
  *   带多少轮由后端 `HISTORY_TURNS` 决定，这儿只管把已完成的轮次交上去
+ * @param maxTokens 这次要多少输出额度（token）。不传 = 后端兜底值。
+ *   只有「被截断后要涨额度重试」的长任务才传（服务端任务的执行器会自己处理这一手）
  * @returns {Promise<string>} 这次收到的**完整正文**（流式层攒好的，调用方不用自己拼）
  */
 export async function ask(
   question,
-  { topicId, topicIds, material, history, onPrompt, onDelta, onReasoning, signal, questionKey, endpointId, thinking } = {}
+  { topicId, topicIds, material, history, onPrompt, onDelta, onReasoning, signal, questionKey, endpointId, thinking, maxTokens } = {}
 ) {
   if (!aiEnabled.value) {
     throw new Error('AI 开关没打开')
@@ -214,7 +379,7 @@ export async function ask(
     throw new Error('还没选好 API')
   }
   return streamChat(
-    { topicId, topicIds, question, endpointId: ep.id, questionKey, material, history: history || [], thinking },
+    { topicId, topicIds, question, endpointId: ep.id, questionKey, material, history: history || [], thinking, maxTokens },
     { onPrompt, onDelta, onReasoning },
     signal
   )
@@ -271,8 +436,10 @@ onAuthChange(() => {
   aiEndpoints.value = []
   aiQuestions.value = []
   aiVendors.value = []
+  aiProtocols.value = [...FALLBACK_PROTOCOLS]
   currentEndpointId.value = null
   resetSlot(aiSlot)
   resetSlot(questionsSlot)
   resetSlot(vendorSlot)
+  resetSlot(protocolSlot)
 })

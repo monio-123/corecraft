@@ -2,7 +2,7 @@
   <input
     class="tti"
     :value="draft"
-    placeholder="请输入标题"
+    placeholder="标题"
     maxlength="100"
     @input="onInput"
     @blur="save"
@@ -15,7 +15,7 @@
  *
  * 标题是**可选字段**——随手记存进来的知识点 title 本来就是空串
  * （AppLearnView 的 createTopic 传 title: ''），所以两处的形态都是同一个东西：
- * 一个无边框的 input，空着的时候显示灰色「请输入标题」占位，点哪都能输，失焦即存。
+ * 一个无边框的 input，空着的时候显示灰色「标题」占位，点哪都能输，失焦即存。
  * 各写一份迟早漂移（占位文案、长度上限、什么时候存，三样都得对齐）。
  *
  * 这里只管两边**真正共通**的那几样：透明无边框、铺满一行、能选中文字、占位色。
@@ -80,7 +80,7 @@ function save() {
   /* input 天生单行，长标题不折行（两行折行是 h3 那边的事），超出的部分省略 */
   text-overflow: ellipsis;
 }
-/* 空标题时显示「请输入标题」——这是一个能直接点进去写的标题位，不是"这条没名字"的告示 */
+/* 空标题时显示「标题」——这是一个能直接点进去写的标题位，不是"这条没名字"的告示 */
 .tti::placeholder {
   color: var(--cc-text-4);
   font-weight: 400;

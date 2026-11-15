@@ -6,7 +6,7 @@ import Dictionaries from '../views/Dictionaries.vue'
 import Forbidden from '../views/Forbidden.vue'
 import NotFound from '../views/NotFound.vue'
 
-const routes = [
+export const routes = [
   {
     path: '/login',
     name: 'Login',
@@ -65,21 +65,22 @@ const routes = [
         meta: { title: '知识点' }
       },
       {
+        // 考试记录：历史卷子的出口（设计 §8.3 / §11.3）——回看走 /exam?attempt=…
+        // （独立标签页），这一页只管"翻出历史"。入口在首页「考试记录」面板。
+        path: 'exams',
+        name: 'AppExamRecords',
+        component: () => import('../views/corecraft-web/AppExamRecordsView.vue'),
+        meta: { title: '考试记录' }
+      },
+      {
         // 详情页不是菜单项（meta.path 含 ':'，导航里会被过滤掉），只能从卡片点进
         path: 'topic/:id',
         name: 'AppTopicDetail',
         component: () => import('../views/corecraft-web/AppTopicDetailView.vue'),
         meta: { title: '知识点' }
-      },
-      {
-        // 也不进导航列表：入口在侧边栏底栏那个齿轮的菜单里。低频操作不该占导航的一行。
-        path: 'settings/ai',
-        name: 'AppAiSettings',
-        component: () => import('../views/corecraft-web/AiSettingsView.vue'),
-        // 标题跟页面自己的大标题、菜单项用同一个词（页面里写的是「AI 能力」）。
-        // 同一个东西三个地方三个名字 = 用户要自己认一遍。
-        meta: { title: 'AI 能力' }
       }
+      // 「AI 能力」的独立设置页已撤（2026-11-13）：它改挂齿轮的「设置」弹窗右区
+      // （SettingsDialog → AiSettingsPanel），不再有 /app/settings/ai 路由。
     ]
   },
   {

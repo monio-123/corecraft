@@ -16,7 +16,7 @@
           {{ avatarFallback }}
         </el-avatar>
         <span class="user-menu__name">{{ sessionUserName(user) }}</span>
-        <el-icon class="user-menu__caret"><ArrowDown /></el-icon>
+        <KbSvgIcon class="user-menu__caret" name="caret-down" :sw="2" />
       </span>
       <template #dropdown>
         <el-dropdown-menu>
@@ -81,11 +81,12 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { clearAuth } from '../utils/auth'
+import { confirmAction } from '../utils/confirm'
 import { applyProfile, sessionUserName } from '../utils/session'
 import { updateMyPassword, updateMyProfile, uploadMyAvatar } from '../api/user'
+import KbSvgIcon from './corecraft-web/KbSvgIcon.vue'
 
 const props = defineProps({
   /** 当前用户资料（会话里的 profile） */
@@ -156,19 +157,10 @@ function onCommand(command) {
  * <p>各壳只接 `logout` 事件做**自己的**收尾（admin 壳有页面标签页要清）；
  * 业务壳没有要清的（AI 配置那些归 `useAi.js` 订阅 `onAuthChange` 管）。
  *
- * <p>⚠️ **确认框被取消时要 catch**：Element Plus 的 `confirm` 取消是**抛异常**，
- * 不接住的话会变成一条 unhandled rejection（控制台报错，界面没反应）。
+ * <p>确认框走 `utils/confirm.js`（取消不抛错、文案口径全站一份）。
  */
 async function doLogout() {
-  try {
-    await ElMessageBox.confirm('确认退出当前登录状态吗？', '退出登录', {
-      type: 'warning',
-      confirmButtonText: '退出',
-      cancelButtonText: '取消'
-    })
-  } catch {
-    return
-  }
+  if (!(await confirmAction('退出登录'))) return
   clearAuth()
   emit('logout')
   ElMessage.success('已退出')
@@ -242,7 +234,7 @@ const handleAvatarUpload = async ({ file }) => {
   align-items: center;
   gap: var(--sp-10);
   cursor: pointer;
-  border-radius: var(--cc-radius-sm);
+  border-radius: var(--radius-sm);
   padding: var(--sp-3);
   margin: calc(-1 * var(--sp-6));
   transition: var(--cc-transition);
@@ -252,7 +244,9 @@ const handleAvatarUpload = async ({ file }) => {
 }
 .user-menu__name {
   flex: 1;
-  font-size: var(--text-base);
+  /* 15→14（2026-11-13 壳上字号三档收敛）：用户名归「导航级」（--text-md），
+     两个壳（业务侧栏底栏 / admin 顶栏）共用这一份，一起归位。 */
+  font-size: var(--text-md);
   color: var(--cc-text-2);
   overflow: hidden;
   text-overflow: ellipsis;

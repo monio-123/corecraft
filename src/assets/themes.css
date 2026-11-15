@@ -1,0 +1,551 @@
+/* ============================================================
+ * 主题层（2026-11-08）：本色（默认）/ 素雅 / 量子 / 曜夜（2026-11-13 上）
+ * ⚠️ 只覆盖 --cc-* 颜色与质感 token —— 组件一律读 token，所以换这里
+ *    全站（含 EP 弹窗/下拉/表格的接管层）自动跟随。
+ * ⚠️ 本色不写覆盖块：base.css :root 的现值就是本色。
+ * ⚠️ 挂载点 = html[data-theme]（utils/theme.js 写 documentElement）——
+ *    EP 传送门（dialog/popper）挂在 body 下，挂 html 才能罩住它们。
+ *    管理后台壳因此也会跟随变色（零专项适配的一致性；要隔离再议）。
+ * ⚠️ 曜夜是唯一深色主题：EP 深色批（派生色向纸色混 + 线/面/遮罩的深色值）
+ *    全部收在它的 body 覆盖块里，不动 base.css 的浅色基准。
+ *
+ * ============================================================
+ * ⚠️⚠️⚠️ 加新主题时必读（本文件的头号约束）⚠️⚠️⚠️
+ *
+ * **新主题 = 颜色 + 加载签名 + 骨架材质，三件都要给。**
+ * 只复制一份颜色 token 不叫适配完成 —— 那样加载图形还是本色的蓝环，
+ * 骨架还是本色的冷灰，落在新主题里就是两个"外来件"。
+ *
+ * 必填项（缺一个就是没适配）：
+ *   ① --cc-* 全套：文字/面/线/主色/语义色/阴影/按钮/侧栏/纹理
+ *   ② --kb-load-*：加载签名（轨道/强调/中心点/周期/图形开关）
+ *      —— 挑一个与主题气质相配的图形，用 *-display 这类开关切过去：
+ *         本色 = 环形｜素雅 = 墨迹行（横线）｜量子 = 双轨环 + 中心点
+ *         ｜曜夜 = 单环 + 脉动金点（--kb-load-dot-anim / --kb-load-glow 开启）
+ *   ③ --kb-skel-*：骨架底色 / 高光 / 扫光周期
+ *      ⚠️ 骨架底色必须与该主题的**纸面底色同色系**：
+ *         本色冷灰落在素雅的米色纸上会显脏。
+ *   ④ --font-body / --font-display / --font-num
+ *   ⑤ EP 派生色（--el-color-primary-light-3/5/7/8/9 + dark-2）
+ *
+ * 还要验的（不是"定义完"就算完）：
+ *   ✦ 前景/背景对比度 ≥ 4.5:1（文字）/ 3:1（图形）
+ *   ✦ prefers-reduced-motion 下加载图形仍然可辨识（有静态形状 + 文案）
+ *   ✦ EP 传送门（弹窗/下拉）里的加载态也跟随主题
+ *   ✦ 加载开始与结束**不改变容器尺寸**（骨架必须与真实内容同构）
+ *
+ * 完整清单见 brove-skills/corecraft-web-context/SKILL.md「主题适配清单」。
+ * 基准值（本色）在 assets/kb-loading.css 的 :root 里 —— **只有那一份**。
+ * ============================================================ */
+
+:root {
+  /* 正文字体（素雅=全站衬线）+ 展示字体 + 数字字体（量子=等宽） */
+  --font-body: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-display: var(--font-body);
+  --font-num: inherit;
+  /* 主按钮（记下来等）渐变三件套 */
+  --cc-btn-bg: linear-gradient(180deg, #3f8dff, #2b7fff);
+  --cc-btn-bd: rgba(30, 100, 220, 0.4);
+  --cc-btn-fg: #ffffff;
+  --cc-btn-shadow: inset 0 1px 0 rgb(255 255 255 / 18%), 0 2px 6px rgb(43 127 255 / 24%);
+  /* 全页质感层（body::after）：本色=无 */
+  --cc-grain-image: none;
+  --cc-grain-opacity: 0;
+  --cc-grain-blend: normal;
+  /* 录入卡聚焦装裱线（AppHomeView .quick::before） */
+  --cc-quick-line: linear-gradient(90deg, transparent, #2b7fff, transparent);
+  /* 侧边栏精修 token（AppLayout 消费；--side-px/py 是 uiPrefs 的尺寸，别混） */
+  --cc-side-bg: var(--cc-surface);
+  --cc-side-sep: #f0f2f5;
+  --cc-side-cnt-bg: rgba(31, 35, 41, 0.05);
+  --cc-side-cnt-bg-hover: rgba(31, 35, 41, 0.09);
+  --cc-top-bg: #ffffff;
+  /* 计数前景 / 卡片 hover 描边（2026-11-08 复刻 book-bak 的 --side-cnt / --card-hover-bd,
+     四主题各一份，值照抄 theme-bak.css） */
+  --cc-side-cnt-fg: #98a0ac;
+  --cc-card-hover-bd: #cfe0f7;
+  /* 主色光环（hover/聚焦时那圈 3px 柔光）。⚠️ 2026-11-13 前生产把它落下了：
+     AppHomeView / AppLayout 各有一处 var(--accent-ring) 引用而 token 从未定义，
+     那两条 box-shadow 一直整条失效（设计稿每个主题块都有这支，L27/106/185/264）。 */
+  --cc-primary-ring: rgba(43, 127, 255, 0.14);
+  /* 徽标前景字色（AppLayout 品牌字）。浅色主题=白（原实现写 var(--cc-surface) 恰好等白）；
+     曜夜 surface 是深色，不拆这支 token 的话深底上就是深字。 */
+  --cc-logo-fg: #ffffff;
+
+  /* ============================================================
+   * 加载签名（--kb-load-*）与骨架材质（--kb-skel-*）
+   *
+   * ⚠️ **本色的值不在这里** —— 它们是**基准值**，住在
+   *    assets/kb-loading.css 的 :root 里（那里是唯一一份定义处）。
+   *    本色不写覆盖块，规则与 --cc-* 一致（base.css :root 的现值就是本色）。
+   *
+   * 素雅 / 量子各自的加载签名在各自的覆盖块里。
+   *
+   * ⚠️⚠️ **加新主题时必须定义这一组 token** ——
+   *    不定义就是"没适配"：加载图形会落回本色的蓝环，跟新主题气质对不上。
+   *    完整清单见 brove-skills/corecraft-web-context/SKILL.md「主题适配清单」。
+   * ============================================================ */
+}
+
+/* ================= 素雅（浅暖纸 × 衬线标题 × 青瓷 × 鎏金发丝） ================= */
+html[data-theme="suya"] {
+  --cc-bg: #f7f4ec;
+  --cc-surface: #fffefa;
+  --cc-surface-2: #faf7ef;
+  --cc-surface-3: #f1ecdd;
+  --cc-text-1: #332e22;
+  --cc-text-2: #55503f;
+  --cc-text-3: #8f8875;
+  --cc-text-4: #b6ad97;
+  --cc-icon: #8f8875;
+  --cc-border: #efeadd;
+  --cc-border-strong: #e8e2d0;
+  --cc-border-card: #e8e2d0;
+  --cc-primary: #2f7d6d;
+  --cc-primary-hover: #3a8f7c;
+  --cc-primary-soft: rgba(47, 125, 109, 0.1);
+  --cc-primary-border: rgba(47, 125, 109, 0.28);
+  --cc-primary-ring: rgba(47, 125, 109, 0.13);
+  --cc-warning: #96662a;
+  /* 行内代码字色（2026-11-09）：素雅是暖纸底 ⇒ 用**藏蓝**（冷色与纸色拉开），
+     对行内底 11.34:1、与正文色明度差 1.51:1、与主色青瓷色相差 47°。 */
+  --cc-code-fg: #1a365d;
+  --cc-shadow-card: 0 1px 2px rgb(72 60 34 / 4%), 0 8px 26px rgb(72 60 34 / 6%);
+  --cc-shadow-1: 0 3px 14px rgb(72 60 34 / 7%);
+  --cc-shadow-2: 0 2px 6px rgb(72 60 34 / 8%), 0 16px 40px rgb(72 60 34 / 12%);
+  --cc-logo-gradient: linear-gradient(160deg, #35806f, #2a6b5c);
+  --font-body: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', Georgia, 'Times New Roman', SimSun, serif;
+  --font-display: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', 'Palatino Linotype', Palatino, 'Times New Roman', SimSun, serif;
+  --el-font-family: var(--font-body);
+  --cc-btn-bg: linear-gradient(180deg, #35806f, #2a6b5c);
+  --cc-btn-bd: rgba(20, 61, 53, 0.35);
+  --cc-btn-fg: #ffffff;
+  --cc-btn-shadow: 0 1px 3px rgb(20 61 53 / 20%);
+  --cc-grain-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.42 0 0 0 0 0.36 0 0 0 0 0.26 0 0 0 0.045 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+  --cc-grain-opacity: 0.5;
+  --cc-grain-blend: multiply;
+  /* 环境层 = 纸边晕影：四周极淡茶色，纸有了厚度（2026-11-14 提案②①） */
+  --cc-ambience: radial-gradient(120% 90% at 50% 40%, transparent 55%, rgba(72, 60, 34, 0.06) 100%);
+  --cc-quick-line: linear-gradient(90deg, transparent, rgba(201, 168, 106, 0.9), transparent);
+  --cc-side-bg: #fbf9f2;
+  --cc-side-sep: rgba(51, 46, 34, 0.09);
+  --cc-side-cnt-bg: rgba(51, 46, 34, 0.06);
+  --cc-side-cnt-bg-hover: rgba(51, 46, 34, 0.1);
+  --cc-top-bg: #fffdf6;
+  --cc-side-cnt-fg: #a39b85;
+  --cc-card-hover-bd: #d8d2bd;
+
+  /* ============================================================
+   * 素雅的加载签名 = **墨迹行**（不转）
+   * 素雅是纸墨质感 ⇒ 旋转的机械环跟它不搭。改成三根不等长的横线依次呼吸，
+   * 像一行行正在落笔的墨。轨道色退成纸色，强调色用鎏金（与 --cc-quick-line 同源）。
+   * ============================================================ */
+  --kb-load-track: #e6decb;
+  --kb-load-accent: #b18a4c;
+  --kb-load-dot: transparent;
+  --kb-load-speed: 1.5s;
+  --kb-load-ring-display: none;
+  --kb-load-pages-display: flex;
+  --kb-load-inner-opacity: 0;
+  --kb-load-dot-opacity: 0;
+  /* 骨架：暖纸底 + 暖白高光（不能是本色的冷灰 —— 冷灰落在米色纸上会显脏） */
+  --kb-skel-base: #eee7d8;
+  --kb-skel-shine: rgba(255, 253, 245, 0.88);
+  --kb-skel-speed: 1.8s;
+}
+/* EP 派生色按公式 ((10-N)/10 × 主色 + N/10 × 白) 重算 —— 算反了标签会变实心块；
+   曜夜例外：深色下往纸色混（见它的 body 覆盖块） */
+/* 素雅/量子/曜夜的**侧栏呼吸一致** ⇒ 合成一条规则（圆角各写在各的主题块里：
+   素雅/量子 14/16、曜夜 14/18）。--side-px/py/gap 是 uiPrefs 的 CSS 变量，此处按主题给初值，滑块仍可调。 */
+html[data-theme="suya"],
+html[data-theme="liangzi"],
+html[data-theme="yaoye"] {
+  --radius-lg: 14px;
+  --radius-xl: 16px;
+  --side-px: 10px;
+  --side-py: 8px;
+  --side-gap: 9px;
+}
+html[data-theme="suya"] body {
+  --el-color-primary-light-3: #6da499;
+  --el-color-primary-light-5: #97beb6;
+  --el-color-primary-light-7: #c0d8d3;
+  --el-color-primary-light-8: #d5e5e2;
+  --el-color-primary-light-9: #eaf2f0;
+  --el-color-primary-dark-2: #266457;
+}
+
+/* ================= 量子（冷白 × 细网格 × 靛青 × 等宽数字） ================= */
+html[data-theme="liangzi"] {
+  --cc-bg: #f4f6fb;
+  --cc-surface: #fdfdff;
+  --cc-surface-2: #eef1f8;
+  --cc-surface-3: #e3e8f2;
+  --cc-text-1: #101b2e;
+  --cc-text-2: #3d4a5c;
+  --cc-text-3: #7d8aa0;
+  --cc-text-4: #a9b4c6;
+  --cc-icon: #7d8aa0;
+  --cc-border: rgba(120, 140, 175, 0.18);
+  --cc-border-strong: rgba(120, 140, 175, 0.3);
+  --cc-border-card: rgba(120, 140, 175, 0.24);
+  --cc-primary: #5b51e8;
+  --cc-primary-hover: #655cf5;
+  --cc-primary-soft: rgba(91, 81, 232, 0.08);
+  --cc-primary-border: rgba(91, 81, 232, 0.3);
+  --cc-primary-ring: rgba(91, 81, 232, 0.14);
+  --cc-warning: #b45309;
+  /* 行内代码字色（2026-11-09）：量子是冷白底 ⇒ 用**墨绿**（与靛青主色色相差 79°，
+     与正文灰蓝明度差 1.45:1，对行内底 5.49:1）。 */
+  --cc-code-fg: #0f6e56;
+  --cc-shadow-card: 0 1px 2px rgb(15 27 45 / 4%), 0 8px 24px rgb(67 58 209 / 6%);
+  --cc-shadow-1: 0 3px 14px rgb(67 58 209 / 8%);
+  --cc-shadow-2: 0 2px 6px rgb(15 27 45 / 6%), 0 16px 40px rgb(67 58 209 / 12%);
+  --cc-logo-gradient: linear-gradient(160deg, #655cf5, #4f46e5);
+  /* 西文口音（2026-11-14）：标题/统计数字的 Latin 层走 Space Grotesk（几何工程感），
+     中文落回 PingFang/雅黑不变 —— 消费点 = --font-display 那排（品牌名/标题/统计数字） */
+  --font-display: 'Space Grotesk', 'Segoe UI', Inter, -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-num: ui-monospace, SFMono-Regular, 'Cascadia Mono', Consolas, Menlo, monospace;
+  --cc-btn-bg: linear-gradient(180deg, #655cf5, #4f46e5);
+  --cc-btn-bd: rgba(40, 32, 150, 0.5);
+  --cc-btn-fg: #ffffff;
+  --cc-btn-shadow: 0 1px 3px rgb(67 58 209 / 35%), 0 4px 14px rgb(99 91 232 / 25%);
+  /* 蓝图网格（2026-11-14 提案①）：44px 小格之上叠 220px 主格线 —— "制图纸"骨架一眼可辨。
+     两层都是 url 平铺（各按固有尺寸重复，不依赖 background-size）。 */
+  --cc-grain-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cpath d='M220 0H0v220' fill='none' stroke='%235b51e8' stroke-opacity='.05'/%3E%3C/svg%3E"), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='44'%3E%3Cpath d='M44 0H0v44' fill='none' stroke='%23101b2e' stroke-opacity='.045'/%3E%3C/svg%3E");
+  --cc-grain-opacity: 1;
+  --cc-grain-blend: normal;
+  /* 环境层让位：量子的氛围走下面的动画漂移光晕（body::before 专属规则），不用静态 token */
+  --cc-ambience: none;
+  --cc-quick-line: linear-gradient(90deg, #818cf8, #2dd4bf);
+  --cc-side-bg: linear-gradient(180deg, #fefeff, #f8faff);
+  --cc-side-sep: rgba(99, 91, 255, 0.14);
+  --cc-side-cnt-bg: rgba(99, 91, 255, 0.09);
+  --cc-side-cnt-bg-hover: rgba(99, 91, 255, 0.15);
+  --cc-top-bg: rgba(255, 255, 255, 0.75);
+  --cc-side-cnt-fg: #9aa6bb;
+  --cc-card-hover-bd: rgba(129, 140, 248, 0.6);
+
+  /* ============================================================
+   * 量子的加载签名 = **双轨环 + 中心点**
+   * 量子是冷白细网格 ⇒ 双环（外环走靛青、内环反向）+ 一枚青色中心点，
+   * 读起来像"两圈轨道 + 一颗核"，比本色那枚单环更精密。
+   * 速度比本色快一档（1.05s vs 0.9s 的完整周期 ⇒ 实际更快）——
+   * 量子这套语言本来就偏"快、准"。
+   * ============================================================ */
+  --kb-load-track: #e5e3fb;
+  --kb-load-accent: #5b51e8;
+  --kb-load-dot: #2dd4bf;
+  --kb-load-speed: 1.05s;
+  --kb-load-ring-display: block;
+  --kb-load-pages-display: none;
+  --kb-load-inner-opacity: 1;
+  --kb-load-dot-opacity: 1;
+  /* 骨架：冷白底 + 冷白高光（量子底本来就是冷白，骨架要比本色的更冷一档） */
+  --kb-skel-base: #e7eaf4;
+  --kb-skel-shine: rgba(240, 244, 255, 0.92);
+  --kb-skel-speed: 1.15s;
+}
+html[data-theme="liangzi"] body {
+  --el-color-primary-light-3: #8c85ef;
+  --el-color-primary-light-5: #ada8f4;
+  --el-color-primary-light-7: #cdcaf8;
+  --el-color-primary-light-8: #dedcfa;
+  --el-color-primary-light-9: #efedfd;
+  --el-color-primary-dark-2: #4941ba;
+}
+
+/* ================= 曜夜（墨蓝黑 × 琥珀金 × 等宽数字 × 发光签名） =================
+ * 唯一动「明暗轴」的主题 ⇒ 四主题各占一个象限：
+ * 本色=日间工具 / 素雅=纸墨阅读 / 量子=精密科技 / 曜夜=夜间。
+ * token 从设计稿 theme-bak.css L245-321 翻译（--paper→--cc-bg 等名字映射）。 */
+html[data-theme="yaoye"] {
+  /* 原生滚动条 / 表单控件跟随深色（全 src 首次设置） */
+  color-scheme: dark;
+  --cc-bg: #0f1117;
+  --cc-surface: #171a22;
+  --cc-surface-2: #1b1f29;
+  --cc-surface-3: #1f2430;
+  --cc-text-1: #f0f2f8;
+  --cc-text-2: #b8bfcc;
+  --cc-text-3: #7e8798;
+  /* 稿值 #566072 对 surface 只有 2.74:1（图形线 <3:1）⇒ 就近提亮一档到 3.70:1 */
+  --cc-text-4: #6a7488;
+  --cc-icon: #7e8798;
+  --cc-border: #1f2430;
+  --cc-border-strong: #262b38;
+  --cc-border-card: #262b38;
+  --cc-primary: #e8b059;
+  --cc-primary-hover: #f0bd6b;
+  /* 选中软底 0.22（2026-11-14 修）：0.12 的金叠在 #1b1f29 深底上混出来与底色几乎同值
+     （~1.05:1）⇒ 答题器选中行「只剩字母徽章亮、整行没反应」（用户报）。
+     浅色主题的 soft 0.08~0.1 够用是因为底浅；深色底上低 alpha 不可感知，0.22 才立得住。 */
+  --cc-primary-soft: rgba(232, 176, 89, 0.22);
+  --cc-primary-border: rgba(232, 176, 89, 0.35);
+  --cc-primary-ring: rgba(232, 176, 89, 0.16);
+  --cc-warning: #f2c26b;
+  /* 语义浅底压成半透明：原来的 pastel 铺白（#fdecea 等）在深底下就是白块 */
+  --cc-danger-soft: rgba(229, 72, 77, 0.16);
+  --cc-warning-soft: rgba(242, 194, 107, 0.12);
+  --cc-success-soft: rgba(52, 168, 83, 0.16);
+  /* 行内代码：浅冷蓝（对 surface-2 ≈9.7:1，与金色主色色相拉开不混淆） */
+  --cc-code-fg: #9ecbff;
+  --cc-shadow-card: 0 1px 2px rgb(0 0 0 / 30%), 0 10px 30px rgb(0 0 0 / 30%);
+  --cc-shadow-1: 0 3px 14px rgb(0 0 0 / 40%);
+  --cc-shadow-2: 0 2px 8px rgb(0 0 0 / 40%), 0 18px 48px rgb(0 0 0 / 45%);
+  --cc-logo-gradient: linear-gradient(160deg, #26297f, #171a22);
+  --cc-logo-fg: #f0c87e;
+  /* 西文口音（2026-11-14）：标题/统计数字的 Latin 层走 Playfair Display（高对比衬线，
+     配琥珀金的夜店感），中文落回雅黑不变 —— 别把中文落宋体（UI 字号下难看） */
+  --font-display: 'Playfair Display', Inter, -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-num: ui-monospace, SFMono-Regular, 'Cascadia Mono', Consolas, Menlo, monospace;
+  --cc-btn-bg: linear-gradient(180deg, #f0bd6b, #dc9f43);
+  --cc-btn-bd: rgba(150, 110, 40, 0.55);
+  --cc-btn-fg: #241a06;
+  --cc-btn-shadow: inset 0 1px 0 rgb(255 255 255 / 30%), 0 2px 8px rgb(232 176 89 / 22%);
+  /* 星尘（2026-11-14 提案①）：600×420 tile 7 颗静态星（白 5 + 金 2，透明度各不同）；
+     两颗缓慢闪烁的星在 .app-shell::before/::after（见下面的 twinkle 规则） */
+  --cc-grain-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='420'%3E%3Ccircle cx='108' cy='88' r='1' fill='%23f0f2f8' fill-opacity='.5'/%3E%3Ccircle cx='432' cy='50' r='1' fill='%23f0f2f8' fill-opacity='.35'/%3E%3Ccircle cx='330' cy='285' r='1.5' fill='%23f0c87e' fill-opacity='.4'/%3E%3Ccircle cx='516' cy='185' r='1' fill='%23f0f2f8' fill-opacity='.3'/%3E%3Ccircle cx='198' cy='344' r='1' fill='%23f0c87e' fill-opacity='.3'/%3E%3Ccircle cx='48' cy='230' r='1.5' fill='%23f0f2f8' fill-opacity='.35'/%3E%3Ccircle cx='378' cy='138' r='1' fill='%23f0f2f8' fill-opacity='.28'/%3E%3C/svg%3E");
+  --cc-grain-opacity: 1;
+  --cc-grain-blend: normal;
+  /* 环境层 = 夜色暗角：向四角加深（2026-11-14 提案④） */
+  --cc-ambience: radial-gradient(130% 100% at 50% 30%, transparent 60%, rgba(0, 0, 0, 0.22) 100%);
+  --cc-quick-line: linear-gradient(90deg, #e8b059, #f5d9a0);
+  --cc-side-bg: linear-gradient(180deg, #14161d, #101219 60%, #0e1015);
+  --cc-side-sep: rgba(255, 255, 255, 0.08);
+  --cc-side-cnt-bg: rgba(255, 255, 255, 0.07);
+  --cc-side-cnt-bg-hover: rgba(255, 255, 255, 0.13);
+  --cc-top-bg: #131621;
+  --cc-side-cnt-fg: #667080;
+  --cc-card-hover-bd: rgba(232, 176, 89, 0.4);
+  /* 稿值 xl 18：比素雅/量子（14/16）再圆一档，夜色更软。
+     lg 14 上面那条「侧栏呼吸一致」分组规则已给，不重复写。 */
+  --radius-xl: 18px;
+
+  /* ============================================================
+   * 曜夜的加载签名 = **单环 + 脉动金点（星轨 + 星核）**
+   * 单环同本色，但轨道是墨蓝、弧走金；中心点不静止——呼吸的星核
+   * （kb-load-pulse 由 --kb-load-dot-anim 开启，其它主题不受影响），
+   * 外面罩一层金光晕（--kb-load-glow）。与量子的「双轨环+静点」明显区分。
+   * ============================================================ */
+  --kb-load-track: #262b38;
+  --kb-load-accent: #e8b059;
+  --kb-load-dot: #f0c87e;
+  --kb-load-speed: 1.2s;
+  --kb-load-ring-display: block;
+  --kb-load-pages-display: none;
+  --kb-load-inner-opacity: 0;
+  --kb-load-dot-opacity: 1;
+  --kb-load-dot-anim: kb-load-pulse;
+  --kb-load-glow: 0 0 6px rgba(232, 176, 89, 0.55);
+  /* 骨架：深蓝灰底 + 暖金扫光（深色下扫光要淡，太亮晃眼） */
+  --kb-skel-base: #1e2330;
+  --kb-skel-shine: rgba(240, 200, 126, 0.1);
+  --kb-skel-speed: 1.3s;
+}
+/* ⚠️ EP 深色批：base.css 写死的浅色 --el-* 槽位在这层全部换成深色值。
+   派生档公式换成「向纸色 #0f1117 混」——浅色主题往白混是为了 hover/标签底变浅，
+   深色语义相反：light-N 要往暗走（EP 官方 dark 包同款做法）。 */
+html[data-theme="yaoye"] body {
+  --el-color-primary-light-3: #a78045;
+  --el-color-primary-light-5: #7c6138;
+  --el-color-primary-light-7: #50412b;
+  --el-color-primary-light-8: #3a3124;
+  --el-color-primary-light-9: #25211e;
+  --el-color-primary-dark-2: #ba8d47;
+  /* 语义色派生档（light-9 是 tag 底色——不压暗就是白块） */
+  --el-color-success-light-3: #297b41;
+  --el-color-success-light-5: #225d35;
+  --el-color-success-light-7: #1a3e29;
+  --el-color-success-light-8: #162f23;
+  --el-color-success-light-9: #13201d;
+  --el-color-warning-light-3: #9c661d;
+  --el-color-warning-light-5: #744e1b;
+  --el-color-warning-light-7: #4c3519;
+  --el-color-warning-light-8: #372919;
+  --el-color-warning-light-9: #231d18;
+  --el-color-danger-light-3: #a5383d;
+  --el-color-danger-light-5: #7a2d32;
+  --el-color-danger-light-7: #4f2227;
+  --el-color-danger-light-8: #3a1c22;
+  --el-color-danger-light-9: #24171c;
+  --el-color-info-light-3: #656a72;
+  --el-color-info-light-5: #4d5158;
+  --el-color-info-light-7: #34373e;
+  --el-color-info-light-8: #282a31;
+  --el-color-info-light-9: #1b1e24;
+  /* 线与面的浅色档 */
+  --el-border-color-lighter: #1f2430;
+  --el-border-color-extra-light: #1a1e28;
+  --el-border-color-dark: #303748;
+  --el-border-color-darker: #384052;
+  --el-fill-color-light: #1b1f29;
+  --el-fill-color-lighter: #171a22;
+  --el-fill-color-extra-light: #14171f;
+  --el-fill-color-dark: #232838;
+  --el-fill-color-darker: #2a3040;
+  /* 全 src 从未定义、深底下必须补的三组（v-loading 遮罩会落回 EP 的白色默认） */
+  --el-mask-color: rgba(15, 17, 23, 0.8);
+  --el-mask-color-extra-light: rgba(15, 17, 23, 0.3);
+  --el-box-shadow: 0 12px 32px 4px rgb(0 0 0 / 36%), 0 8px 20px rgb(0 0 0 / 28%);
+  --el-box-shadow-light: 0 0 12px rgb(0 0 0 / 60%);
+  --el-box-shadow-lighter: 0 0 8px rgb(0 0 0 / 48%);
+}
+
+/* 漂移光晕（2026-11-14 提案②）：一团极淡靛青辉光 26s 巡游一次。
+   走 body::before（环境层伪元素）+ transform 位移（GPU 合成，不重绘）；
+   inset 负值外扩，位移时四角不露底。支持不了 @property 的浏览器：静态渐变描边照常渲染。 */
+[data-theme="liangzi"] body::before {
+  inset: -160px;
+  background: radial-gradient(420px 260px at 30% 30%, rgba(99, 91, 255, 0.07), transparent 70%);
+  animation: liangzi-drift 26s ease-in-out infinite alternate;
+}
+@keyframes liangzi-drift {
+  from { transform: translate(-60px, -40px); }
+  to { transform: translate(80px, 50px); }
+}
+/* 流动描边的角度变量（AppHomeView 消费）：注册成 <angle> 才能被动画驱动 */
+@property --qspin {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+/* 曜夜金边流光的角度变量（AppHomeView 消费，hover 时启用） */
+@property --yspin {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+/* 曜夜的两颗闪烁星（2026-11-14 提案①的"活的"部分；其余静态星在 --cc-grain-image 的 tile 里）。
+   挂业务壳根节点——管理后台壳不给星（那是工作界面不是夜空）。 */
+[data-theme="yaoye"] .app-shell::before,
+[data-theme="yaoye"] .app-shell::after {
+  content: '';
+  position: fixed;
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: #f0f2f8;
+  pointer-events: none;
+  z-index: 98;
+  animation: kb-star-twinkle 5s ease-in-out infinite;
+}
+[data-theme="yaoye"] .app-shell::before { top: 14%; left: 64%; }
+[data-theme="yaoye"] .app-shell::after {
+  top: 58%;
+  left: 86%;
+  background: #f0c87e;
+  animation-duration: 7.5s;
+  animation-delay: 1.8s;
+}
+@keyframes kb-star-twinkle {
+  0%, 100% { opacity: 0.15; transform: scale(1); }
+  50% { opacity: 0.85; transform: scale(1.35); }
+}
+
+/* ================= 素雅首页签名：统计卡/面板无描边 + hover 描边 + 鎏金装裱线 ================= */
+[data-theme="suya"] .stat,
+[data-theme="suya"] .panel {
+  border-color: transparent;
+  position: relative;
+  overflow: hidden;
+}
+[data-theme="suya"] .stat--link:hover,
+[data-theme="suya"] .panel:hover {
+  border-color: var(--cc-border-card);
+}
+[data-theme="suya"] .stat::before,
+[data-theme="suya"] .panel::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 18px;
+  right: 18px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(184, 147, 90, 0.5), transparent);
+  opacity: 0;
+  transition: opacity 0.25s var(--ease, ease);
+}
+[data-theme="suya"] .stat--link:hover::before,
+[data-theme="suya"] .panel:hover::before { opacity: 1; }
+/* hover 墨晕（2026-11-14 提案②）：青瓷色从卡顶淡淡洇开（::after 不与鎏金线 ::before 打架）。
+   浮起 1px 在 AppHomeView scoped（页面签名同处）；这里只管 ::after。 */
+[data-theme="suya"] .stat::after,
+[data-theme="suya"] .panel::after {
+  content: '';
+  position: absolute;
+  inset: -30% -10% auto;
+  height: 130%;
+  pointer-events: none;
+  background: radial-gradient(closest-side, rgba(47, 125, 109, 0.14), transparent);
+  opacity: 0;
+  transition: opacity 0.45s var(--ease, ease);
+}
+[data-theme="suya"] .stat--link:hover::after,
+[data-theme="suya"] .panel:hover::after { opacity: 1; }
+
+/* 曜夜的首页签名（金→暗渐变描边 + hover 外发光 + 数字微光 + 聚焦金晕，稿 L626-640）
+   **不在这里**而在 AppHomeView 的 scoped 里（量子的签名同款位置）——
+   .stat/.quick 的底色与焦点阴影由组件 scoped 样式声明，比本文件后加载、同特异性 ⇒
+   写在这里会被压掉（实测 backgroundImage 落空）。素雅的签名能放这里是因为
+   它只动 border-color 和 ::before，不与 scoped 声明打架。 */
+
+/* ================= 全页质感层（素雅=纸纹 / 量子=细网格+主格线 / 曜夜=星尘 / 本色=无） ================= */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+  pointer-events: none;
+  opacity: var(--cc-grain-opacity);
+  mix-blend-mode: var(--cc-grain-blend);
+  background-image: var(--cc-grain-image);
+}
+/* ================= 全页环境层（2026-11-14）：氛围光，一主题一层 =================
+ * 画面来自 --cc-ambience（本色天光 = base.css 默认值；素雅/曜夜覆盖成晕影/暗角）。
+ * z-index 98：低于质感层(99)、低于 EP 浮层(2000+)——氛围只铺页面不罩弹窗。
+ * 量子的漂移光晕是动画层，单独写在下面它的专属规则里（同用这个伪元素）。 */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 98;
+  pointer-events: none;
+  background: var(--cc-ambience, none);
+}
+
+/* ================= 时钟拨针（复习面板 hover 彩蛋，AppHomeView 消费） ================= */
+@keyframes clock-tick {
+  0% { transform: rotate(0); }
+  45% { transform: rotate(-24deg); }
+  100% { transform: rotate(0); }
+}
+
+/* ================= 主题切换过渡：换风格是"换装"不是跳变 ================= */
+body,
+.app-shell,
+.app-side,
+.app-top,
+.app-content {
+  transition: background var(--t-slow, 300ms) var(--ease, cubic-bezier(0.2, 0.7, 0.3, 1));
+}
+
+/* ================= 减弱动效（2026-11-14 动效提案的统一关闸） =================
+ * 系统开了 reduce 时：漂移光晕 / 闪烁星 / 流动描边 / 数字呼吸全部静止，
+ * 静态形态保留（光晕停在基准位、描边回到静态渐变、微光回到 text-shadow 静态值）——
+ * 与加载层同一条口径：关动效，不关状态。 */
+@media (prefers-reduced-motion: reduce) {
+  body::before,
+  [data-theme="yaoye"] .app-shell::before,
+  [data-theme="yaoye"] .app-shell::after {
+    animation: none !important;
+  }
+  [data-theme="liangzi"] .stat,
+  [data-theme="liangzi"] .panel,
+  [data-theme="yaoye"] .stat--link,
+  [data-theme="liangzi"] .stat__num,
+  [data-theme="yaoye"] .stat__num {
+    animation: none !important;
+  }
+}

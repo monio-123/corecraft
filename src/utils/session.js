@@ -4,6 +4,7 @@ import request from './request'
 import { getMenuPaths, getMenuTree, getToken, onAuthChange, savePermissions, saveMenuTree } from './auth'
 import { createLoadSlot, loadOnce, resetSlot } from './lazyLoad'
 import { loadRemotePrefs } from './uiPrefs'
+import { migrateThemeToConfig } from './theme'
 
 /**
  * 会话引导的加载状态。
@@ -90,7 +91,9 @@ export function bootstrapSession({ force = false } = {}) {
     // 放在会话引导里，是因为它也得等登录态才拿得到（每个用户自己那份），
     // 而且引导是在守卫里 await 的 ⇒ 页面出来时偏好已经就位，不会先闪一下默认值。
     // 拉不到不牵连引导：界面偏好在后端挂了不该拦住用户干活（loadRemotePrefs 自己吞掉）。
-    loadRemotePrefs()
+    // 主题（界面风格）迁移排在它后面：要等后端的偏好值回来才知道"配置树里还没有主题键"，
+    // 这时才把老 localStorage['ui-theme'] 的存量选择推进配置树（推完即幂等）。
+    loadRemotePrefs().then(migrateThemeToConfig)
     return {
       menuTree: getMenuTree(),
       menuPaths: getMenuPaths(),

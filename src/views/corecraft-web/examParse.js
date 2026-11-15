@@ -377,59 +377,71 @@ export function parseGrade(text) {
 }
 
 /**
- * 计分。**判定 → 分数的折算只在这里定一次。**
- *
- * <p>分值来自**题量结构**（`题型|道数|分值`）：题型 → 每题分值。
- * 判定只有三档（判分规范里写死的）：对 / 部分对 / 错
- * ⇒ **对 = 满分，部分对 = 一半，错 = 0**。
+ * 计分。**判定 → 分数的折算只在这里定一次**（`verdictRatioOf` + `paperScore`）：
+ * 判定只有三档（判分规范里写死的）：对 / 部分对 / 错 ⇒ 对 = 满分，部分对 = 一半，错 = 0。
  * 选择题（单选/多选/填空）判分规范只给对/错 ⇒ 只有 0 和满分两档。
  *
- * <p>**满分按实际出的题算**：模型少出题时，卷子就按出的那些题定分
- * （题量结构是上限，不是必须出满 —— 见 `ai.prompt.exam.paper`）。
- *
- * <p>放在这儿而不是 `AppExamView.vue` 里：**纯函数、能直接跑**（判分链要能整条验），
- * 顺带 SFC 里那份"折算规则"也就不用再抄一遍。**只导出 `paperScore`** ——
- * 折算和查表都是它的内部事。
+ * <p>放在这儿而不是 `AppExamView.vue` / `ExamRunner.vue` 里：**纯函数、能直接跑**
+ * （判分链要能整条验），调用方都从这一份取折算，谁也不许再写一遍
+ * "对 = 满分 / 部分对 = 一半 / 错 = 0"。
  */
-
-/** 题型 → 每题分值 */
-function scoreMapOf(sections) {
-  return Object.fromEntries((sections || []).map((s) => [s.type, s.score]))
-}
 
 /**
- * 判定 + 这道题的分值 → 得了多少分。
- * 折算比例从 VERDICTS 那张表取（`ratio`）—— 判定词只存在一份，
- * 这里不再写一遍"对 = 满分 / 部分对 = 一半 / 错 = 0"。
+ * 判定 → 得分比例。**未判定返回 null，不是 0** ——
+ * 0 是「判错」那一档的值；把未判定当 0 就是设计 §12.4 说的「隐含零分路径」，
+ * 整卷成绩会和知识点证据打架（证据那边未判定不产生，成绩这边却按 0 分算）。
  */
-function pointsOf(verdict, score) {
-  const hit = VERDICTS.find((v) => v.verdict === verdict)
-  return hit ? score * hit.ratio : 0
+export function verdictRatioOf(verdict) {
+  return VERDICTS.find((v) => v.verdict === verdict)?.ratio ?? null
 }
 
 /**
  * 一张卷子的计分结果。
  *
- * @param {Array} questions 解析出来的题
+ * <p>**每题分值随卷定型**：出卷时从题量结构（`题型|道数|分值`）抄到每道题的
+ * `maxScore` 上（没配这一型就按 `DEFAULT_SCORE`）——存库后卷子和题量结构脱钩，
+ * 回看历史卷时按的还是当年那张卷的分值。
+ *
+ * <p>**未判定不得落 0**（设计 §12.4 / §10.4）：未判定的题 `graded: false`、
+ * `points: null`，**不进合计**（`sum` 只算已判定的题），也**不算答错**。
+ * 整卷满分 `total` 照全卷算——与 `kp_exam_attempt.max_score` 同口径，
+ * 刷新前后「得分 / 满分」两个数才不会变。
+ *
+ * @param {Array} questions 解析出来的题（每题带 `maxScore`）
  * @param {Object} grades 题号 → 判定（`parseGrade` 的结果）
- * @param {Array} sections 题量结构（`{type, count, score}`）
  * @returns {{items: Object, sum: number, total: number}}
- *   `items` = 题号 → `{ weight, points }`（这道题值多少分、得了多少分）
+ *   `items` = 题号 → `{ weight, points, graded }`
  */
-export function paperScore(questions, grades, sections) {
-  const scoreMap = scoreMapOf(sections)
+export function paperScore(questions, grades) {
   const items = {}
   let sum = 0
   let total = 0
-  for (const q of questions) {
-    // 题量结构里没配这一型 ⇒ 默认分（和"分值可省"的默认一致）
-    const weight = scoreMap[q.type] ?? DEFAULT_SCORE
-    const points = pointsOf(grades[q.no]?.verdict, weight)
-    items[q.no] = { weight, points }
+  for (const q of questions || []) {
+    const weight = q.maxScore ?? DEFAULT_SCORE
+    const ratio = verdictRatioOf(grades?.[q.no]?.verdict)
+    const graded = ratio != null
+    items[q.no] = { weight, points: graded ? weight * ratio : null, graded }
     total += weight
-    sum += points
+    if (graded) sum += weight * ratio
   }
   return { items, sum, total }
+}
+
+/**
+ * 分数的写法：**整数就写整数，有小数就留一位**（部分对 = 一半分 ⇒ 会出现 .5）。
+ *
+ * <p>**只有这一份**：ExamRunner 的成绩卡和考试记录页显示的是同一种分数，
+ * 两处各写一遍迟早一处改了另一处没改（显示出来"2"和"2.0"混着出现，没人报错）。
+ *
+ * <p>⚠️ **null 不是 0**（设计 §12.4「隐含零分路径」在显示层的同一条线）：
+ * 没有数就返回空串，由调用方补自己的文案（「未出分」「未判定」）——
+ * 这里要是把 null 当 0 格式化，界面上就会冒出一个假的 0 分。
+ */
+export function fmtScore(n) {
+  if (n == null) return ''
+  const v = Number(n)
+  if (!Number.isFinite(v)) return ''
+  return Number.isInteger(v) ? String(v) : v.toFixed(1)
 }
 
 /**
@@ -439,20 +451,22 @@ export function paperScore(questions, grades, sections) {
  * 没有标准答案，模型只能按自己的理解判，分数就没有意义。
  */
 export function buildPaperText(questions, answers) {
-  const parts = []
-  for (const q of questions) {
-    const lines = [`## ${q.no}（${q.typeLabel}）`, q.stem]
-    for (const o of q.options) lines.push(`${o.label}. ${o.text}`)
-    if (q.isOpen) {
-      lines.push('参考答案：')
-      for (const p of q.answerPoints) lines.push(`- ${p}`)
-    } else {
-      lines.push(`标准答案：${q.answer}`)
-    }
-    lines.push(`考生作答：${describeAnswer(q, answers[q.no])}`)
-    parts.push(lines.join('\n'))
+  return (questions || [])
+    .map((q) => [...questionLines(q), `考生作答：${describeAnswer(q, answers?.[q.no])}`].join('\n'))
+    .join('\n\n')
+}
+
+/** 一道题的卷面文本（题头 + 题干 + 选项 + 标准答案/要点）。判卷与归属共用这一份 */
+function questionLines(q) {
+  const lines = [`## ${q.no}（${q.typeLabel}）`, q.stem]
+  for (const o of q.options) lines.push(`${o.label}. ${o.text}`)
+  if (q.isOpen) {
+    lines.push('参考答案：')
+    for (const p of q.answerPoints) lines.push(`- ${p}`)
+  } else {
+    lines.push(`标准答案：${q.answer}`)
   }
-  return parts.join('\n\n')
+  return lines
 }
 
 /** 考生这一题答了什么（给模型看的那句话） */
@@ -470,6 +484,114 @@ export function describeAnswer(q, answer) {
   }
   if (!a.picked?.length) return '（未作答）'
   return a.picked.map((i) => q.options[i]?.label || '').join('')
+}
+
+// ==================== 证据归属（出题后独立的第二步，设计 §4.2） ====================
+//
+// 出题时**不做**归属硬约束（§4.1：题目质量优先于知识归属）；出完题再由一次
+// 紧凑的 AI 调用解释「每道题实际在考哪条知识」。**归属失败不阻塞考试**：
+// 试卷照常生成照常考，没归属的题不进掌握度，事后可以补做（saveAttribution
+// 会按新归属重建证据）。
+//
+// ⚠️ **输出格式和解析器是同一份契约，所以放在一起**（同 JUDGE_CHOICES 的理由）：
+// 提示词里那段「输出格式」和下面的正则改一处就得改两处，分开放必然漂。
+// 也正因为这样，归属格式**不进可编辑配置**——管理员改配置 = 静默改坏解析器。
+
+/**
+ * 归属行：`归属：123 | 0.6`。一道题可写多行（主考 + 辅考）。
+ * 权重可省（默认 1 = 主考独占这道题）。
+ */
+const ATTRIB = /^\s*归属\s*[:：]\s*(.+)$/
+
+/** 「不归属」的几种写法（含英文，模型夹生写法不该让解析器翻脸） */
+const ATTRIB_NONE = /^(?:不归属|无归属|unattributed|none)$/i
+
+/**
+ * 拼「证据归属」那一次 AI 调用的提示词。
+ *
+ * <p>**候选列表带 id**：模型输出按 id 认领，不做「按名字猜 id」——
+ * 同名知识点是真实存在的（历史上出现过同目录同名两条），按名字回填就是抽奖。
+ * **候选不是默认答案**（§4.2「随堂测验的 scope_default 候选归属仍须确认」）：
+ * 没考候选里的任何一条就写「不归属」，这一条是防「整卷平均归给范围内所有知识点」。
+ *
+ * @param {Array<{id: number, title: string}>} candidates 候选知识点（= 这次出题的范围）
+ */
+export function buildAttributionPrompt({ candidates }) {
+  const lines = [
+    '下面是一份试卷。逐题判断每道题实际在考哪个知识点，给出知识归属。你只能解释题目考什么，不能改写题目。',
+    '',
+    '规则：',
+    '- 只能从候选知识点里选。候选不是默认答案：题目实际没考候选里的任何一条，就写「不归属」。',
+    '- 一道题可以归属给多条知识点，但同一条题的权重总和不能超过 1：只考一条就写权重 1（主考）；同时涉及多条时主考权重最高、辅考更低（比如 0.6 和 0.4）。',
+    '- 综合题无法可靠拆到具体知识点，或必须依赖系统外知识才能完整作答的，写「不归属」。',
+    '- 每道题都要给结果，没把握就写「不归属」，不要猜。',
+    '',
+    '候选知识点（id 是编号）：'
+  ]
+  for (const c of candidates || []) lines.push(`[${c.id}] ${c.title}`)
+  lines.push(
+    '',
+    '输出格式——每道题一个「## 题号」块；归属行写「归属：知识点id | 权重」，一道题可写多行；不归属写「归属：不归属」。下面的 id 只是格式示例，输出时用候选列表里的 id：',
+    '## 1',
+    '归属：1001 | 1',
+    '## 2',
+    '归属：1001 | 0.6',
+    '归属：1002 | 0.4',
+    '## 3',
+    '归属：不归属'
+  )
+  return lines.join('\n')
+}
+
+/**
+ * 拼归属调用的材料：题干 + 选项 + 标准答案/要点（**不带考生作答**——
+ * 归属看的是「这题想考什么」，不是「考生答成什么样」）。
+ */
+export function buildAttributionText(questions) {
+  return (questions || []).map((q) => questionLines(q).join('\n')).join('\n\n')
+}
+
+/**
+ * 解析归属输出。
+ *
+ * <p>**只认候选范围内的 id**（候选外的一律丢）：后端还会校验 user_id，
+ * 这道闸挡的是「模型顺手写了个别的 id」和「把整卷平均归给范围」的花活。
+ * 权重超过 1 按 1 收、同一题的权重和超过 1 按比例压回 1（§4.4：
+ * 「同一评分单位的权重总和不得超过 1」）——主辅的比例关系保留。
+ *
+ * @param {string} text 模型的归属输出
+ * @param {Set<number>|Array<number>} candidateIds 允许的知识点 id
+ * @returns {Object} 题号 → `[{ topicId, topicWeight }]`；不归属/没解析出来 = 空数组
+ */
+export function parseAttribution(text, candidateIds) {
+  const allowed = candidateIds instanceof Set ? candidateIds : new Set(candidateIds || [])
+  const out = {}
+  for (const block of splitBlocks(text, GRADE_HEAD, null)) {
+    const items = []
+    for (const raw of block.lines) {
+      const m = String(raw).match(ATTRIB)
+      if (!m) continue
+      const content = m[1].trim()
+      if (ATTRIB_NONE.test(content)) continue
+      // 一行可以挤多对（`123 | 0.6，456 | 0.4`），按分隔符拆开逐对认
+      for (const part of content.split(/[,，、]/)) {
+        const p = part.trim()
+        if (!p) continue
+        const [idText, weightText] = p.split(/[|｜]/)
+        const id = Number(String(idText).trim())
+        if (!Number.isInteger(id) || id <= 0 || !allowed.has(id)) continue
+        const w = weightText === undefined ? 1 : Number(String(weightText).trim())
+        if (!Number.isFinite(w) || w <= 0) continue
+        items.push({ topicId: id, topicWeight: Math.min(1, w) })
+      }
+    }
+    if (items.length) {
+      const sum = items.reduce((n, it) => n + it.topicWeight, 0)
+      if (sum > 1) for (const it of items) it.topicWeight = Math.round((it.topicWeight / sum) * 100) / 100
+    }
+    out[block.no] = items
+  }
+  return out
 }
 
 // ==================== 内部 ====================

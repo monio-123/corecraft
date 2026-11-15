@@ -40,7 +40,18 @@
       />
     </section>
 
-    <section v-if="check" class="lab__check" :class="check.ok ? 'is-ok' : 'is-bad'">
+    <!-- ⚠️ §5.1 #10：判定三档并到全站的 .kb-verdict 一族。
+         原来这里是 `.lab__check` + `is-ok` / `is-bad`，**自己写了一套颜色**
+         （EP 的 #67c23a 绿 / #f56c6c 红）⇒ 与考试页那三档是两套。
+         ⇒ 挂上 .kb-verdict 标记类，档位名用那一族的 `is-good` / `is-bad`
+         （注意 `is-bad` 这个名字别处也在用 —— 拖拽落点、目录名校验 ——
+         它们**没有** .kb-verdict 这道标记类，所以不会被这一族染色）。
+         ⇒ 局部那两条颜色规则删掉，颜色只从 kb.css 的 .kb-verdict 来。 -->
+    <section
+      v-if="check"
+      class="lab__check kb-verdict"
+      :class="check.ok ? 'is-good' : 'is-bad'"
+    >
       <p class="lab__checkTitle">{{ check.ok ? '往返稳定' : '往返不稳定 —— 这就是刷新后走样的那种内容' }}</p>
       <pre v-if="!check.ok">{{ check.detail }}</pre>
     </section>
@@ -245,7 +256,8 @@ async function copyMd() {
   font-size: 18px;
 }
 .lab__note {
-  color: #909399;
+  /* §5.1 #10：#909399（旧 EP 灰）→ --cc-text-3 */
+  color: var(--cc-text-3);
   font-size: 12px;
 }
 .lab__presets {
@@ -256,7 +268,8 @@ async function copyMd() {
   margin: 12px 0;
 }
 .lab__label {
-  color: #606266;
+  /* §5.1 #10：#606266（旧 EP 灰）→ --cc-text-2 */
+  color: var(--cc-text-2);
   font-size: 13px;
   margin-right: 6px;
 }
@@ -278,10 +291,13 @@ async function copyMd() {
   width: 100%;
   min-height: 180px;
   padding: 10px;
-  font-family: ui-monospace, Menlo, Consolas, monospace;
+  /* §5.1 #9：mono 字体栈提成 --font-mono（base.css）——
+     原来这里、kb-editor.css 的 code、Config/EditorLab 各写一份。 */
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.6;
-  border: 1px solid #dcdfe6;
+  /* §5.1 #10：#dcdfe6（旧 EP 灰）→ --cc-border-strong */
+  border: 1px solid var(--cc-border-strong);
   border-radius: 4px;
   resize: vertical;
 }
@@ -290,14 +306,11 @@ async function copyMd() {
   padding: 10px 12px;
   border-radius: 4px;
   font-size: 13px;
-}
-.lab__check.is-ok {
-  background: #f0f9eb;
-  color: #67c23a;
-}
-.lab__check.is-bad {
-  background: #fef0f0;
-  color: #f56c6c;
+  /* ⚠️ 原来的 `.lab__check.is-ok` / `.is-bad` 两条（EP 的 #f0f9eb/#67c23a 与
+     #fef0f0/#f56c6c）已删（§5.1 #10）：颜色改从全站的 .kb-verdict 一族来
+     （kb.css）—— 判定三档只该有一处定义。
+     底色用那一族的 --kb-verdict-tint 混出来（与 ExamRunner 的 chip 同一手法）。 */
+  background: color-mix(in srgb, var(--kb-verdict-color, transparent) var(--kb-verdict-tint, 12%), transparent);
 }
 .lab__checkTitle {
   margin: 0 0 6px;
@@ -307,7 +320,8 @@ async function copyMd() {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-all;
-  color: #303133;
+  /* §5.1 #10：#303133（旧 EP 文字色）→ --cc-text-1 */
+  color: var(--cc-text-1);
   font-size: 12px;
 }
 </style>

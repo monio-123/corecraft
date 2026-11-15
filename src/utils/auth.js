@@ -73,12 +73,22 @@ export function savePermissions(permissions = []) {
   localStorage.setItem(PERMISSIONS_KEY, JSON.stringify(permissions || []))
 }
 
-export function getPermissions() {
+/**
+ * 读 localStorage 里的 JSON 数组，读不出来（脏数据）当空数组。
+ *
+ * 三个读口（permissions / menu_tree / menu_paths）原来各写一遍同样的 try/catch，
+ * 规则一样但改一处要记得改另两处 ⇒ 收到这里一份。
+ */
+function readJsonArray(key) {
   try {
-    return JSON.parse(localStorage.getItem(PERMISSIONS_KEY) || '[]')
+    return JSON.parse(localStorage.getItem(key) || '[]')
   } catch {
     return []
   }
+}
+
+export function getPermissions() {
+  return readJsonArray(PERMISSIONS_KEY)
 }
 
 export function hasPermission(code) {
@@ -106,19 +116,11 @@ export function saveMenuTree(menuTree = []) {
 }
 
 export function getMenuTree() {
-  try {
-    return JSON.parse(localStorage.getItem(MENU_TREE_KEY) || '[]')
-  } catch {
-    return []
-  }
+  return readJsonArray(MENU_TREE_KEY)
 }
 
 export function getMenuPaths() {
-  try {
-    return JSON.parse(localStorage.getItem(MENU_PATHS_KEY) || '[]')
-  } catch {
-    return []
-  }
+  return readJsonArray(MENU_PATHS_KEY)
 }
 
 export function clearAuth() {

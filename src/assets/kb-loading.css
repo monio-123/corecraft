@@ -1,0 +1,278 @@
+/* ============================================================
+ * 统一加载层（2026-11-13 建）
+ *
+ * ## 这是什么
+ * 全站"正在取数据"的**唯一**表现层：加载图形、骨架、忙碌态三种形态都在这里定义，
+ * 组件只负责"用哪种形态"，不自己画图形。
+ *
+ * ## 一套语义，四种形态
+ *   ① 页面/列表骨架   —— 大块内容未知形状 ⇒ 用结构占位（同构骨架）
+ *   ② 紧凑局部指示   —— 小区域取数 ⇒ 用一行小图形（**160ms 后才出现**，快请求不闪）
+ *   ③ 按钮忙碌态     —— 提交类操作 ⇒ 图形 + 文案，按钮宽度不许变
+ *   ④ 真实业务进度   —— **不在这里**。AI 逐条归类、后台任务、答题进度、自动保存
+ *                        都是"真实的进度"，不是"在加载"，统一成转圈是信息倒退。
+ *
+ * ## 主题必须适配（**加新主题时必看**）
+ * 主题层（assets/themes.css）要覆盖下面两组 token：
+ *   --kb-load-*   加载签名：轨道色 / 强调色 / 中心点 / 周期 / 图形开关
+ *   --kb-skel-*   骨架材质：底色 / 高光 / 扫光周期 / 圆角
+ * ⚠️ **只复制颜色 token 不算适配完成** —— 加载签名是主题气质的一部分，
+ *    新主题必须挑一个与它相配的图形（环形 / 横线 / 双轨…），
+ *    并用 --kb-load-*-display 这类开关切过去。
+ *    完整清单见 brove-skills/corecraft-web-context/SKILL.md「主题适配清单」。
+ *
+ * ## 不做什么
+ *   ✘ 不做全局 Axios 计数 + 全屏遮罩（缓存命中也变遮罩 ⇒ 到处都在闪）
+ *   ✘ 不改 DOM（骨架用元素占位，不去动真实内容的样式）
+ * ============================================================ */
+
+:root {
+  /* ---------- 动效 token（全站唯一来源） ----------
+   * 原来代码里到处在消费 var(--t-fast, 140ms) / var(--t-slow, 300ms) / var(--ease, ease)
+   * —— 那些是**带 fallback 的读取**，说明定义从来没建过 ⇒ 每个调用点各自兜底、
+   * 值开始漂移（themes.css 里的 cubic-bezier(...) 和别处的 ease 不是一条曲线）。
+   * 现在正式定义，组件直接读 var(--t-fast) 不写 fallback。 */
+  --t-fast: 140ms;
+  --t-slow: 300ms;
+  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+
+  /* ---------- 加载签名（本色 = 默认；其它主题各自覆盖） ----------
+   * track    轨道色（未完成的弧）
+   * accent   强调色（正在走的弧）
+   * dot      中心点色
+   * speed    一个完整周期
+   * ring-display / pages-display / inner-opacity / dot-opacity
+   *          **图形开关**：主题挑哪种签名就切哪个，
+   *          组件结构是固定的（见 KbLoader.vue）⇒ 换主题不用碰组件。 */
+  --kb-load-track: #e5efff;
+  --kb-load-accent: #2b7fff;
+  --kb-load-dot: transparent;
+  --kb-load-speed: 0.9s;
+  --kb-load-ring-display: block;
+  --kb-load-pages-display: none;
+  --kb-load-inner-opacity: 0;
+  --kb-load-dot-opacity: 0;
+  /* 中心点的两个可选项（默认都关）：曜夜用它合成「脉动金点」——
+     dot-anim 给动画名（none=静点，量子的形态），glow 给光晕（none=无）。 */
+  --kb-load-dot-anim: none;
+  --kb-load-glow: none;
+
+  /* ---------- 骨架材质 ---------- */
+  --kb-skel-base: #edf1f5;
+  --kb-skel-shine: rgba(255, 255, 255, 0.82);
+  --kb-skel-speed: 1.45s;
+  --kb-skel-radius: 5px;
+}
+
+/* ============================================================
+ * 加载图形（KbLoader）
+ * ============================================================ */
+.kb-loader {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  vertical-align: middle;
+}
+/* 三档尺寸：局部指示（20）/ 默认（32）/ 大块居中（40） */
+.kb-loader--sm {
+  width: 20px;
+  height: 20px;
+}
+.kb-loader--lg {
+  width: 40px;
+  height: 40px;
+}
+
+/* 环形签名（本色 / 量子）：外弧走强调色，内弧反向走 —— 两个不同速的弧
+   合成"在转但不晃眼"的感觉，是这一族最省力的高级感。 */
+.kb-loader__ring {
+  display: var(--kb-load-ring-display);
+  position: absolute;
+  inset: 2px;
+  border: 2px solid var(--kb-load-track);
+  border-top-color: var(--kb-load-accent);
+  border-right-color: var(--kb-load-accent);
+  border-radius: 50%;
+  animation: kb-load-spin var(--kb-load-speed) linear infinite;
+}
+.kb-loader__ring--inner {
+  inset: 7px;
+  border-width: 1px;
+  border-color: var(--kb-load-track);
+  border-bottom-color: var(--kb-load-accent);
+  opacity: var(--kb-load-inner-opacity);
+  animation: kb-load-spin-rev 1.35s linear infinite;
+}
+/* 中心点（量子=静点 / 曜夜=脉动金点 + 光晕）。
+   动画名走 token（默认 none ⇒ 静点，不改变既有主题的形态）；
+   `animation: none <时长> <曲线> infinite` 合法（name=none 不播任何动画）。 */
+.kb-loader__dot {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--kb-load-dot);
+  opacity: var(--kb-load-dot-opacity);
+  box-shadow: var(--kb-load-glow);
+  animation: var(--kb-load-dot-anim) var(--kb-load-speed) var(--ease) infinite;
+}
+/* 横线签名（素雅）：三根不等长的横线依次呼吸 —— 墨迹行，不转。 */
+.kb-loader__pages {
+  display: var(--kb-load-pages-display);
+  width: 24px;
+  height: 25px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+}
+.kb-loader__pages i {
+  display: block;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--kb-load-accent);
+  transform-origin: left;
+  animation: kb-load-ink 1.5s var(--ease) infinite;
+}
+.kb-loader__pages i:nth-child(1) { width: 19px; }
+.kb-loader__pages i:nth-child(2) { width: 23px; animation-delay: 0.16s; }
+.kb-loader__pages i:nth-child(3) { width: 14px; animation-delay: 0.32s; }
+
+@keyframes kb-load-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes kb-load-spin-rev {
+  to { transform: rotate(-360deg); }
+}
+@keyframes kb-load-ink {
+  0%, 100% { opacity: 0.28; transform: scaleX(0.75); }
+  45% { opacity: 1; transform: scaleX(1); }
+}
+/* 曜夜的星核：中心点呼吸（透明度 + 缩放），不转。 */
+@keyframes kb-load-pulse {
+  0%, 100% { opacity: 0.45; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.6); }
+}
+
+/* ============================================================
+ * 骨架（KbSkeleton）
+ * 扫光是"一道光掠过灰块"—— 不是旋转，是横向平移。
+ * ============================================================ */
+.kb-skel {
+  position: relative;
+  overflow: hidden;
+  background: var(--kb-skel-base);
+  border-radius: var(--kb-skel-radius);
+  /* ⚠️ **必须 display:block**（2026-11-13 实测踩到）：
+     骨架元素是 <span>，默认 inline ⇒ inline 元素上的 height 不生效
+     （height 对 inline 盒子无效）⇒ 骨架塌成一条线、卡片高度只有 62px 而不是 101px。
+     父级是 flex 容器时 flex item 会被 blockify，但**放在普通 div 里就不是**
+     （详情页的段落骨架就是直接挂在 div 下的）。
+     ⇒ 这里显式 block，全站一致，不依赖父级是什么。 */
+  display: block;
+}
+.kb-skel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, var(--kb-skel-shine), transparent);
+  animation: kb-skel-shimmer var(--kb-skel-speed) infinite;
+}
+@keyframes kb-skel-shimmer {
+  to { transform: translateX(100%); }
+}
+
+/* 尺寸档（内容形状由组件侧的修饰类决定） */
+.kb-skel--chip { width: 34px; height: 17px; }
+.kb-skel--title { width: 72%; height: 13px; }
+.kb-skel--line { width: 100%; height: 8px; }
+.kb-skel--line-short { width: 58%; }
+.kb-skel--line-mid { width: 82%; }
+.kb-skel--doctitle { width: 40%; height: 23px; }
+.kb-skel--meta { width: 32%; height: 8px; }
+
+/* ============================================================
+ * 状态行：小图形 + 一句话（局部取数 / 出错 / 空态）
+ * ============================================================ */
+.kb-state-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-8);
+  padding: var(--sp-13) 0;
+  color: var(--cc-text-3);
+  font-size: var(--text-sm);
+}
+.kb-state-line--left {
+  justify-content: flex-start;
+}
+
+/* ============================================================
+ * 按钮忙碌态：图形 + 文案，**宽度不许变**
+ * 忙碌态文案比常态长（"保存修改"→"保存中"），不锁宽的话按钮会一跳一跳。
+ * 用 min-width 锁住的是按钮自己的内容宽，具体宽度由调用方给 .kb-busy。
+ * ============================================================ */
+.kb-busy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-6);
+}
+/* 忙碌态里的图形尺寸跟着字号走（1em 的方块），不该是一枚 32px 的独立图形。 */
+.kb-busy .kb-loader {
+  width: 1em;
+  height: 1em;
+}
+.kb-busy .kb-loader__ring {
+  inset: 0;
+  border-width: 2px;
+}
+.kb-busy .kb-loader__ring--inner {
+  display: none;
+}
+.kb-busy .kb-loader__dot {
+  width: 3px;
+  height: 3px;
+}
+
+/* ============================================================
+ * 内容淡入：加载完成后新内容短促地落位（160ms，不做长距离滑屏）
+ *
+ * ⚠️ **当前没有任何地方并这个类**（2026-11-13 核）—— 它是加载层的**工具类**，
+ * 和 `kb-skel` / `kb-loader` 同属一套口径，留给"骨架退场、真内容入场"用。
+ * 留着而不是删掉：删了以后谁想加这段动效就会在组件里另写一份 keyframes，
+ * 又是"同一个动效两处各写一遍"。要用就直接并 `kb-fade-in`。
+ * ============================================================ */
+.kb-fade-in {
+  animation: kb-content-in 160ms var(--ease) both;
+}
+@keyframes kb-content-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================================
+ * 减弱动效
+ * 系统级：prefers-reduced-motion。关掉旋转 / 扫光 / 位移，
+ * **但保留静态图形与「加载中…」文字** —— 状态仍然可辨识，
+ * 不能因为关了动效就看不出"在加载"。
+ * ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  .kb-loader__ring,
+  .kb-loader__pages i,
+  .kb-loader__dot {
+    animation: none !important;
+  }
+  .kb-skel::after {
+    display: none;
+  }
+  .kb-fade-in {
+    animation: none;
+  }
+  .kb-loader__pages i {
+    opacity: 0.7;
+  }
+}

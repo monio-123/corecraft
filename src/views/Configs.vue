@@ -9,16 +9,17 @@
           <el-radio-button value="system">系统默认</el-radio-button>
           <el-radio-button value="user">用户覆盖</el-radio-button>
         </el-radio-group>
-        <el-button @click="fetchAll">
-          <el-icon><Refresh /></el-icon>
-          刷新
-        </el-button>
+        <!-- 图标走 :icon 而不是默认插槽：EP 在 loading 时只跳过 icon 插槽，
+             默认插槽照渲染 ⇒ 写在里面会和转圈叠成两个图标 -->
+        <el-button :icon="Refresh" :loading="loading" @click="fetchAll">刷新</el-button>
       </div>
     </div>
 
     <div class="content" :class="{ 'content--single': view === 'user' }">
       <!-- 左：分类。**它只用来分类**，不摆配置项 -->
-      <div v-show="view === 'system'" class="panel">
+      <!-- 左栏要有"加载中"：表格空态的「暂无数据」被 admin-page.css 收掉了，
+           不给 loading 的话"正在拉"和"真的没有"看起来一模一样（§8 ④） -->
+      <div v-show="view === 'system'" v-loading="loading" class="panel">
 
         <el-tree
           :data="categoryTree"
@@ -39,9 +40,10 @@
 
       <!-- 右：这一类下面的一条条配置项 -->
       <div class="panel">
-        <el-empty v-if="view === 'system' && !currentCategory" description="请选择左侧分类" />
-
-        <template v-else-if="view === 'system'">
+        <!-- 没选中分类时这一格什么都不画（原来那句「请选择左侧分类」是指令口气，
+             而且加载中它就在说谎）。⚠️ 两个分支都得写死条件：`currentCategory` 为空时
+             不能落进「用户覆盖」那一支 -->
+        <template v-if="view === 'system' && currentCategory">
           <div class="panel-head">
             <div>
               <div class="panel__title">{{ currentCategory.name }}</div>
@@ -87,7 +89,7 @@
         </template>
 
         <!-- 用户覆盖：谁把哪一项改成了什么 -->
-        <template v-else>
+        <template v-else-if="view === 'user'">
           <div class="panel-head">
             <div>
               <div class="panel__title">用户覆盖</div>
@@ -160,12 +162,7 @@
           <el-input v-else v-model="itemForm.value" type="textarea" :rows="6" />
         </el-form-item>
         <el-form-item label="说明">
-          <el-input
-            v-model="itemForm.remark"
-            type="textarea"
-            :rows="3"
-            placeholder="例 范围 200~360，步长 4，单位 px"
-          />
+          <el-input v-model="itemForm.remark" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -202,8 +199,9 @@
  * "加一组配置" = 改代码 + 发版。现在加一组 = 在这儿建一个分类。
  */
 import { computed, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
+import { confirmAction } from '../utils/confirm'
 import {
   createConfigNode,
   deleteConfig,
@@ -331,7 +329,8 @@ function labelOf(configKey) {
 
 /** 删掉某用户的那份覆盖 = 那个用户恢复系统默认 */
 async function removeOverride(row) {
-  await ElMessageBox.confirm('删除这一条覆盖？那个用户就恢复成系统默认。', '提示', { type: 'warning' })
+  const ok = await confirmAction('删除覆盖')
+  if (!ok) return
   await deleteConfig(row.key, row.userId)
   await fetchAll()
 }
@@ -378,11 +377,8 @@ async function saveCategory() {
 }
 
 async function removeCategory(category) {
-  await ElMessageBox.confirm(
-    `删除分类「${category.name}」？它下面的配置项和它们的值会一起删掉。`,
-    '提示',
-    { type: 'warning' }
-  )
+  const ok = await confirmAction('删除分类')
+  if (!ok) return
   await deleteConfigNode(category.id)
   if (currentId.value === category.id) currentId.value = null
   ElMessage.success('已删除')
@@ -441,9 +437,8 @@ async function saveItem() {
 }
 
 async function removeItem(item) {
-  await ElMessageBox.confirm(`删除配置项「${item.name}」？它和它的值会一起删掉。`, '提示', {
-    type: 'warning'
-  })
+  const ok = await confirmAction('删除配置项')
+  if (!ok) return
   await deleteConfigNode(item.id)
   ElMessage.success('已删除')
   await fetchAll()
@@ -492,7 +487,9 @@ fetchAll()
 }
 
 .mono {
-  font-family: ui-monospace, Menlo, Consolas, monospace;
+  /* §5.1 #9：mono 字体栈提成 --font-mono（base.css）——
+     原来这里与 EditorLab 各写一份，两份会各自漂。 */
+  font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--cc-text-3);
 }

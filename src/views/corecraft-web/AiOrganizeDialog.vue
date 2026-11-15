@@ -2,7 +2,7 @@
   <el-dialog
     :model-value="modelValue"
     title="AI 归类"
-    width="540px"
+    width="var(--cc-dialog-w-md)"
     :close-on-click-modal="false"
     @update:model-value="close"
   >
@@ -11,7 +11,13 @@
     <p v-if="running" class="og__now">
       正在处理第 {{ finished + 1 }} / {{ rows.length }} 条
     </p>
-    <p v-else-if="error" class="og__warn">{{ error }}</p>
+    <!-- ⚠️ §4.11(o)：这个 `.og__warn` 一类两义 ——
+         ① 「生成失败」的**错误字**
+         ② 「会新建目录」的**高亮提示**
+         共用同一个黄色 warn 类 ⇒ 用户分不清"坏了"和"告知"。
+         ⇒ 拆成两个类：**黄色只留给真警告**（错误字），
+         信息提示（会新建目录）走主色（--cc-primary / --cc-primary-soft）。 -->
+    <p v-else-if="error" class="og__error">{{ error }}</p>
 
     <div class="og__list">
       <div
@@ -34,8 +40,11 @@
                摆出来，等于告诉用户"这是结果"，而它随时会变。 -->
           <template v-if="r.status !== 'running'">
             <p class="og__meta">
-              <!-- 要新建的用黄色：它还没建，用户一眼能看出"这行会多一个目录" -->
-              <span v-if="r.pick === NEW_CATEGORY" class="og__warn">
+              <!-- 要新建的用主色高亮：它还没建，用户一眼能看出"这行会多一个目录"。
+                   ⚠️ §4.11(o)：原来这里跟**错误字**共用黄色 warn 类 ⇒ 一类两义。
+                   ⇒ 信息提示走主色（--cc-primary / --cc-primary-soft），
+                   黄色只留给真警告（上面那个 .og__error）。 -->
+              <span v-if="r.pick === NEW_CATEGORY" class="og__new">
                 {{ newCategoryPath(r.newCategory, categories) }}
               </span>
               <span v-else-if="r.pick != null">目录：{{ pathOf(r.pick) }}</span>
@@ -60,11 +69,10 @@
     <template #footer>
       <!-- 跑着的时候**只有「停止」**。摆一个 disabled 的「采纳 0 条」在那儿，
            是禁用色却占着主按钮的位置，看着像能点（skill §2：不加没用的东西）。 -->
-      <el-button v-if="running" size="small" @click="close">停止</el-button>
+      <el-button v-if="running" @click="close">停止</el-button>
       <template v-else>
-        <el-button size="small" @click="close">取消</el-button>
+        <el-button @click="close">取消</el-button>
         <el-button
-          size="small"
           type="primary"
           :loading="saving"
           :disabled="!picked.length"
@@ -115,9 +123,9 @@
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ask as askAi, aiQuestions, ensureAiQuestionsLoaded } from './useAi'
-import { parseAdopt, categoryPathOf, newCategoryPath, NEW_CATEGORY } from './aiAdopt'
+import { parseAdopt, categoryPathOf, newCategoryPath, NEW_CATEGORY, newCategoryKey, createProposedCategories, unplacedNote } from './aiAdopt'
 import CategoryTreeSelect from './CategoryTreeSelect.vue'
-import { updateTopic, createCategory, excerptOf } from './useCorecraftWebStore'
+import { updateTopic, createCategory, refreshAfterTopicChange, excerptOf } from './useCorecraftWebStore'
 
 /**
  * organize 的机器标识。
@@ -221,7 +229,9 @@ async function start() {
       if (!parsed) {
         row.note = '这次没按要求的格式回答，跳过'
       } else {
-        const { newCategory, ...patch } = parsed
+        const { newCategory, unplaced, ...patch } = parsed
+        // 目录建议落空（上级不存在）⇒ 说明白，但**不影响这条的其他字段**
+        if (unplaced) row.note = unplacedNote(unplaced)
         if (patch.tags) {
           const existing = (list[i].tags || []).map((t) => t.name || t)
           patch.tags = [...new Set([...existing, ...patch.tags])]
@@ -249,37 +259,12 @@ async function start() {
 }
 
 /**
- * 建目录：**先把这一批提议的去重再建**。
- *
- * 18 条一起跑，模型很容易对好几条提同一个路径（「数据库/MySQL」）。不去重的话第二次
- * `createCategory` 会撞后端的重名校验（它抛「同一层下已有同名目录」），整批采纳就断
- * 在那里——前面的目录建了、后面的知识一条没写。**先去重是一次必要的批处理，不是兜底。**
- *
- * 去重的键是 **名字 + 父级**，不是光名字：唯一键就是 (user_id, parent_id, name)，
- * `数据库/JDBC` 和 `中间件/JDBC` 是两个不同的目录，都要建。
- *
- * **这一层和上面 `start()` 里那层用的是同一个键**（`newCategoryKey`）—— 之前是两套
- * 规则打架：上面按小写名字去重（概念级），这里按路径去重（位置级），
- * 结果上面那层先把不同父级的同名目录并成了一个，**这里这层永远算不出两个不同结果**，
- * 承诺的「都要建」做不到。
- *
- * 返回同样的键 → 新目录 id 的表。建不成的（重名等）不写进表，对应行就只写别的字段。
+ * 建目录：去重 + 逐个建的那段收在 `aiAdopt.js` 的 `createProposedCategories`
+ * （同步/异步两条采纳路共用；去重键 = `newCategoryKey`，与上面 `start()` 里那层同键）。
+ * 这里只留"怎么用"：返回 键 → 新目录 id 的表。
  */
-function newCategoryKey(nc) {
-  return `${nc.parentId ?? 0}/${nc.name}`
-}
-
 async function createProposed(rowsToApply) {
-  const unique = new Map()
-  for (const r of rowsToApply.filter((x) => x.pick === NEW_CATEGORY)) {
-    unique.set(newCategoryKey(r.newCategory), r.newCategory)
-  }
-  const byKey = new Map()
-  for (const [key, nc] of unique) {
-    const created = await createCategory(nc.name, nc.parentId ?? undefined)
-    if (created?.id != null) byKey.set(key, created.id)
-  }
-  return byKey
+  return createProposedCategories(rowsToApply, createCategory)
 }
 
 async function confirm() {
@@ -292,8 +277,11 @@ async function confirm() {
       const categoryId = r.pick === NEW_CATEGORY
         ? byKey.get(newCategoryKey(r.newCategory))
         : r.pick
-      await updateTopic(r.id, categoryId == null ? r.patch : { ...r.patch, categoryId })
+      // 批量写：每条都不刷（一条一刷 = 18 条 36 个索引请求 + 18 次列表重拉），
+      // 循环完统一刷一次——和 store 的 updateTopicsCategory 同一个口径。
+      await updateTopic(r.id, categoryId == null ? r.patch : { ...r.patch, categoryId }, { refresh: false })
     }
+    await refreshAfterTopicChange(targets.some((r) => r.patch?.tags !== undefined))
     ElMessage.success('已采纳')
     close()
     emit('done')
@@ -309,8 +297,18 @@ async function confirm() {
   color: var(--cc-text-3);
   font-size: var(--text-xs);
 }
-.og__warn {
-  color: var(--el-color-warning);
+/* §4.11(o)：`.og__warn` 一类两义拆开。
+   ① 错误字：**真警告** ⇒ 黄色（--cc-warning，不是 EP 的 --el-color-warning）。
+      ⚠️ EP 的 --el-color-warning(#e6a23c) 与 cc 的 --cc-warning(#d98a1f) 是两个黄，
+      同屏能看出"这个黄和那个黄不一样" ⇒ 全站统一 cc 那一支。
+   ② 「会新建目录」：**信息提示** ⇒ 主色（--cc-primary / --cc-primary-soft）。 */
+.og__error {
+  color: var(--cc-warning);
+  font-weight: 500;
+}
+.og__new {
+  color: var(--cc-primary);
+  font-weight: 500;
 }
 .og__list {
   max-height: 380px;
@@ -358,7 +356,9 @@ async function confirm() {
   content: ' ｜ ';
 }
 .og__note {
-  color: var(--el-color-warning);
+  /* §4.3(d)：EP 的 --el-color-warning(#e6a23c) → cc 的 --cc-warning(#d98a1f)。
+     全站同一个黄只有一支。 */
+  color: var(--cc-warning);
   font-size: var(--text-xs);
   line-height: 1.5;
 }

@@ -103,6 +103,12 @@ function quickGrow(share) {
  * - `ui.detail.detailAskW` **不在这里**：AI 抽屉宽度是 `el-drawer :size` 的 JS 值，
  *   不是 CSS 变量。EP 会给 `size` 拼 px 后缀，喂一个 `var(...)` 进去会变成
  *   `var(--detail-ask-w)px` —— 一个非法宽度，抽屉直接打不开。
+ *   ⚠️ 2026-11-06 订正（§9 的假阳性）：**上面那句技术理由不准确**。
+ *      已核 EP 2.9.10 的 `addUnit`：它对**非数字字符串原样返回**（不拼 px），
+ *      所以喂 `var(--x)` 得到的其实是合法值 —— 抽屉打不开的真正原因是
+ *      **别的原因**（size 走的是内联 style，那条路没走通）。
+ *      ⇒ 结论不变（这一项仍然是 JS 值、不进 CSS 变量），但**理由要按实情写**，
+ *      否则下一个人会照着错的技术理由做判断。
  * - `ui.detail.editorFs` 只接 `--editor-fs`，**不接 `--text-md`**：那是全站通用的字号
  *   token，侧边栏、顶栏、按钮、表格全在读它，接上去就是"整个站点跟着变大"。
  * - **没有「阅读宽度」**：详情页不再有任何宽度封顶（2026-10-21 删掉）。
@@ -118,7 +124,11 @@ const PREF_SPECS = {
       return { '--home-quick-grow': String(g.quick), '--home-tail-grow': String(g.tail) }
     }
   },
-  'ui.home.homePadX': { min: 0, max: 120, step: 4, unit: 'px', def: 32, css: (v) => ({ '--home-pad-x': `${v}px` }) },
+  // 首页左右内距。⚠️ **2026-11-11 改：def 32 → 44**。
+  // 这个键原来**零消费者**（面板里的滑块拖了没反应，AppLayout 的注释还写着
+  // 「左右留白交给偏好面板（--home-pad-x）」—— 注释在撒谎）。接上 CSS 之后，
+  // def 必须等于 .home 原来写死的 44px ⇒ **默认状态下视觉零变化**，滑块也终于能调了。
+  'ui.home.homePadX': { min: 0, max: 120, step: 4, unit: 'px', def: 44, css: (v) => ({ '--home-pad-x': `${v}px` }) },
   'ui.home.homeGap': { min: 0, max: 64, step: 4, unit: 'px', def: 24, css: (v) => ({ '--home-gap': `${v}px` }) },
   'ui.learn.learnGap': { min: 0, max: 48, step: 2, unit: 'px', def: 16, css: (v) => ({ '--learn-gap': `${v}px` }) },
   // **顶部间距**（内容整体离顶栏多远）。2026-11-04 加（用户：「这个一级目录 -> 二级目录
@@ -126,11 +136,14 @@ const PREF_SPECS = {
   // ⚠️ **它和「上下」（learnGap）不是一回事**：「上下」是区块**之间**的间距
   // （面包屑 / 筛选条 / 卡片区彼此隔多远），这个是**整体往上的偏移**（内容区离顶栏多远）
   // —— 用户原话：「目前的上下改的是每个框的上下间隔 不是整体往上的间隔」。
-  // 默认 16：原来跟通用 padding 一样是 32（--sp-15）⇒ 面包屑离顶栏太远。
-  'ui.learn.learnPadY': { min: 0, max: 48, step: 2, unit: 'px', def: 16, css: (v) => ({ '--learn-pad-y': `${v}px` }) },
-  'ui.learn.learnPadX': { min: 0, max: 120, step: 4, unit: 'px', def: 32, css: (v) => ({ '--learn-pad-x': `${v}px` }) },
+  // 默认 34 / 44（2026-11-08 晚改）：老稿 .main__inner 的 padding-top / padding-x
+  // （34px 44px 60px）—— 复刻后这两个滑块消费在 .learn 的版心 padding 上，默认值跟着老稿走。
+  'ui.learn.learnPadY': { min: 0, max: 48, step: 2, unit: 'px', def: 22, css: (v) => ({ '--learn-pad-y': `${v}px` }) },
+  'ui.learn.learnPadX': { min: 0, max: 120, step: 4, unit: 'px', def: 44, css: (v) => ({ '--learn-pad-x': `${v}px` }) },
   'ui.learn.learnGridGap': { min: 0, max: 48, step: 2, unit: 'px', def: 14, css: (v) => ({ '--learn-grid-gap': `${v}px` }) },
-  'ui.learn.learnPillPy': { min: 0, max: 20, step: 1, unit: 'px', def: 3, css: (v) => ({ '--learn-pill-py': `${v}px` }) },
+  // ⚠️ 2026-11-15 删掉 'ui.learn.learnPillPy'：`--learn-pill-py` 全仓零消费者
+  // ——面板里那根滑块拖了没反应（和 homePadX 那次同款）。真要调 pill 内距时
+  // 先把 CSS 接上，再把规格加回来。
   'ui.detail.detailTagsGap': { min: 0, max: 64, step: 2, unit: 'px', def: 20, css: (v) => ({ '--detail-tags-gap': `${v}px` }) },
   'ui.detail.detailTextInset': { min: 20, max: 96, step: 2, unit: 'px', def: 34, css: (v) => ({ '--detail-text-inset': `${v}px` }) },
   'ui.detail.editorFs': { min: 12, max: 20, step: 1, unit: 'px', def: 14, css: (v) => ({ '--editor-fs': `${v}px` }) },
@@ -166,6 +179,8 @@ const PREF_SPECS = {
   // **单独一项，不复用问答那一项**：两边形态不同 —— 问答是一问一答，420px 够；
   // 调整正文是**左右两栏并排对比**，420px 分两半每栏只剩 210px，读不下去 ⇒ 默认 720。
   'ui.detail.detailEditW': { min: 480, max: 1200, step: 20, unit: 'px', def: 720 }
+  // 「ui.detail.detailDockPinned」（Dock 固定开关，2026-11-08 v6 加）已随 v10 头部固定
+  // 改版整个退役（Dock 删除、头部常驻不需要"固定"），登记一并移除。
 }
 
 /** 探针值：只为拿到"这个键会写哪些变量名"，值本身不重要 */
@@ -187,6 +202,19 @@ const ALL_VARS = Object.keys(PREF_SPECS).flatMap(varNamesOf)
  * 树还没到的时候是空数组，面板就还没东西可画（会话引导会先把它拉回来）。
  */
 export const prefGroups = ref([])
+
+/**
+ * 配置树的**加载状态**（2026-11-13）。
+ *
+ * ⚠️ **为什么需要它**：面板原来靠 `!curItems.length` 判断"加载失败" ——
+ *   但**树还没到**和**树拉失败了**是两件事，前者是"正在加载"（该转圈），
+ *   后者才是"失败"（该说失败）。混成一句话 ⇒ 打开设置面板先看到一句"加载失败"，
+ *   然后树一到内容又出现 ⇒ 界面自己打自己的脸。
+ *
+ * 口径：idle（还没开始）/ loading（在飞）/ success（拿到了）/ failed（没拿到）。
+ * ⚠️ **唯一出口在这里**：面板不许自己猜，它只读这个状态。
+ */
+export const prefTreeState = ref('idle')
 
 /** 生效值（键 → 数字）：我的覆盖 > 系统默认 > 内置默认 */
 const effective = ref({})
@@ -219,7 +247,12 @@ function readCache() {
 
 function writeCache(obj) {
   localCache = obj
-  localStorage.setItem(PREF_KEY, JSON.stringify(obj))
+  try {
+    localStorage.setItem(PREF_KEY, JSON.stringify(obj))
+  } catch (e) {
+    // 存不了（隐私模式/配额）只影响"下次首屏快一点"，别把保存流程炸掉 ——
+    // 后端那份照样写。与 utils/theme.js 对老键的态度一致。
+  }
 }
 
 /**
@@ -278,6 +311,7 @@ export function applyUiPrefs() {
  */
 export async function loadRemotePrefs() {
   const cached = readCache()
+  prefTreeState.value = 'loading'
   try {
     const [cfgRes, nodeRes] = await Promise.all([
       getMyConfig(UI_NS).catch(() => null),
@@ -315,6 +349,8 @@ export async function loadRemotePrefs() {
     }
     effective.value = eff
     remoteLoaded = true
+    // 树有没有到，决定"面板是空的"到底是失败还是成功（空树也是成功）。
+    prefTreeState.value = nodeRes ? 'success' : 'failed'
     const written = pickExplicit(eff)
     applyPrefs(written)
     if (nodeRes) {
@@ -322,6 +358,7 @@ export async function loadRemotePrefs() {
     }
   } catch {
     // 拉不到就用本地缓存那份（applyUiPrefs 已经套过了）
+    prefTreeState.value = 'failed'
   }
 }
 

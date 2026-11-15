@@ -42,12 +42,6 @@ export function isRangeKind(kind) {
   return TIME_RANGES.some((r) => r.kind === kind)
 }
 
-/** 某个范围的名字（认不出来的按默认算）。 */
-export function rangeLabel(kind) {
-  const hit = TIME_RANGES.find((r) => r.kind === kind)
-  return hit ? hit.label : TIME_RANGES[0].label
-}
-
 const pad = (n) => String(n).padStart(2, '0')
 
 /** `yyyy-MM-dd HH:mm:ss`（本地）。和后端 `@DateTimeFormat` 的 pattern 一致。 */

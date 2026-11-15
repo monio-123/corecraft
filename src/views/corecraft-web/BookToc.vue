@@ -1,5 +1,5 @@
 <template>
-  <section class="toc">
+  <section>
     <!--
       树视图：**一个一级目录的整棵目录树**。
 
@@ -23,15 +23,25 @@
     -->
     <CategoryTree
       :items="items"
-      mode="nav"
       :active="active"
+      :mode="mode"
       :collapse-below-depth="1"
       @pick="(c) => emit('pick', c)"
       @pick-topic="(t) => emit('pick-topic', t)"
+      @mode-change="(m) => emit('mode-change', m)"
       @add="(c) => openCreate(c.id, c.name)"
       @rename="openRename"
       @points="openPoints"
-    />
+    >
+      <!-- 卡片模式的内容盒：**外层（AppLearnView）的卡片视图块**原样递下去 ——
+           和首页点进去的卡片视图是同一套（筛选条 + 分页网格），这里不自制第二套。 -->
+      <template v-if="$slots.cards" #cards>
+        <slot name="cards" />
+      </template>
+      <template v-if="$slots.tools" #tools>
+        <slot name="tools" />
+      </template>
+    </CategoryTree>
 
     <!-- 「给目录起个名」：新建子级 / 改名是同一个弹窗，靠 mode + initialId 区分。 -->
     <CategoryNameDialog
@@ -44,11 +54,18 @@
     />
 
     <!-- 给这个目录写知识点（目录现成，只写内容）。**跟生成主题不是一回事**：
-         那个建一整套（主题 → 骨架 → 知识点），这个只填内容。 -->
+         那个建一整套（主题 → 规划 → 知识点），这个只填内容。
+         两者都**提交任务到服务端**跑：关页面不断，进度在侧边栏「任务」里看。 -->
+    <!-- ⚠️ **@done 要绑**（2026-11-12）：这个弹窗提交任务之后要刷目录树和任务列表。
+         原来没绑 ⇒ 「写知识点」这条路上建完目录，侧边栏的树不刷新
+         （而 AppLayout 那份绑了 ⇒ 两条路表现不一致）。
+         任务列表的刷新由弹窗自己走统一出口（genTaskCreated），
+         这里这个回调只管**目录树 / 知识点列表**。 -->
     <CategoryTreeDialog
       v-model="pointsDialog.visible"
       mode="points"
       :category="pointsDialog.category"
+      @done="onTreeDone"
     />
   </section>
 </template>
@@ -72,9 +89,23 @@ const props = defineProps({
    * <p>树用它判断"要不要定位回刚才那一行"—— 页面被 keep-alive 缓存着，
    * **"我回来了"只有页面知道** ⇒ 由它传，不依赖后代组件的 activated 钩子。
    */
-  active: { type: Boolean, default: true }
+  active: { type: Boolean, default: true },
+  /** 这一屏的形态（'tree' | 'cards'）—— 状态在外层（AppLearnView 的 ？view=），这里只透传。 */
+  mode: { type: String, default: 'tree' }
 })
-const emit = defineEmits(['pick', 'pick-topic'])
+/**
+ * 弹窗建完结构（目录 + 知识点占位）并提交了任务 ⇒ 刷目录树。
+ *
+ * <p>⚠️ **只刷目录树**：任务列表由弹窗自己走统一出口（`genTaskCreated`），
+ * 这里不重复刷（刷两次就是两次请求）。
+ */
+function onTreeDone() {
+  emit('structure-done')
+}
+
+// ⚠️ **`structure-done`**（2026-11-12）：目录「写知识点」这条路建完结构后，
+// 目录树和知识点列表都要刷 —— 以前这个弹窗的 @done 没人绑 ⇒ 这条路上建完树不刷新。
+const emit = defineEmits(['pick', 'pick-topic', 'mode-change', 'structure-done'])
 
 /**
  * 树的根 = 当前目录。**用 computed 包一层**：`items` 每次渲染都新建一个数组的话，
@@ -87,10 +118,10 @@ const items = computed(() => [props.category])
 /**
  * 「给目录起个名」弹窗的状态。
  *
- * ⚠️ **只留 visible**：原来这里还把 mode / parentId / parentLabel / initialName /
- * initialId 五项都写了一遍初值 —— 那是 `CategoryNameDialog` 自己的 prop 默认值的
- * **第二份**，而且 openCreate / openRename 每次都会把这五项重设一遍 ⇒ 初值永远读不到。
- * ⇒ 这里只留"开没开"，其余由调用方给（AppLayout 那边早就这么改了）。
+ * **visible 常驻 + 其余五项（mode / parentId / parentLabel / initialName / initialId）
+ * 每次由 openCreate / openRename 现填**——它们是给模板绑 `CategoryNameDialog` 的 prop
+ * 用的"当次参数"，不是初值：reactive 里不写它们，避免造出一份没人读的默认值
+ * （AppLayout 那边也是同一种形态）。
  */
 const nameDialog = reactive({ visible: false })
 
@@ -120,11 +151,3 @@ function openPoints(c) {
   pointsDialog.visible = true
 }
 </script>
-
-<style scoped>
-/* ⚠️ **这里原来有 `.toc__bar` / `.toc__btn`**（工具条那一行的样式）——
-   工具条 2026-11-04 整个删掉了（两个按钮分别去了侧边栏 hover 按钮和树的根行），
-   样式一起删，别留两条没人用的规则。
-
-   `.toc` 现在只有**一个孩子**（那棵树）⇒ 也不需要 gap / flex 列了。 */
-</style>

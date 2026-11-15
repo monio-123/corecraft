@@ -1,86 +1,36 @@
 <template>
   <div ref="detailRef" class="detail">
-    <!-- 顶栏：返回 · 目录面包屑 · 保存状态/时间 · 删除。
-         面包屑是"这条知识在知识库里处于什么位置"的唯一线索——原来详情页完全没有，
-         进来之后不知道自己站在哪棵树下。归类仍然在列表页拖拽完成，这里只读不改。
-         未归类（categoryId 为 null）时什么都不显示：CategoryCrumbs 对空值本来就返回空数组，
-         没有位置信息可呈现时，一个"未归类"的标签只是噪音（曾经是个虚线框，视觉上比旁边的
-         面包屑还重）。 -->
-    <header class="bar">
-      <button type="button" class="ghost kb-text-btn" @click="goBack">
-        <el-icon><ArrowLeft /></el-icon>返回
-      </button>
+    <!-- ⚠️ **页内顶栏（.bar）整条撤了**（2026-11-08 阅读 Dock 改版，用户拍板）：
+         进详情页第一眼只剩标题和正文。
+         **2026-11-09 v10 再改版**：头部（标题 + meta + 可选工具栏）**固定不滚**，
+         正文（.ProseMirror）是**本页唯一的滚动容器**（壳 .app-content 在详情页收滚），
+         底部 Dock 退役。返回 = 卡片左边框上的玉签钮（悬停展开）；
+         AI / 大纲 / 工具栏 / 全屏 / 删除 = meta 行右侧图标一排；
+         类型 = meta 行的 chip 下拉（低频收起）；进度线贴头部底缘。
+         —— **滚到正文任何位置都能直接返回**，不用先滚回页顶。
+         「这条知识在知识库里处于什么位置」由 **AppLayout 顶栏**的目录路径回答
+         （2026-11-08 移上去的，原来是这一页页头里的面包屑）。目录归属这里**只读不改**
+         （⚠️ **2026-11-05 晚「拖动归类」整套删了** ⇒ 详情页不再有"归类在别处做"这件事）。
+         未归类（categoryId 为 null）时顶栏什么都不显示：没有位置信息可呈现时，
+         一个"未归类"的标签只是噪音。 -->
 
-      <CategoryCrumbs v-if="topic" :category-id="topic.categoryId" @pick="goCategory" />
-
-      <div class="bar__right">
-        <span v-if="saveStatusText" class="save-state" :class="`is-${saveStatus}`">
-          <i class="save-state__dot" />{{ saveStatusText }}
-        </span>
-        <span v-if="topic?.updatedAt" class="bar__time">更新于 {{ topic.updatedAt }}</span>
-        <!-- 「简洁 / 完整」放在页面顶栏而不是工具栏里：它是**整个编辑器**的模式开关，
-             不是格式动作，工具栏那一排是"格式动作区"，混进去是降一级。
-             而且简洁模式下工具栏整行不渲染（原来那个只有切换按钮的空行就是这么来的），
-             开关挪到顶栏后两种模式位置不变，来回切它不会跳。 -->
-        <!-- 两个开关（工具栏显隐 / 全屏）跟首页共用同一个组件：文案只存在一份，
-             差异只有提示挂在哪边和"全屏"叫什么。
-             全屏开关放在这里是有理由的：沉浸模式下 AppLayout 的顶栏被收起来了，
-             但这一条 .bar 是页面自己的头（返回 / 面包屑 / 保存状态都在里面），
-             留着正好当退出路径，Esc 也是一条。 -->
-        <ViewToggles
-          v-model:show-toolbar="toolbar"
-          :full="immersive.on"
-          placement="bottom"
-          full-label="全屏阅读"
-          @toggle-full="immersive.toggle"
-        />
-
-        <!-- AI 问答的入口。v-if 用 aiEnabled（想不想用）而不是"配没配全"——
-             没开启的人不该看见 AI 的影子；配没配全在 ask() 里拦。 -->
-        <el-tooltip v-if="topic && aiEnabled" content="AI 问答" placement="bottom">
-          <button type="button" class="kb-icon-btn" aria-label="AI 问答" @click="askOpen = true">
-            <KbAiIcon />
-          </button>
-        </el-tooltip>
-        <!-- AI 调整正文：拿一句自然语言指令让 AI 改写这篇正文
-             （「新增一节讲 xxx」「在某个知识点里举个例子」）。
-             **入口跟「AI 问答」分开**：问答是**零写入**的，这一个是**要改正文**的，
-             混在同一个抽屉里两种形态会互相牵扯。 -->
-        <el-tooltip v-if="topic && aiEnabled" content="AI 调整正文" placement="bottom">
-          <button type="button" class="kb-icon-btn" aria-label="AI 调整正文" @click="editOpen = true">
-            <el-icon><MagicStick /></el-icon>
-          </button>
-        </el-tooltip>
-        <!-- 考试：入口在**目录行**上（侧边栏 / 拖拽浮树里的目录「⋯」菜单 → 考这个目录）。
-             这里原来有个单条「考试」按钮：一条知识凑不出一份卷子，范围只有目录一种。 -->
-        <el-tooltip v-if="topic" content="删除这条知识" placement="bottom">
-          <button
-            type="button"
-            class="kb-icon-btn kb-icon-btn--danger"
-            aria-label="删除"
-            @click="handleDelete"
-          >
-            <el-icon><Delete /></el-icon>
-          </button>
-        </el-tooltip>
-      </div>
-    </header>
-
-    <div v-if="loading" class="state">加载中…</div>
-
+    <!-- ⚠️ **载入中 = 同构文档骨架**（2026-11-13 统一加载层）。
+         骨架画在**正文那张白卡里**（.content 那个盒子），形状 = 标题 + meta + 段落。
+         为什么不用转圈：转圈只说"在加载"，骨架同时说了"加载完会长什么样"，
+         而且**加载前后容器高度接近** ⇒ 内容到达时页面不跳一下。
+         ⚠️ 前 160ms 不画骨架（快请求直接出内容，不闪）。 -->
+    <div v-if="loading">
+      <KbLoading :loading="loading">
+        <template #loading>
+          <div class="doc">
+            <div class="content">
+              <KbSkeletonDoc />
+            </div>
+          </div>
+        </template>
+      </KbLoading>
+    </div>
     <template v-else-if="topic">
-      <!-- 标题现在在下面 .content 框内第一行（语雀那种），这里不再单独占一行 -->
-      <!-- 这一行现在**只剩类型**。
-           原来标签也在这行（pill + 添加 + 挑已有），2026-11-03 用户拍板：
-           「标签功能没啥用，从页面上去掉，后台逻辑暂时不去」⇒ 整块撤了。
-           类型留着 —— 它是"这条知识是什么性质"（单选），跟标签不是一回事。
-           ⚠️ **后端那套标签逻辑一行没动**（表 / 接口 / 服务 / store 层），
-           AI 归类和 AI 采纳仍然会写标签（只是界面上看不见）。
-           别在清理时把它当死代码删了 —— 见 brove-skills/corecraft-web-context/SKILL.md
-           「标签：界面已下线，后端有意保留」。 -->
-      <div class="tags">
-        <TopicTypeSelect v-model="editTypeId" @change="saveType" />
-      </div>
       <!-- 内容框：白底卡片。**标题是框内第一行**（语雀那种"第一行就是标题"），
            不再是框外一个孤立的表单字段——框外那行 23px 粗体压在正文上方，
            整页看起来像一张详情表单，而不是一份文档。
@@ -99,7 +49,7 @@
              不会更新到 ProseMirror 视图 —— 所以换内容**必须**走 switchContent。
 
              标题走 #before-content 插槽递进去，于是框内顺序是
-             「工具栏 → 标题 → 正文」——工具栏在框顶、标题是文档第一行，和语雀一致。
+             「工具栏 → 标题 + meta → 正文」——工具栏在框顶、标题是文档第一行，和语雀一致。
              不用插槽就得把工具栏搬到标题上面，但工具栏必须在 MilkdownProvider 内部
              才能拿到编辑器 ctx，搬出去就废了；反过来把标题递进来，顺序自然就对了。 -->
         <MilkdownEditor
@@ -107,8 +57,10 @@
           v-model="editContent"
           :show-toolbar="toolbar"
           :category-tree="categoryTree"
-          @ready="scheduleAlign"
+          :ask-enabled="aiEnabled"
+          @ready="onEditorReady"
           @outline="onOutline"
+          @ask-ai="onAskAi"
         >
           <!-- 标题：无边框 input，点哪都能输，失焦即存。placeholder 是「请输入标题」
                不是「未命名」——标题本来就常是空的（createTopic 传 title: ''），
@@ -116,23 +68,120 @@
                上一版给它外面套了一层「＋ 起个名字」按钮再点一次才出输入框，
                是多出来的一跳，没必要。列表卡片那边也共用 TopicTitleInput。 -->
           <template #before-content>
-            <TopicTitleInput
-              :title="topic.title"
-              class="title"
-              @save="onTitleSave"
-            />
+            <!-- 返回：**玉签钮**（A 方案，2026-11-09 用户把 v10 的 B 月弧拍板换掉）。
+                 骑跨在卡片左边框上、与标题第一行对齐；常态只露一枚 10px 窄玉片
+                 （刻意做虚：半透明 + 减淡边框投影，用户反馈常态太显眼），
+                 悬停卡片宽度动画展开成完整圆扣、透明度回满。
+                 定位基准是 .editor__before（kb-editor.css 给了 position:relative），
+                 left 负值 = 白边 + 框内距，正好把圆心钉在边框线上。
+                 悬停展开后才是完整点击面，常态那一弯也能点。 -->
+            <button class="back-edge" type="button" title="返回上一级" @click="goBack">
+              <KbSvgIcon name="arrow-left" />
+            </button>
+            <!-- 标题独占一行。类型分段开关（学习/笔记）2026-11-09 定位在**标题行右端**
+                 = 卡片右上角（用户原话「这个笔记的切换放在卡片的右上角会不会好看一点」；
+                 v10 一度收进 meta 行 chip，这版挪上来）。
+                 原来标签也在这行（pill + 添加 + 挑已有），2026-11-03 用户拍板：
+                 「标签功能没啥用，从页面上去掉，后台逻辑暂时不去」⇒ 整块撤了。
+                 ⚠️ **后端那套标签逻辑一行没动**（表 / 接口 / 服务 / store 层），
+                 AI 归类和 AI 采纳仍然会写标签（只是界面上看不见）。
+                 别在清理时把它当死代码删了 —— 见 brove-skills/corecraft-web-context/SKILL.md
+                 「标签：界面已下线，后端有意保留」。 -->
+            <div class="title-row">
+              <TopicTitleInput
+                :title="topic.title"
+                class="title"
+                @save="onTitleSave"
+              />
+              <TopicTypeSelect v-model="editTypeId" class="title-type" @change="saveType" />
+            </div>
+            <!-- meta 行：左边 = 保存状态 · 更新时间 · 字数；
+                 右边 = 图标一排（AI / 大纲 / 工具栏 / 全屏 / 删除）。
+                 v10 底部 Dock 退役后，这一排是页内所有导航/视图操作的唯一入口。
+                 保存状态**常驻**（保存中/已保存），不再"存完 2 秒消失"：
+                 它一隐一现会让整行左右跳。字数按去空白字符数算（概览口径）。 -->
+            <div class="meta-row">
+              <div class="meta">
+                <span class="meta-save" :class="{ 'is-saving': saveStatus === 'saving' }">
+                  <i class="meta-save__dot" />{{ saveLabel }}
+                </span>
+                <span v-if="topic.updatedAt" class="meta-dot" />
+                <span v-if="topic.updatedAt" class="meta-time">更新于 {{ topic.updatedAt }}</span>
+                <span class="meta-dot" />
+                <span class="meta-words">{{ wordCount.toLocaleString() }} 字</span>
+                <!-- ⚠️ **掌握度与「标记已学」从详情页撤走**（2026-11-12）：
+                     掌握度搬到**目录书**（卡片右上角的档位签 + 书页顶部的概览条），
+                     「标记已学」这个独立按钮整个取消 —— 用户定的语义是
+                     「没有掌握度就是未学，有掌握度就是已学习」⇒
+                     考一次（随堂测验/章节考试）就等于"学过这条"，
+                     不需要用户再手点一下"标记已学"。
+                     ⇒ 这一行恢复成：保存状态 · 更新时间 · 字数。 -->
+              </div>
+              <div class="hact">
+                <!-- 正文检索的入口**不在这里**（2026-11-09 用户：「复用现有的搜索框」）：
+                     在详情页时顶栏搜索框就是本文实时检索（框里还带 ↑↓ 与命中计数），
+                     原来这个「在本文检索」按钮连同正文里那个独立检索栏整套撤了。 -->
+                <button v-if="aiEnabled" class="hact-btn" type="button" title="AI 问答" @click="askOpen = true">
+                  <KbSvgIcon name="sparkle" />
+                </button>
+                <!-- 大纲按钮的 .stop 不能省：文档级「点空白收起浮层」监听在 document 上，
+                     不挡冒泡的话刚点开就被它收走（沿用 Dock 时代的教训） -->
+                <button
+                  v-if="outline.length"
+                  class="hact-btn"
+                  type="button"
+                  title="本页大纲"
+                  @click.stop="outlineHidden = !outlineHidden"
+                >
+                  <KbSvgIcon name="list" />
+                </button>
+                <span class="hact-sep" />
+                <button
+                  class="hact-btn"
+                  :class="{ 'is-on': toolbar }"
+                  type="button"
+                  :title="toolbar ? '隐藏编辑工具栏' : '显示编辑工具栏'"
+                  @click="toolbar = !toolbar"
+                >
+                  <KbSvgIcon name="text" />
+                </button>
+                <button class="hact-btn" type="button" :title="immersive.on ? '退出全屏 · Esc' : '全屏阅读'" @click="immersive.toggle">
+                  <KbSvgIcon name="fullscreen" />
+                </button>
+                <span class="hact-sep" />
+                <button class="hact-btn is-danger" type="button" title="删除这条知识" @click="handleDelete">
+                  <KbSvgIcon name="trash" />
+                </button>
+              </div>
+            </div>
+            <!-- 阅读进度线：贴在固定头部的底缘（Dock 退役后从 Dock 身上挪到这里）。
+                 左右负边距 = 白边 + 框内距，让线贯通整张卡片宽，而不是只跟文字列一样宽。
+                 ⚠️ **只在真有得读的时候画**（判据见 progressShown）：
+                 ① 不能滚（没有滚动条）不画（2026-11-10 用户：「如果界面上没有滚动条的话
+                    就不要显示这个了」）—— 满格进度线摆在还没开始读的界面上，
+                    表达的是"读完了 100%"，那是在说假话；
+                 ② 能滚但只多一点点也不画（2026-11-11 用户：数据少没必要展示）——
+                    **还要滚的量得超过一整屏**（首屏可见 < 50%）才画，打一两个回车不算。 -->
+            <div v-if="progressShown" class="read-progress" aria-hidden="true"><i :style="{ width: progressPct + '%' }" /></div>
           </template>
         </MilkdownEditor>
       </div>
 
-      <!-- 右侧大纲：正文里的标题层级，点一条跳到对应标题。
-           **只在正文有标题时才有**——没有标题的知识点（大多数）右边挂一个空栏
+      <!-- 大纲浮层：正文里的标题层级，点一条跳到对应标题。
+           **只在正文有标题时才有**——没有标题的知识点（大多数）挂一个空面板
            是纯噪音。语雀那套就是这样。实现见 TopicOutline.vue。
+           2026-11-08 阅读 Dock 改版：常驻右栏撤了，改成**按需弹出的浮层**；
+           2026-11-09 v10：入口 = meta 行图标排的「大纲」按钮（Dock 已退役）。
+           （floating 浮层形态、显隐归这一层的 outlineHidden）——刚进详情页第一眼
+           只剩标题和正文。点一条自动收起（TopicOutline 在 floating 形态下自己收）。
            大纲里的折叠**只管大纲自己**（折掉这一支下级条目），不碰正文 ——
            正文那节折不折，用户自己在正文标题的箭头上点。 -->
       <TopicOutline
+        ref="outlineRef"
+        v-model:hidden="outlineHidden"
         :items="outline"
         :active-id="activeHeadingId"
+        floating
         @navigate="goHeading"
       />
       </div>
@@ -141,7 +190,16 @@
       </template>
 
     <!-- 打开的这条已经没了。**只说事实，不解释、不给"回到列表"按钮**——
-         顶栏本来就有一个「返回」（同一个 goBack），这里再摆一个就是重复。 -->
+         有内容时卡片左边框上本来就有「返回」玉签钮（同一个 goBack），这里再摆一个就是重复。 -->
+    <!-- ⚠️ **载入失败**（2026-11-10 补）：接口报错时**不是"这条知识不存在"** ——
+         它还在，只是这次没拉下来 ⇒ 措辞要分开，且给一个「重试」，
+         否则用户看着一句"不存在"会以为知识点被谁删了。
+         错误**详情**由 request.js 弹（那里是全站唯一的提示出口）⇒ 这里不重复弹。 -->
+    <div v-else-if="loadFailed" class="state">
+      <p>加载失败</p>
+      <p><el-button size="small" @click="load">重试</el-button></p>
+    </div>
+
     <div v-else class="state">
       <p>这条知识不存在</p>
     </div>
@@ -165,7 +223,7 @@
           aria-orientation="vertical"
           aria-label="拖动调整问答框宽度，双击恢复默认"
           @pointerdown="onGripDown"
-          @dblclick="askWidth = ASK_W.def"
+          @dblclick="resetAskWidth"
         >
           <el-icon class="ask__grip__icon"><ArrowLeft /></el-icon>
         </div>
@@ -174,7 +232,7 @@
         <div class="kb-drawer__head">
           <span class="kb-drawer__title">{{ quizOn ? '随堂测验' : 'AI 问答' }}</span>
           <div class="kb-drawer__ops">
-            <button v-if="!quizOn" type="button" class="kb-text-btn" @click="startQuiz">
+            <button v-if="!quizOn" type="button" class="kb-text-btn" @click="openQuiz">
               随堂测验
             </button>
             <button v-else type="button" class="kb-text-btn" @click="closeQuiz">返回问答</button>
@@ -186,23 +244,53 @@
 
         <div class="ask__body" ref="askBodyRef">
           <!-- 随堂测验：考当前这条知识。**答题、判分、讲解用的是同一个答题器**
-               （考试页也是它），这里只负责出卷。 -->
+               （考试页也是它）。点开先查锚（TODO-exam-lifecycle §三）：在答的续答、
+               考完的回看，只有没考过才出新卷。 -->
           <template v-if="quizOn">
             <div v-if="quizPhase === 'loading'" class="kb-center">
-              <el-icon class="is-loading"><Loading /></el-icon>
-              <p>正在出题…</p>
+              <KbLoader size="sm" />
+              <p>{{ quizLoading }}</p>
+            </div>
+            <!-- 出题任务在后台：在跑的显示进度（可随时离开），出好的给「作答」 -->
+            <div v-else-if="quizPhase === 'task'" class="kb-center">
+              <template v-if="quizTask && quizTask.status === 'awaiting'">
+                <p>题已出好</p>
+                <el-button size="small" @click="answerQuizTask()">作答</el-button>
+                <!-- ⚠️ 出题结果可能是「出不了题」（模型判断内容不够）——
+                     直接给「重新生成」出口，不用先碰壁再回头（2026-11-15） -->
+                <el-button size="small" @click="regenerateQuiz()">重新生成</el-button>
+              </template>
+              <template v-else>
+                <KbLoader size="sm" />
+                <p>正在出题… 可随时离开</p>
+              </template>
             </div>
             <div v-else-if="quizPhase === 'error'" class="kb-center">
               <p class="kb-error" :class="{ 'is-quiet': quizQuiet }">{{ quizError }}</p>
-              <el-button v-if="!quizQuiet" size="small" @click="startQuiz">重试</el-button>
+              <!-- ⚠️ **安静错误也要给出口**（2026-11-15 修死循环）：「出不了题」这类
+                   不给按钮 ⇒ 用户永远出不来。出题没产出 = 重新生成，不是干等。 -->
+              <el-button v-if="quizQuiet" size="small" @click="regenerateQuiz">重新生成</el-button>
+              <el-button v-else size="small" @click="openQuiz">重试</el-button>
             </div>
-            <ExamRunner
-              v-else
-              :questions="quizQuestions"
-              :sections="quizSections"
-              :note="quizNote"
-              :topic-ids="quizTopicIds"
-            />
+            <template v-else>
+              <!-- 答完了给「重做本卷 / 重新生成」（与考试页同一对词、同一对语义）；
+                   正文在出卷后改过 = 安静提示（不拦截，重新生成就在旁边）。 -->
+              <div v-if="quizRunnerPhase === 'done' || quizStale" class="quiz-ops">
+                <span v-if="quizStale" class="quiz-ops__stale">正文在出卷后改过</span>
+                <span class="quiz-ops__gap"></span>
+                <template v-if="quizRunnerPhase === 'done'">
+                  <el-button size="small" @click="redoQuiz">重做本卷</el-button>
+                  <el-button size="small" @click="regenerateQuiz">重新生成</el-button>
+                </template>
+              </div>
+              <ExamRunner
+                :initial-questions="quizQuestions"
+                :attempt-id="quizAttemptId"
+                :note="quizNote"
+                :plan="quizPlan"
+                @phase="quizRunnerPhase = $event"
+              />
+            </template>
           </template>
 
           <!-- 引导问题常驻在对话上方，**不是空态才出现**。它们是一键动作（一按就问），
@@ -211,8 +299,13 @@
                对话短的时候一直看得见，长了往上滚一截就有。
 
                问题来自配置树上的「引导问题」那组，改问题在系统配置里改，不用发版。
-               拉不到就什么都不显示（后端返回空列表），不该为一个可有可无的列表报错。 -->
-          <div v-else-if="guideQuestions.length" class="ask__guide">
+               拉不到就什么都不显示（后端返回空列表），不该为一个可有可无的列表报错。
+
+               ⚠️ **这一块和下面的对话区是两个独立的 v-if，不是 v-else-if**：
+               挂在同一条 else-if 链上时，引导问题会把对话区整个顶掉 ——
+               **问完看不到自己的问题和回答**（2026-11-04 修，之前一直是这样）。
+               测验态用 `!quizOn` 让位：那时候抽屉里是答题器，不是对话。 -->
+          <div v-if="!quizOn && guideQuestions.length" class="ask__guide">
             <button
               v-for="q in guideQuestions"
               :key="q.key || q.label"
@@ -226,7 +319,7 @@
 
           <!-- 一轮问答 = 一个 .turn：提问气泡 + 思考过程 + 回答 + 复制。
                组内紧、组间松，一眼能看出哪句答哪句。 -->
-          <template v-else-if="messages.length">
+          <template v-if="!quizOn && messages.length">
             <div v-for="(m, i) in messages" :key="i" class="turn">
               <div class="bubble is-user">{{ m.question }}</div>
 
@@ -263,7 +356,18 @@
                 正在生成… 已接收 {{ m.received }} 字
               </div>
 
-              <div v-if="m.answer" class="bubble is-ai" :class="{ 'is-error': m.error }">{{ m.answer }}</div>
+              <!-- 回答：**按 markdown 渲染**（2026-11-05 用户定）。
+                   模型输出的是 markdown，直接 `{{ m.answer }}` 打印出来就是一堆
+                   `##` / `|` / `**` 符号 —— 用户看到的是**源码**，不是回答。
+                   渲染用的是**正文编辑器自己的解析器**（同一套 schema、同一套 toDOM）
+                   ⇒ 标题、列表、表格、代码块都是排好版的，和知识点正文一个样。
+                   出错时那行是纯文案（不是 markdown），照原样打印。 -->
+              <div v-if="m.answer" class="bubble is-ai" :class="{ 'is-error': m.error }">
+                <div v-if="m.html && !m.error" class="md-answer milkdown-editor-body">
+                  <div class="ProseMirror" v-html="m.html"></div>
+                </div>
+                <template v-else>{{ m.answer }}</template>
+              </div>
               <div class="ask__ops">
                 <button
                   v-if="m.answer && !m.error"
@@ -272,6 +376,32 @@
                   @click="copyText(m.answer)"
                 >
                   复制
+                </button>
+                <!-- 应用到正文：**这一轮交回来的东西能拿去改正文**，才给这个入口 ——
+                     ① 回答里带着【正文开始】/【正文结束】：AI 按约定交回了一份
+                        **改写后的整篇正文** ⇒ 应用 = 整篇替换（增/删/改任意组合都算）；
+                     ② 从正文里选了一段发起的那一轮（m.spot）：把这轮内容追加到选中段之后。
+                     两者都没有 ⇒ 没有"写到哪里"这回事 ⇒ 不给入口。
+                     追问也会继承同一个锚点，所以"不满意就让 AI 接着调、调好了再写"这条路径是通的。
+                     图标是「文档+对勾」：把这段内容确认进正文。 -->
+                <button
+                  v-if="m.answer && !m.error && (hasBodyMark(m.answer) || m.spot)"
+                  type="button"
+                  class="kb-text-btn"
+                  @click="openInsert(m, 'body')"
+                >
+                  <el-icon class="kb-text-btn__ico"><DocumentChecked /></el-icon>应用到正文
+                </button>
+                <!-- 应用为新的知识点：**不要求有选段** —— 新知识点自己就是去处。
+                     没有选段就没有"从哪儿来、往哪连"，那就不建链接，只建这一条。
+                     图标是「文档+加号」，跟上面那枚「文档+对勾」成一对。 -->
+                <button
+                  v-if="m.answer && !m.error"
+                  type="button"
+                  class="kb-text-btn"
+                  @click="openInsert(m, 'topic')"
+                >
+                  <el-icon class="kb-text-btn__ico"><DocumentAdd /></el-icon>应用为新的知识点
                 </button>
                 <!-- 采纳：只挂在引导问题那一轮（adoptFieldOf 对自己敲的问题返回 null）。
                      自己敲的答案没有"该写进哪个字段"的语义，要把它写进正文是另一件事 -->
@@ -360,51 +490,81 @@
       @confirm="onAdoptConfirm"
     />
 
-    <!-- AI 调整正文。同样放在抽屉外面：它针对的是**这一条**的正文，
-         关掉抽屉不该把一个已经打开的编辑面板一起带走。
-         **它自己不写库**：只把新正文交出来，写回编辑器之后由详情页那条
-         1.5s 防抖的自动保存落库。 -->
-    <AiEditDrawer
-      v-model="editOpen"
-      :content="editContent"
+    <!-- 「应用到正文 / 应用为新的知识点」的确认框。同样放在抽屉外面：它针对的是
+         **这一条**的正文，关掉抽屉不该把一个已经打开的确认框一起带走。
+         **它自己不写库**：只把内容交出来，写回编辑器之后由详情页那条
+         1.5s 防抖的自动保存落库（建新知识点那条链例外：那条本来就要新建一条记录）。
+
+         ⚠️ **streamHtml / adjustError 是给"重新生成"用的状态通路**：
+         上一版重新生成失败时，错误只出现在抽屉里，而抽屉被这个弹窗挡着 ⇒
+         用户只看到"转圈转完了、内容没变"。现在生成中右栏显示流式预览，
+         失败时错误原文直接摆在这个弹窗里。 -->
+    <AiInsertDialog
+      v-model="insertOpen"
+      :answer="insertAnswer"
+      :base-md="insertBase"
+      :spot="insertSpot"
+      :blocks-in-range="blocksInRange"
       :doc-of="docOfBody"
-      @apply="applyEdited"
+      :adjusting="insertAdjusting"
+      :stream-html="insertAdjustTurn?.html || ''"
+      :adjust-error="insertAdjustError"
+      :mode="insertMode"
+      :saving="insertSaving"
+      @adjust="onInsertAdjust"
+      @confirm="onInsertConfirm"
     />
+
+    <!-- ⚠️ 底部悬浮阅读 Dock 已退役（2026-11-09 v10，用户拍板）：
+         头部改为「固定不滚」后，返回/操作本来就常驻，Dock 的智能显隐、peek 把手、
+         底部热区、固定偏好整套失去存在意义。功能去向：返回 → 卡片左边框玉签钮；
+         AI/大纲/工具栏/全屏/删除 → meta 行右侧图标排；进度 → 头部底缘进度线。
+         TopicReadingDock.vue 文件已删。 -->
   </div>
 </template>
 
 <script setup>
 // 让 component.name = 'AppTopicDetail' 对齐 route.name，配合 AppLayout 的 keep-alive 缓存实例。
 defineOptions({ name: 'AppTopicDetail' })
-import { ref, reactive, computed, nextTick, onMounted, onBeforeUnmount, onActivated, onDeactivated, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, onActivated, onDeactivated, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, Close, Delete, Loading, MagicStick, Top, VideoPause } from '@element-plus/icons-vue'
-import KbAiIcon from '../../components/KbAiIcon.vue'
+import { ArrowLeft, Close, DocumentAdd, DocumentChecked, Top, VideoPause } from '@element-plus/icons-vue'
 import MilkdownEditor from '../../components/MilkdownEditor.vue'
-import ViewToggles from '../../components/corecraft-web/ViewToggles.vue'
-import CategoryCrumbs from './CategoryCrumbs.vue'
+import KbSvgIcon from '../../components/corecraft-web/KbSvgIcon.vue'
+import KbLoading from '../../components/corecraft-web/KbLoading.vue'
+import KbSkeletonDoc from '../../components/corecraft-web/KbSkeletonDoc.vue'
+import KbLoader from '../../components/corecraft-web/KbLoader.vue'
 import TopicOutline from './TopicOutline.vue'
 import TopicTitleInput from './TopicTitleInput.vue'
+// ⚠️ **MasteryBadge / LearnedToggle 不再在这里**（2026-11-12）：
+//     掌握度搬到目录书（卡片档位签 + 书页概览条）；
+//     「标记已学」按钮整个取消（考一次就等于学过）。
 import AiAdoptDialog from './AiAdoptDialog.vue'
-import AiEditDrawer from './AiEditDrawer.vue'
+import AiInsertDialog from './AiInsertDialog.vue'
 import ExamRunner from './ExamRunner.vue'
-import { generatePaper, loadExamSpec, typesBadNote } from './exam'
+// ⚠️ 出卷那几个函数（paperTaskPayload / consumePaperTask / loadExamSpec / typesBadNote）在
+// `useQuiz.js`（随堂测验自成一块）⇒ 这里不再直接引。
+import { useQuiz } from './useQuiz'
 import { useImmersive } from './useImmersive'
 import TopicTypeSelect from './TopicTypeSelect.vue'
 import {
-  aiEnabled, ask as askAi, useEndpoint, currentEndpoint, aiEndpoints,
-  aiQuestions, ensureAiQuestionsLoaded
+  aiEnabled, useEndpoint, currentEndpoint, aiEndpoints
 } from './useAi'
+// ⚠️ 流式问答那套（`ask` / 引导问题 / 改写规范 / 答案渲染 / 抽屉宽度）
+// 搬进了 `useTopicAsk.js` ⇒ 这里不再直接引。
+import { useTopicAsk } from './useTopicAsk'
 import { adoptFieldOf } from './aiAdopt'
-import { getPrefSpec, getUiPrefs, saveUiPrefs } from '../../utils/uiPrefs'
+import { hasBodyMark } from './aiEdit'
 import { copyText } from '../../utils/clipboard'
 import { toCategoryTree } from '../../utils/categoryTree'
-import { categoryLink } from '../../utils/categoryNav'
+import { topicHref } from '../../utils/categoryNav'
+import { keywordFromRoute } from '../../utils/routeQuery'
 import {
   fetchTopic, updateTopic, confirmDeleteTopic, resolveTags,
-  getCategories,
-  resolveTopicTypeId
+  getCategories, createTopic, resolveTopicTypeId, openTopicCategoryId,
+  bodySearchKeyword, bodySearchHits, bodySearchJump,
+  fetchTopicIndexFresh, getCategorySubtreeIds, getCategoryPath, getTopicIndex, ensureCategoriesLoaded
 } from './useCorecraftWebStore'
 
 const route = useRoute()
@@ -412,19 +572,325 @@ const router = useRouter()
 
 const topic = ref(null)
 const loading = ref(true)
-// 根节点只为了拿它的父元素（= 壳的 .app-content，那才是滚动容器）。**用 parentElement
-// 而不是 querySelector('.app-content')**：这条依赖的是 DOM 结构（RouterView 把视图直接
-// 挂在 main 下），不是某个类名——壳改类名不会让这里静默失灵，而是结构变了本来就该跟着改。
+/**
+ * 载入失败（接口报错 / 这条被删了）。
+ *
+ * <p>⚠️ **原来没有这个状态**（2026-11-10 补）：`load()` 只有 try/finally、**没有 catch**
+ * ⇒ `fetchTopic` 抛错时 `loading` 归 false、`topic` 仍是 null
+ * ⇒ 模板的 `v-if="loading"` / `v-else-if="topic"` **两个分支都不成立**
+ * ⇒ **整页空白**（既没有"这条知识不存在"，也没有"加载失败"）。
+ * 界面上看着就像"点了没反应"—— 而用户点进来是有明确动作的（点了某个知识点），
+ * 空白页既不告诉他出了什么事，也不给他下一步。
+ *
+ * <p>错误**详情**由 request.js 弹（那里是全站唯一的提示出口）⇒ 这里只摆状态，
+ * 不重复弹一遍（两处都弹 = 同一件事两条提示，见 request.js 的注释）。
+ */
+const loadFailed = ref(false)
+// 根节点：用来取正文滚动容器 `.doc .ProseMirror`（v10 起本页唯一滚动容器，
+// 进度线/归顶都找它）；AI 弹窗里也有编辑器，查询限定根节点里面别挂错。
 const detailRef = ref(null)
 // 编辑器实例。大纲点击跳转要调它的方法（编辑器在 MilkdownProvider 里面，
 // 外层拿不到它的 ctx，只能由 MilkdownEditor 暴露出来的方法代劳）。
 const editorRef = ref(null)
+
+/**
+ * 自动链接词表：**当前条目所属一级目录（一本书）里的其它知识点**（标题 → id）。
+ *
+ * <p>为什么不拿全库：误链率会明显上升（"引用类型"这种词在别的主题里可能是另一个意思），
+ * 词表越大算得也越慢。同一本书内的跳转才是有意义的。
+ * 但**不能只取条目所在的那一层目录**（见 {@link autoLinkRootDir}）。
+ */
+const autoLinkEntries = ref([])
+
+/**
+ * 重算词表并推给编辑器。
+ *
+ * <p>**在渲染层做，不在生成时做**：正文里不存任何链接标记，每次打开现算 ——
+ * 新建的知识点自动能被链上、改标题自动跟随、删了自动退成纯文字。
+ */
+/**
+ * 自动链接词表的范围：**当前条目所属「一级目录」的整棵子树**（一本书）。
+ *
+ * <p>⚠️ 不能用「条目所在目录的子树」：实测《垃圾收集算法与收集器总览》（2.3）正文里
+ * 提到的《引用计数算法》《可达性分析》《GC Roots》《引用类型》都在**兄弟目录 2.2** 下
+ * ⇒ 只取自己那层子树时**一条都链不上**（正文明明在讲它们）。
+ * 跨章节的引用恰恰是最该链的，所以范围要放到"同一本书"。
+ */
+function autoLinkRootDir(categoryId) {
+  if (!categoryId) return null
+  const chain = getCategoryPath(categoryId)   // 根 → 自己
+  return chain.length ? chain[0].id : categoryId
+}
+
+async function loadAutoLinks() {
+  const t = topic.value
+  if (!t?.id) {
+    autoLinkEntries.value = []
+    return
+  }
+  // ⚠️ **先等目录树就绪**：`getCategoryPath` 找不到节点时返回空链（不报错），
+  // 于是"所属一级目录"会退化成"条目自己所在的那层"，`getCategorySubtreeIds` 也只
+  // 剩它自己 ⇒ 词表空、正文一处链接都没有（实测踩过：直接新标签打开详情页时，
+  // 目录树还在路上，装饰数 0；先在站内点进来反而是好的）。
+  try {
+    await ensureCategoriesLoaded()
+  } catch {
+    // 拉不到树就按"未归类"处理（下面那条分支），正文照常看
+  }
+  const rootId = autoLinkRootDir(t.categoryId)
+  // 未归类（没有所属的那本书）：**宁可不链**。拿全库一千多条标题去匹配，
+  // "内存泄漏""引用类型"这种词在别的主题里很可能是另一个意思 ⇒ 满屏误链。
+  if (!rootId) {
+    autoLinkEntries.value = []
+    applyAutoLinks()
+    return
+  }
+  const scope = getCategorySubtreeIds(rootId)
+  const build = (list) => (list || [])
+    .filter((x) => x.id !== t.id && (!scope || scope.has(x.categoryId)))
+    .map((x) => ({ term: x.title, id: x.id }))
+
+  // ① 先用**内存里已有的**索引（同步 ⇒ 打开就能画上，不用等接口回来）
+  const cached = getTopicIndex()
+  if (cached.length) {
+    autoLinkEntries.value = build(cached)
+    applyAutoLinks()
+  }
+  // ② 再拉一份全集（不走共享缓存：它可能是"搜索态筛过的"，也可能停在旧快照）
+  try {
+    autoLinkEntries.value = build(await fetchTopicIndexFresh())
+  } catch {
+    // 拉不到就用缓存那份（正文照常看，不该因为这件事让整页报错）
+  }
+  applyAutoLinks()
+}
+
+/** 把词表交给编辑器（编辑器还没建好就等着，@ready / onActivated 会补） */
+function applyAutoLinks() {
+  editorRef.value?.setAutoLinks(autoLinkEntries.value)
+}
+
+/**
+ * 给对比框和答案渲染用：**markdown → ProseMirror doc**。
+ *
+ * 对比区要显示"和正文同一套"的渲染 ⇒ 必须用**编辑器自己的解析器**（同一个 schema、
+ * 同一套 toDOM），否则预览和正文对不上（标题层级、软换行、字号 mark、图片节点…）。
+ * 另找一个 markdown 渲染器就是两套渲染 ⇒ 那种坑已经踩过一次。
+ *
+ * 编辑器在 MilkdownProvider 里面，外层拿不到它的 ctx ⇒ 这里代为转发。
+ *
+ * ⚠️ **定义在这里（紧跟 editorRef），不在用到它的段落里** ——
+ * 问答那套（`useTopicAsk`）在下面要用它；`const` 不会因为"写在后面"就自动提前。
+ */
+const docOfBody = (md) => editorRef.value?.docOf(md) ?? null
+
 // 右侧大纲：正文里的标题层级。**由编辑器报上来**（@outline），
 // 页面自己不解析 markdown —— 解析一份和编辑器里那份是两份真相，
 // 大纲和正文对不上的时候，用户看到的是"大纲指错了地方"。
 const outline = ref([])
 // 当前所在章节。点大纲条目时高亮它。
 const activeHeadingId = ref('')
+// 大纲浮层的显隐（true = 藏着）。默认收起、meta 行图标排的「大纲」按钮按需弹出
+// （刚进详情页第一眼只剩标题和正文）。
+const outlineHidden = ref(true)
+// TopicOutline 的实例：浮层"点空白收起"要拿它的根节点判点击位置
+const outlineRef = ref(null)
+
+/**
+ * 大纲浮层「点空白处收起」。浮层盖在正文上，通用的 dismiss 交互（测试稿也这么做）。
+ *
+ * ⚠️ meta 行那个「大纲」开合按钮**不会被这条误伤**：那个按钮的点击自带 .stop
+ * （不冒泡到 document），开了就开、关了就关，不会"刚点开就被收走"。
+ */
+function onDocClick(e) {
+  if (outlineHidden.value) return
+  if (outlineRef.value?.$el?.contains?.(e.target)) return
+  outlineHidden.value = true
+}
+
+// 监听只在本页活着的时候挂：keep-alive 切走后列表页还在用同一个 document。
+onMounted(() => document.addEventListener('click', onDocClick))
+onActivated(() => document.addEventListener('click', onDocClick))
+onDeactivated(() => document.removeEventListener('click', onDocClick))
+onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
+
+/** v10：本页唯一滚动容器 = 正文 .ProseMirror（壳在详情页已收滚）。
+    进度线贴固定头部底缘，监听的是正文滚动。查询限定 `.doc` 里：
+    AI 弹窗里也有编辑器（.ProseMirror 不止一个），别监听错。 */
+const progressPct = ref(0)
+/**
+ * **进度线显隐门槛：还要滚的量 > N 屏**（N = `PROGRESS_MIN_SCREENS`）。
+ *
+ * <p>1 屏 ⇔ **首屏可见 < 50%**（用户给的 50% / 30% 两个候选里取 50%）：
+ * 30% 要求内容超过 3.3 屏才画线，知识库里多数笔记会永远看不到这条线；
+ * 50% 对应「至少还要滚一整屏」，是阅读进度真正开始有意义的门槛。
+ * 想更保守（首屏可见 < 30%）把常量改成 **2.33**（= 0.7 / 0.3）。
+ *
+ * <p>⚠️ 用「屏」不用绝对 px：窗口高度、正文字号、设备一变，`clientHeight`
+ * 跟着变，门槛自动跟着走，不用另调。
+ */
+const PROGRESS_MIN_SCREENS = 1
+/**
+ * **现在要不要画进度线**。
+ *
+ * <p>⚠️ **不能滚就不画**（2026-11-10 用户原话：「如果界面上没有滚动条的话
+ * 就不要显示这个了」）：一条 100% 的满进度线摆在**根本没有滚动条**的界面上，
+ * 表达的是"读完了 100%"，可用户还没开始读 —— **那是在说假话**。
+ *
+ * <p>⚠️ **能滚但只多一点点也不画**（2026-11-11 用户：「对于这种数据其实比较少的
+ * 是不是就没必要展示这个绿色的进度条了」）：正文刚比一屏多一两个回车，
+ * 也要摆一条"读到哪儿"的线，是在说废话。判据 = **可滚动余量 > 一整屏**
+ * （`scrollHeight - clientHeight > clientHeight`）—— 与「首屏可见 < 50%」等价。
+ */
+const progressShown = ref(false)
+let bodyScroller = null
+/** 正文容器尺寸观察器（窗口缩放 / 侧栏折叠 ⇒ 余量变了）。 */
+let bodyRO = null
+/**
+ * 算一次「够不够长值得画线」+ 当前进度。
+ *
+ * <p>⚠️ **不画线时进度归 0**（不是 100）：线根本不画（见模板那行 v-if），
+ * 但值留着会让「刚退出可画状态」的那一帧残留一个旧百分比 ⇒ 归零最干净。
+ */
+function onBodyScroll() {
+  const el = bodyScroller
+  if (!el) return
+  const viewport = el.clientHeight
+  const max = el.scrollHeight - viewport
+  // viewport > 0 不能省：容器还没布局时 clientHeight=0，任意正余量都会满足门槛
+  const enough = viewport > 0 && max > viewport * PROGRESS_MIN_SCREENS
+  progressShown.value = enough
+  progressPct.value = enough ? Math.max(2, (el.scrollTop / max) * 100) : 0
+}
+/**
+ * 正文尺寸变了 ⇒ 「够不够长」可能变了 ⇒ 进度线该出现/消失。
+ *
+ * <p>⚠️ **为什么不能只靠 ResizeObserver**：`.ProseMirror` 是 `flex:1`，**高度是固定的**
+ * （它是滚动容器，高度由 flex 分配）⇒ **内容变多不会改变它自己的盒高**
+ * ⇒ ResizeObserver **根本不会触发**（而"正文变多 ⇒ 出现滚动条"恰恰是最主要的那个变化）。
+ * ⇒ **真正的信号是内容变了**：编辑器的 `update:modelValue` → 外层 `editContent` 变化。
+ *
+ * <p>⚠️ **量之前要等一帧**：`markdownUpdated` 是**同步**回调，此时 DOM 还没重排
+ * ⇒ `scrollHeight` 拿到的还是旧值 ⇒ 判据会慢一拍（线迟一点出现/消失）。
+ * ⇒ `requestAnimationFrame` 推一帧再量。
+ */
+function refreshScrollState() {
+  requestAnimationFrame(() => onBodyScroll())
+}
+function attachBodyScroll() {
+  detachBodyScroll()
+  bodyScroller = detailRef.value?.querySelector('.doc .ProseMirror') ?? null
+  bodyScroller?.addEventListener('scroll', onBodyScroll, { passive: true })
+  // 窗口/容器尺寸变了（缩放窗口、侧栏折叠）⇒ 余量变了 ⇒ 重算
+  if (typeof ResizeObserver !== 'undefined' && bodyScroller) {
+    bodyRO = new ResizeObserver(() => onBodyScroll())
+    bodyRO.observe(bodyScroller)
+  }
+  onBodyScroll()
+}
+function detachBodyScroll() {
+  bodyScroller?.removeEventListener('scroll', onBodyScroll)
+  bodyRO?.disconnect()
+  bodyRO = null
+  bodyScroller = null
+}
+/**
+ * **正文归顶之后**要做的事（排队，按先后顺序做）。
+ *
+ * <p>⚠️ **为什么要有这条队列**（2026-11-09 用户报「点进去还是没有自动跳转」）：
+ * 归顶是「双 rAF 之后把 `scrollTop` 设成 0」，而定位是「立刻 `scrollIntoView`」——
+ * 两个都是**异步**的，谁后落地谁说了算。
+ * 原来的顺序是「先调 `resetBodyTop()`（排了个双 rAF）⇒ 再调定位（立刻滚）」，
+ * ⇒ **归顶那一帧落在定位之后 ⇒ 把定位滚过去的位置又抹回 0** ⇒ 看着就是"定位没做"。
+ * （手点 ↑↓ 之所以正常：那时候已经没有待执行的归顶在排队了。）
+ *
+ * <p>⇒ 归顶和定位**都走这条队列** ⇒ 顺序就是代码里写的顺序，不靠时序碰运气。
+ */
+let bodyTopChain = Promise.resolve()
+
+/**
+ * **一次详情页会话里，同一个（文档 + 词）只自动定位一次**。
+ *
+ * <p>⚠️ 2026-11-12 用户：「搜索框有目标的时候，每隔十五秒左右正文就重新刷一下，
+ * 滚动条又被拖到搜索目标的定位」。运行时插桩实测：dev server 里改一个被编辑器依赖的
+ * 文件 ⇒ `MilkdownEditorBody.vue` 被 HMR 热替换 ⇒ `@ready` 重发 ⇒ 这里又滚一次
+ * （15 秒是**文件被保存的节奏**，前端本身没有 15 秒定时器；30 秒那个只拉任务角标）。
+ * 另外进场时 `load()` / `onEditorReady()` / `onActivated()` **三条路径各排一次**，
+ * 实测连滚 3 次 —— 「自动定位」被绑在**任何就绪信号**上，缺一次判据。
+ *
+ * <p>⇒ 记账判据 = `文档 id + 词`：**定位成功才记**；之后任何就绪信号只补高亮、
+ * 不再滚（编辑器重建后装饰会丢，得补回来）。离开详情页（onDeactivated）清账 ⇒
+ * 下次进来照旧自动定位；换知识点 / 换词 ⇒ key 变 ⇒ 也会重新定位。
+ *
+ * <p>⚠️ 判据放在**本组件 setup 作用域**：HMR 重建的是编辑器子组件，详情页实例还在
+ * ⇒ 账不会跟着编辑器一起丢；整页刷新则 setup 重跑、账归零 ⇒ 刷新后仍定位一次。
+ */
+let lastLocatedKey = ''
+
+/**
+ * 排一件事到「归顶之后」。
+ *
+ * <p>⚠️ **每一步都要兜住错**：链条是一串 promise，**中间任何一步抛错，
+ * 后面排着的（定位）就再也不执行了** —— 而这个链条上排的恰恰是
+ * 「归顶」「自动定位」这些**用户看得见的动作**（一个失败就"整条都没生效"，
+ * 而界面上什么异常都看不到）。⇒ 每步都 catch 掉，让链条继续往下走。
+ *
+ * @param {Function} fn 要做的事
+ * @returns {Promise} 这件事做完的 promise
+ */
+function afterBodyTop(fn) {
+  bodyTopChain = bodyTopChain
+    .then(() => new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    }))
+    .then(fn)
+    .catch(() => {})
+  return bodyTopChain
+}
+
+/**
+ * 换知识 / keep-alive 切回：正文归顶。双 rAF 等 Milkdown 渲染完再量（nextTick 只保证
+ *    Vue 的 DOM 更新完，**不保证浏览器已经算完布局**，Milkdown 还在异步起）。
+ *    ⚠️ 只在「换了一条 / 切回来」时调，**不挂 watch(topic)** —— 自动保存也换 topic 快照，
+ *    挂上去就是"每存一次把人拽回页顶"。 */
+function resetBodyTop() {
+  afterBodyTop(() => {
+    const pm = detailRef.value?.querySelector('.doc .ProseMirror')
+    if (pm) pm.scrollTop = 0
+    onBodyScroll()
+  })
+}
+/** 编辑器就绪：把进度监听挂到建出来的正文上（ProseMirror 是异步渲染的，onMounted 时还不在） */
+function onEditorReady() {
+  attachBodyScroll()
+  // 编辑器好了才谈得上加装饰（正文还没渲染时落不下去）
+  applyAutoLinks()
+  // 编辑器好了才谈得上高亮（正文还没渲染时落不下去）⇒ 这时补做自动定位。
+  // ⚠️ **必须在这里补**（2026-11-09 用户报「点进卡片后没有做自动定位」）：
+  // 首次进详情页时编辑器还没建好，load() 里那次必然落空 ⇒ 高亮一句都不画，
+  // 而界面上什么异常都看不出来（看着就是"搜索失灵了"）。
+  locateBodySearch()
+}
+onActivated(() => {
+  // keep-alive 切回：DOM 脱插再插回，元素引用过期，重挂一次；阅读位置按老规矩归顶
+  attachBodyScroll()
+  resetBodyTop()
+  // 切回来时编辑器是复用的实例 ⇒ @ready 不会再触发 ⇒ 装饰要重新推一遍
+  //（文档没变时是幂等的：同一个词表算出同一批位置）
+  applyAutoLinks()
+  // ⚠️ **切回时也要重新定位**（2026-11-09 用户报「点进卡片后没有做自动定位」）：
+  // keep-alive 复用实例 ⇒ 编辑器早就建好了 ⇒ `@ready` **不会再触发**
+  // ⇒ 只在 onEditorReady 里定位的话，「切走再切回」这条路径永远定位不了。
+  // 这里补一次（幂等：定位到第一处 = 同一个位置）。
+  locateBodySearch()
+})
+onDeactivated(() => {
+  detachBodyScroll()
+  // 离开详情页 = 这次「进场」结束 ⇒ 下次再进来（哪怕同一条、同一个词）照旧自动定位。
+  // HMR 重建编辑器不会触发 deactivate ⇒ 账留着，正是上面那条判据要的效果。
+  lastLocatedKey = ''
+})
+onBeforeUnmount(detachBodyScroll)
 
 /** 编辑器报上来大纲 */
 function onOutline(list) {
@@ -435,6 +901,119 @@ function onOutline(list) {
   }
 }
 
+// ============ 正文检索（2026-11-09） ============
+//
+// **顶栏搜索框就是本文的检索框**（用户：「复用现有的搜索框就行，那个向上或者下的跳
+// 也加在搜索框中就行」）—— 这里只留「词 → 编辑器」「↑↓ 命令 → gotoMatch」两件事，
+// 输入框和按钮都在壳（AppLayout）的顶栏里，命中计数报回 store 的 bodySearchHits。
+//
+// ⚠️ **原来正文里还有一个独立检索栏（BodySearchBar），整套删了**：它自持一份词
+// ⇒ 「搜过一个东西就删不掉了，不管怎么刷新，只要进新目录就回带上那个搜索」——
+// 词存了三处（URL `?q=`、顶栏框、独立栏），清一处清不掉另两处。
+// 现在**词只有一份**（顶栏框 ⇄ URL `?q=` ⇄ bodySearchKeyword），清了就是清了。
+//
+// ⚠️ **等编辑器就绪才定位**：编辑器没建好时正文还没渲染，高亮落不下去
+// ⇒ onEditorReady 再补一次（load 里那次可能白跑，函数幂等，跑两遍无害）。
+
+/**
+ * 把词交给编辑器高亮，同步命中计数。
+ *
+ * @param {string} kw 检索词（空 = 清高亮）
+ * @param {boolean} [gotoFirst] true = 定位到第一处命中（从列表页带词进来 / 换词）；
+ *   打字时**不传** —— 边打字边跳会把正文滚得上下乱飞。
+ */
+function applyBodySearch(kw, gotoFirst) {
+  const ed = editorRef.value
+  const n = ed ? ed.searchInBody(kw) : 0
+  bodySearchHits.value = { total: n, index: 0 }
+  if (gotoFirst && n > 0 && ed.gotoMatch(0)) {
+    bodySearchHits.value = { total: n, index: 1 }
+    return true
+  }
+  // 调用方靠这个返回值记「这次到底定位成没成」——没成就不记，
+  // 下次就绪信号还能再试（编辑器晚建好 / 命中还没渲染出来都属于这类）。
+  return false
+}
+
+/**
+ * **检索词该是什么**：URL 的 `?q=` 是**唯一权威**（列表页那次搜索带过来的）。
+ *
+ * <p>⚠️ **不读 store 通道**（`bodySearchKeyword`）：那条通道的写方是壳的输入框，
+ * 而壳的输入框初值又取自 URL ⇒ 两者本来同源，但**通道是双向的**（详情页写它、
+ * 壳读它），用它当权威会绕一圈（URL → 壳 → 通道 → 详情页）⇒ 多一份可能不同步的真相。
+ */
+function bodySearchKeywordOfRoute() {
+  return keywordFromRoute(route).trim()
+}
+
+/**
+ * **正文里检索这个词并定位到第一处**（幂等）。
+ *
+ * <p>⚠️ **必须有"没成时再等等"这一步**（2026-11-09 用户报「点进卡片后没有做自动定位」）：
+ * 详情页是 **keep-alive 复用**的、编辑器也是**复用**的 ⇒ 进详情页时：
+ * - **首次进来**：编辑器还没建好（`loading` 还是 true）⇒ 这一步什么也做不了；
+ * - **切进来**（复用实例）：编辑器早就好了 ⇒ 这一步立刻生效。
+ * 原来只在这一处调一次 ⇒ 首次进来必然落空（症状：一点卡片进去，正文里明明有那个词，
+ * 却一处都不高亮，**界面上看不出任何异常**）。
+ * ⇒ **等编辑器就绪（@ready）再补一次**，两条路径都覆盖到。
+ *
+ * <p>⚠️ **定位排在「归顶」之后**（2026-11-09 用户报「点进去还是没有自动跳转」）：
+ * 归顶是异步的（双 rAF），定位也是 ⇒ 两者都走 {@link afterBodyTop} 那条队列，
+ * 顺序 = 代码里的顺序 ⇒ **归顶不会再把定位滚过去的位置抹回 0**。
+ * （原来归顶先排队、定位立刻执行 ⇒ 归顶后落地 ⇒ 定位被吃掉。）
+ */
+function locateBodySearch() {
+  const kw = bodySearchKeywordOfRoute()
+  if (!kw) return
+  const key = String(route.params.id) + '|' + kw
+  afterBodyTop(() => {
+    // 等编辑器就绪（首次进来时还没建好 ⇒ 这一步什么也做不了，
+    // 由 onEditorReady 补做一次）
+    if (!editorRef.value) return
+    // 队列里可能排了好几个（进场三条路径 / 编辑器被重建）⇒ 落地时再判一次：
+    // 已经滚过这一处就只把高亮补回去，**不抢用户的滚动位置**。
+    if (key === lastLocatedKey) {
+      applyBodySearch(kw, false)
+      return
+    }
+    if (applyBodySearch(kw, true)) lastLocatedKey = key
+  })
+}
+
+/** 顶栏搜索框里的字变了 ⇒ 实时在这篇正文里高亮（不打断打字，不跳）。 */
+watch(bodySearchKeyword, (kw) => {
+  // 详情页之外不响应（通道的写方本来就只在详情页开）
+  if (route.name !== 'AppTopicDetail') return
+  applyBodySearch(kw, false)
+})
+
+/** 跳到下一处命中（到底了回到第一处）。 */
+function jumpNext() {
+  const { total, index } = bodySearchHits.value
+  if (!total) return
+  // index = 显示值（0 = 还没定位）⇒ 下一处的 0 起位置就是它本身；
+  // 已在最后一处 ⇒ 回第一处（0 起位置 0）。
+  const next = index >= total ? 0 : index
+  if (editorRef.value?.gotoMatch(next)) bodySearchHits.value = { total, index: next + 1 }
+}
+
+/** 跳到上一处命中（到头了回到最后一处）。 */
+function jumpPrev() {
+  const { total, index } = bodySearchHits.value
+  if (!total) return
+  // 0 起位置：显示值 - 1；还没定位 / 在第一处 ⇒ 回最后一处。
+  const prev = index <= 1 ? total - 1 : index - 2
+  if (editorRef.value?.gotoMatch(prev)) bodySearchHits.value = { total, index: prev + 1 }
+}
+
+/** 顶栏 ↑↓ 按钮（或回车）下达的跳转命令 ⇒ 跳完把命令清掉（连点两次要跳两次）。 */
+watch(bodySearchJump, (dir) => {
+  if (!dir) return
+  if (dir === 'next') jumpNext()
+  else if (dir === 'prev') jumpPrev()
+  bodySearchJump.value = ''
+})
+
 /** 点大纲条目 → 滚到那个标题 */
 function goHeading(id) {
   activeHeadingId.value = id
@@ -444,10 +1023,13 @@ function goHeading(id) {
 // 全屏阅读：收起源的壳，只留这一页。和首页全屏录入、AppLayout 共用同一个判据。
 const immersive = useImmersive()
 // 编辑器工具栏显不显示。状态在**这一层**而不是 MilkdownEditor 内部，
-// 因为"简洁/完整"的开关按钮画在这一层的顶栏里（.bar），
+// 因为"简洁/完整"的开关按钮画在这一层的 meta 行图标排里（v10，原 Dock ⋯ 菜单），
 // 按钮和状态必须是同一份，否则切了按钮不动。
 const toolbar = ref(false)
 const editContent = ref('')
+// 字数（meta 行用）：去空白字符数。markdown 符号也算在内 —— 这是"这篇大概多长"的
+// 概览口径，不是统计报表，为它做一套 markdown 清洗不值得。
+const wordCount = computed(() => (editContent.value || '').replace(/\s/g, '').length)
 // 类型：本地草稿，saveType 落库。可能是悬空的旧 id，落库前用 resolveTopicTypeId 收口
 const editTypeId = ref(null)
 
@@ -456,11 +1038,9 @@ const saveStatus = ref('idle')
 let saveTimer = null  // debounce 计时器
 let statusTimer = null  // 'saved' 状态自动回 'idle' 计时器
 
-const saveStatusText = computed(() => {
-  if (saveStatus.value === 'saving') return '保存中'
-  if (saveStatus.value === 'saved') return '已保存'
-  return ''
-})
+/** meta 行上的保存状态。**常驻两态**（保存中/已保存）：文档已经在库里就是"已保存"，
+    编辑期间是"保存中"。不再用"存完 2 秒消失"那一套 —— 状态一隐一现会让 meta 行左右跳。 */
+const saveLabel = computed(() => (saveStatus.value === 'saving' ? '保存中' : '已保存'))
 
 // ⚠️ **「关联知识点」那一块从前端删掉了**（2026-10-21）：
 // 那块模板从上线到现在**一次都没渲染过** —— `kp_topic_relation` 表 0 条，
@@ -481,6 +1061,7 @@ const saveStatusText = computed(() => {
 
 async function load() {
   loading.value = true
+  loadFailed.value = false
   try {
     const id = Number(route.params.id)
     // URL 里的 id 不合法（手输 /topic/NaN 等）→ 直接走"知识点不存在"分支，不发请求避免后端
@@ -498,12 +1079,33 @@ async function load() {
     }
     topic.value = t
     editContent.value = t.content || ''
+    // 换了知识点 ⇒ 自动链接词表跟着重算（"当前条目"要排除，子树也变了）
+    loadAutoLinks()
     // **编辑器是复用的**（不再每条知识点重建一个 Milkdown —— 重建一次要好几秒，
     // 而点知识点本该是"看一眼正文"的动作）⇒ 正文得**主动换进去**。
     // 外层改 v-model 不会更新 ProseMirror 的视图（见 MilkdownEditorBody 的注释）。
     // 第一次进来时编辑器还没建出来（editorRef 是 null）⇒ 不用换，它自己会用新值建出来。
     editorRef.value?.switchContent(t.content || '')
     editTypeId.value = t.typeId ?? null
+    // ⚠️ **换完正文要重算「够不够长值得画线」**（2026-11-10；2026-11-11 门槛收紧为「余量 > 一屏」）：`switchContent` 走 `suppressEmit`
+    // ⇒ **不上报 `update:modelValue`** ⇒ `editContent` 不变 ⇒ 上面那条 watch 不会触发
+    // ⇒ 不在这里补一次的话，**换知识点后进度线的显隐会停在上一条的状态**。
+    refreshScrollState()
+    // 换了一条知识：正文归顶（v10 后滚动容器是 .ProseMirror）
+    resetBodyTop()
+    // **从列表页搜索结果点进来 ⇒ 自动高亮那个词并定位到第一处命中**
+    //（2026-11-09 用户：「点进对应的卡片后还是要自己去找」⇒ 拍板「自动带入并定位」）。
+    // 词就是列表页那次搜索的词（URL 上的 `?q=` —— AppLearnView 的 searchContext 带着走）。
+    // ⚠️ **没词不高亮**：清空顶栏框 = 这次检索结束，URL 的 `?q=` 也一起被壳去掉了
+    // ⇒ 换知识点 / 刷新都不会把它复活（「删不掉」的 bug 就出在原来这里无脑带词）。
+    // ⚠️ **这一步可能落空**（首次进详情页时编辑器还没建好）⇒ onEditorReady 会补做一次。
+    locateBodySearch()
+  } catch {
+    // ⚠️ **必须有这一支**（2026-11-10 补）：原来只有 try/finally ⇒ 接口一抛错，
+    // `loading` 归 false 而 `topic` 仍是 null ⇒ 模板两个分支都不成立 ⇒ **整页空白**
+    // （看着就像"点了没反应"）。错误详情由 request.js 弹，这里只摆状态、不重复弹。
+    topic.value = null
+    loadFailed.value = true
   } finally {
     loading.value = false
   }
@@ -544,6 +1146,10 @@ async function saveContent() {
 // 内容自动保存：用户编辑后 debounce 1.5s 调用 saveContent。
 // load() 设置 editContent 时 watch 也会触发，但 (topic.value.content === newVal) 命中 → 直接 return，不保存。
 watch(editContent, (newVal) => {
+  // ⚠️ **正文变了 ⇒ 「够不够长值得画线」可能变了**（2026-11-10；2026-11-11 门槛收紧为「余量 > 一屏」）：这是进度线显隐的**主要信号源**
+  // —— ResizeObserver 观察不到（`.ProseMirror` 高度固定，内容变多不改变它自己的盒高）。
+  // 放在最前面：换知识点（switchContent）那一次也要重算（那时下面两个 return 会先命中）。
+  refreshScrollState()
   if (!topic.value) return
   if ((topic.value.content || '') === newVal) return
   if (saveTimer) clearTimeout(saveTimer)
@@ -561,291 +1167,74 @@ async function saveType(id) {
 }
 
 // ============ 对这条知识提问（AI，零写入） ============
-// 问是右对齐的浅色小气泡（一眼分清哪句是我问的），答是左对齐的无底色阅读区——
-// 刻意没做成聊天气泡窗：它不是聊天，是附在这条知识旁边的问答区，
-// 回答里常带代码和路径，要能按一整段的宽度去读。
-const ASK_GUIDE_FALLBACK = ['这条知识讲的是什么？', '关键点有哪些？', '我应该怎么用它？']
-
-const askOpen = ref(false)
-const askInput = ref('')
-
-// 抽屉宽度。**面板滑块、拖动把手、双击归位三处必须同源**，所以上下限和默认值
-// 都从配置树上那一项读，不在本文件另写一份 420。
-const ASK_KEY = 'ui.detail.detailAskW'
-const ASK_W = computed(() => getPrefSpec(ASK_KEY))
-const askWidth = ref(getUiPrefs()[ASK_KEY] ?? ASK_W.value?.defaultValue)
-
-/** 上限跟着视口走：抽屉盖过七成，正文就没法看了——那还不如关掉抽屉 */
-function clampAskW(w) {
-  // 规格取不到（配置树还没到）就不夹：宁可宽一点，也别因为 min/max 是 undefined 变成 NaN
-  if (!ASK_W.value) return Math.round(w)
-  const cap = Math.min(ASK_W.value.max, Math.round(window.innerWidth * 0.7))
-  return Math.min(Math.max(Math.round(w), ASK_W.value.min), cap)
-}
-
-/**
- * 真正给 `:size` 的值。
- *
- * **必须在这里 clamp，不能只在拖动时 clamp**：上限跟着视口走，用户把抽屉拖到
- * 883px 视口下的 618px，换到 706px 的窄视口就该显示 494。存的值不变、显示的值
- * 要变——那 `askWidth` 就不能直接绑到 `:size`，否则窄视口下画出来的是 618
- * 被容器裁掉的状态；更要命的是拖动基准会取到那个"看不见的 618"，拖一下就跳。
- */
-const askW = computed(() => clampAskW(askWidth.value))
-
-function onGripDown(e) {
-  // 抓住把手本身，而不是往 window 上挂监听：把手只有 22px 宽，
-  // 指针一移出去事件就落到别的元素身上，拖到一半会断。
-  const el = e.currentTarget
-  const startX = e.clientX
-  // 基准取**显示值**不是存档值：所见才能所拖
-  const startW = askW.value
-  el.setPointerCapture(e.pointerId)
-  // 往左拖 = 变宽（抽屉贴右边），所以位移取反
-  const move = (ev) => {
-    const w = clampAskW(startW - (ev.clientX - startX))
-    // **拖动过程中就落盘**，而不是等 pointerup：指针在窗口外松开、或被系统
-    // 打断时那个事件根本不来，宽度就只停在内存里，刷新一下白拖。
-    // 阈值 8px 是为了别每帧都 setItem——那是同步 IO，会卡主线程。
-    if (Math.abs(w - askWidth.value) < 8) return
-    askWidth.value = w
-    saveUiPrefs({ [ASK_KEY]: w })
-  }
-  // pointercancel 也得收尾：指针被系统抢走时不会补一个 pointerup
-  const up = () => {
-    el.removeEventListener('pointermove', move)
-    el.removeEventListener('pointerup', up)
-    el.removeEventListener('pointercancel', up)
-    saveUiPrefs({ [ASK_KEY]: askWidth.value }) // 最后一次精确值
-  }
-  el.addEventListener('pointermove', move)
-  el.addEventListener('pointerup', up)
-  el.addEventListener('pointercancel', up)
-}
-const asking = ref(false)
-const messages = ref([])
-const askBodyRef = ref(null)
-let askAbort = null
-
-const canAsk = computed(() => !asking.value && askInput.value.trim().length > 0)
-
-/**
- * 流式期间跟着往下滚。
- *
- * 不跟着滚的话，长回答是**在视野下方一截一截长出来的**——用户盯着屏幕只看到"正在思考…"，
- * 内容全在折叠线以下，看起来就像卡住了。
- *
- * 但不能无条件滚：用户往回翻想重读上一轮时，每来一帧就把他拽回底部，比不滚还烦。
- * 所以只在"本来就贴着底部"时跟随——想读的人已经自己滚上去了，那就不打扰。
- * 阈值给 80px：流式时 DOM 每帧都在长，差值天然大于 0，卡太死会一帧都不跟。
- */
-function followStream() {
-  const el = askBodyRef.value
-  if (!el) return
-  if (el.scrollHeight - el.scrollTop - el.clientHeight > 80) return
-  el.scrollTop = el.scrollHeight
-}
-
-// 挂在 received 上而不是 answer 上：思考型模型的正文可能短到只有几个字，
-// 但思考过程照样在逐帧长，只盯正文会漏掉"思考还在流"的那一大段。
-//
-// ⚠️ flush: 'post' 是必须的：默认的 pre-flush 在 DOM 更新**之前**跑，那时
-// scrollHeight 还是上一帧的高度，滚了个寂寞。加了 post 才量得到新内容。
-watch(() => messages.value[messages.value.length - 1]?.received, followStream, { flush: 'post' })
-
-/**
- * 引导问题优先用配置树上那组的（带 key，后端据此附目录/标签清单、套对应的描述规则）；
- * 配置树拉不到时退回这三条纯读取的本地问题——它们不需要任何附加料，缺了配置树也能用。
- * 配置树不是锦上添花，不该因为它没拉到就让空态什么都不剩。
- */
-const guideQuestions = computed(() =>
-  aiQuestions.value.length ? aiQuestions.value : ASK_GUIDE_FALLBACK.map((label) => ({ key: '', label }))
-)
-
-onMounted(() => {
-  ensureAiQuestionsLoaded()
+// 整套逻辑搬到了 `useTopicAsk.js`（2026-11-11 拆分）：抽屉宽度 / 流式问答 /
+// 消息列表 / 渲染节流自成一块，详情页只留"调用它"的几行。
+const {
+  askOpen, askInput, askW, askWidth, resetAskWidth, asking, messages, askBodyRef, canAsk,
+  guideQuestions, submitAsk, askNow, cancelAsk, onGripDown, loadGuideQuestions
+} = useTopicAsk({
+  topicId: () => (topic.value ? topic.value.id : null),
+  baseMdOf: () => editContent.value,
+  docOf: docOfBody
 })
 
-function askNow(q) {
-  // 点一下直接问，不先填进输入框：它是"一键动作"。填进去的话用户一改字，
-  // questionKey 和实际问的内容就对不上了（key 还在、描述还是那条，用户的原话被丢掉）
-  askInput.value = q.label
-  submitAsk(q.key)
-}
-
-// 「复制」直接用 utils/clipboard 的统一出口，这里不再包一层。
-// 原来包出来只为了挂一句 ElMessage.success('已复制')——而反馈现在归 copyText 管，
-// 链接工具条那个复制按钮也是同一个出口，两边行为一致了。
-
-function submitAsk(questionKey = '') {
-  if (!canAsk.value) return
-  const question = askInput.value.trim()
-  askInput.value = ''
-  // **一轮 = 一条消息**（question + prompt + reasoning + answer + 复制），不是几条平铺的消息。
-  // 平铺的话提问气泡和纯文字回答形态差太远、间距又一样，看不出哪句答哪句
-  //
-  // ⚠️ 必须是 reactive(...)，不能先造裸对象再 push 进 ref([])。
-  // push 进 ref 的是**裸对象**，而模板 v-for 读到的是它的响应式代理；回调里往裸对象写
-  // （turn.answer += delta）Vue 收不到任何通知 → 渲染不重跑 → 流式期间界面一个字都不动，
-  // 全部内容堆到 .finally 改 asking 那一次渲染里一次性蹦出来。
-  // 用户看到的是"点完卡住不动，然后唰一下全出"——和"后端把整段缓冲住了才给我们"
-  // **完全同一种现象**，但根因在前端，跟 SSE 一点关系没有（这个坑真的踩过一轮，
-  // 一度以为是 Tomcat 缓冲，方向整个反了）。
-  // 历史：/chat/completions 是**无状态**协议，模型这一轮知道的全部就是这一次请求里的
-  // messages 数组——之前问过的不一起发过去，它就真的不记得（曾经就是这样：同一个抽屉里
-  // 接着追问，AI 却答"我没有上下文记忆"）。后端不落库、也拿不到，所以只能在这儿交上去。
-  //
-  // 只带**已经问完**的（done）：还在流的那一轮还没有答案，发过去等于让模型接着自己续写。
-  // 出错的也不带——那轮的 answer 是报错文案，不是模型说过的话。
-  const history = messages.value
-    .filter((m) => m.done && !m.error && m.answer)
-    .map((m) => ({ question: m.question, answer: m.answer }))
-
-  const turn = reactive({
-    question,
-    prompt: '',
-    reasoning: '',
-    answer: '',
-    // 本轮已收到的总字数（思考 + 正文都算）。**不是调试输出**：流式到底通没通，
-    // 从界面上一眼就能看出来——数字一路往上爬 = 真的在流；从 0 直接跳到全长 =
-    // 上游把整段缓冲住了才给我们。没有它，"卡住了"这件事就只能靠猜。
-    //
-    // ⚠️ 必须把两个通道都算进来：只数 reasoning 的话，非思考模型（deepseek-flash 这类）
-    // 一次都不会触发 onReasoning，计数器恒为 0 → 永远不渲染，恰好在最需要它的模型上是瞎的。
-    received: 0,
-    // 本轮收完了没（决定字数计数器还显不显示）。不能用全局 asking 顶替：
-    // 它是抽屉级的，多轮之后会把早已结束的那一轮也点亮
-    done: false,
-    // 思考进行中 = 展开。正文一开始到达就转 false。**只增不回头**：
-    // 有内容之后框就不再自动合上了，看原因见模板里 <details class="think"> 的注释
-    thinking: true,
-    error: false,
-    questionKey
-  })
-  messages.value.push(turn)
-
-  asking.value = true
-  askAbort = new AbortController()
-  askAi(question, {
-    topicId: topic.value.id,
-    questionKey,
-    history,
-    signal: askAbort.signal,
-    onPrompt: (text) => { turn.prompt = text },
-    onDelta: (delta) => { turn.answer += delta; turn.received += delta.length; turn.thinking = false },
-    onReasoning: (text) => { turn.reasoning += text; turn.received += text.length }
-  })
-    .catch((e) => {
-      // 用户点"停止"不是错误，别把 AbortError 当失败显示出来
-      if (e?.name === 'AbortError') {
-        if (!turn.answer) messages.value.pop()
-        return
-      }
-      turn.error = true
-      turn.answer = e?.message || 'AI 调用失败'
-    })
-    .finally(() => {
-      turn.thinking = false
-      turn.done = true
-      asking.value = false
-      askAbort = null
-    })
-}
-
-function cancelAsk() {
-  askAbort?.abort()
-}
 
 // ==================== 随堂测验 ====================
 
 /**
  * 随堂测验：**在这个抽屉里就地考当前这条知识**。
  *
- * 答题、判分、讲解走 `ExamRunner.vue`（**与考试页同一个组件**），
- * 这里只管**出卷**：范围 = 当前这条，题量结构 = `ai.prompt.exam.quiz.types`。
- *
- * **零写入**：题目和作答都只在内存里（跟考试页一样），刷新就没了。
+ * <p>实现搬到了 `useQuiz.js`（2026-11-11 拆分）：查锚、出卷、状态机、中止自成一块，
+ * 详情页只留"调用它"的几行。
  */
-const quizOn = ref(false)
-/** idle（还没开始）/ loading（出题中）/ error（出题失败）/ running（答题器接管） */
-const quizPhase = ref('idle')
-const quizQuestions = ref([])
-/** 题量结构（算分要用） */
-const quizSections = ref([])
-const quizNote = ref('')
-const quizError = ref('')
-/** 这一条是"中性结果"不是错误（「出不了题」= 内容太少，不是坏了） */
-const quizQuiet = ref(false)
-/** 测验用的那几项配置。**读一次就存着**，反复开测验不用每次都拉 */
-const quizSpec = ref(null)
-/** 出题中的中止器 */
-let quizAbort = null
-
-/** 判分时把哪些知识当材料：当前这条 */
-const quizTopicIds = computed(() => (topic.value ? [topic.value.id] : []))
-
-/**
- * 开始随堂测验。
- *
- * **配置只读一次**（`loadExamSpec`）：测验的题量与范围都来自配置，
- * 反复开测验时配置不会变，没必要每次都打一遍接口。
- */
-async function startQuiz() {
-  if (quizPhase.value === 'loading') return
-  quizOn.value = true
-  quizPhase.value = 'loading'
-  quizError.value = ''
-  quizQuiet.value = false
-  quizNote.value = ''
-  quizQuestions.value = []
+const {
+  quizOn,
+  quizPhase,
+  quizLoading,
+  quizQuestions,
+  quizPlan,
+  quizAttemptId,
+  quizNote,
+  quizError,
+  quizQuiet,
+  quizStale,
+  quizTask,
+  openQuiz,
+  answerQuizTask,
+  redoQuiz,
+  regenerateQuiz,
+  closeQuiz
+} = useQuiz({
+  // 判分时把哪些知识当材料：当前这条
+  topicIds: () => (topic.value ? [topic.value.id] : []),
+  // 卷名带上标题（考试记录里分得出是哪条的测验）
+  titleOf: () => topic.value?.title || '',
+  // 锚上的卷过没过期（正文在出卷后改过 ⇒ 只提示不拦截）
+  topicUpdatedAt: () => topic.value?.updateTime || '',
   // 聊天那一轮如果还在流，先掐掉：一次只干一件事，
   // 两个请求同时打过去只是白烧 token，用户在测验里也看不到那半截回答
-  askAbort?.abort()
-  quizAbort?.abort()
-  quizAbort = new AbortController()
-  try {
-    const spec = quizSpec.value || (quizSpec.value = await loadExamSpec())
-    const sections = spec.quizTypes.sections
-    if (!sections.length) throw new Error('没有可用题型')
-    quizSections.value = sections
-    // 出卷那段在 `exam.js` 的 `generatePaper()`，**与考试页共用**
-    const r = await generatePaper({
-      paper: spec.paper,
-      scope: spec.quizScope,
-      sections,
-      // 难度用配置的**默认档**（第一行）。测验没有出卷设置面板
-      level: spec.levels[0],
-      extra: '',
-      topicIds: quizTopicIds.value,
-      signal: quizAbort.signal
-    })
-    if (r.error) {
-      quizQuiet.value = r.quiet
-      quizError.value = r.error
-      quizPhase.value = 'error'
-      return
-    }
-    const bits = []
-    if (r.note) bits.push(r.note)
-    const bad = typesBadNote(spec.quizTypes.bad)
-    if (bad) bits.push(bad)
-    quizNote.value = bits.join('，')
-    quizQuestions.value = r.questions
-    quizPhase.value = 'running'
-  } catch (e) {
-    if (e?.name === 'AbortError') return
-    quizError.value = e?.message || '出题失败'
-    quizPhase.value = 'error'
-  }
-}
+  onBeforeStart: () => cancelAsk()
+})
 
-/** 回到聊天（测验这一遍就作废：卷子只在内存里） */
-function closeQuiz() {
-  quizAbort?.abort()
-  quizOn.value = false
-  quizPhase.value = 'idle'
-  quizQuestions.value = []
-}
+// 任务卡「作答」跳回来（?quizTask=<id>）：开抽屉直接消费那个出题任务
+// （直接按 id 消费——那一刻任务列表可能还没拉到，quizTask 计算属性还没就位）
+watch(
+  () => route.query.quizTask,
+  (v) => {
+    const id = Number(v)
+    if (!Number.isFinite(id) || id <= 0) return
+    quizOn.value = true
+    answerQuizTask(id)
+  },
+  { immediate: true }
+)
+
+/** 答题器内部阶段（ready / grading / done）——答完了才给「重做本卷 / 重新生成」。
+ *  抽屉一关就复位：重开时答题器挂载会重新报一次 phase，别拿上一场的 done 残值开门。 */
+const quizRunnerPhase = ref('ready')
+watch(quizOn, (on) => {
+  if (!on) quizRunnerPhase.value = 'ready'
+})
 
 const adoptOpen = ref(false)
 const adoptTurn = ref(null)
@@ -894,8 +1283,12 @@ function syncTopicSnapshot(patch) {
  * 但**弹在哪一步**归各自（采纳说「已采纳」，自动保存什么都不说）。
  */
 async function applyPatch(patch) {
-  await updateTopic(topic.value.id, patch)
+  const fresh = await updateTopic(topic.value.id, patch)
   syncTopicSnapshot(patch)
+  // 「更新于」要跟着刷新（2026-11-09 用户报「时间不会动态变化，必须刷新页面才会变」）：
+  // syncTopicSnapshot 只搬 patch 里的字段，而时间戳是**后端填**的、patch 里根本没有 ——
+  // updateTopic 刷完缓存后返回的才是库里的新值，从这儿补进快照。
+  if (fresh?.updatedAt) topic.value = { ...topic.value, updatedAt: fresh.updatedAt }
 }
 
 // 失败提示不用自己写：axios 拦截器已经统一弹了、还做了同一条消息去重。
@@ -904,35 +1297,245 @@ async function onAdoptConfirm(patch) {
   ElMessage.success('已采纳')
 }
 
-// ============ AI 调整正文（改写整篇） ============
-// 抽屉（AiEditDrawer）自己管发请求和左右对比；这里只管两件事：开它、把结果写进编辑器。
+// ============ 选区提问 → 写入正文 ============
+// 链路：正文里选中一段 ⇒ 浮层里补一句问题 ⇒ 问答抽屉里问 ⇒ 答案下方「写入正文」
+//        ⇒ 左右对比确认框 ⇒ 确认后写进**选中段落之后**（另起一段）。
 //
 // **写库不在这一步**：写回编辑器后，编辑器照常上报 markdownUpdated
 // → v-model 变了 → 上面那条 1.5s 防抖的自动保存自己会跟上。
 // 走那一条链而不是这里直接 updateTopic，是为了**只有一条保存路径**
 // （正文本来就有自动保存，再单开一条就成了两处各写一遍）。
-const editOpen = ref(false)
+
+/** 同样转发编辑器的"取一段块"（对比框的左栏用它） */
+const blocksInRange = (from, to) => editorRef.value?.blocksInRange(from, to) ?? []
 
 /**
- * 给抽屉的对比区用：**markdown → ProseMirror doc**。
+ * 正文里选中一段后，浮层提交上来的东西。
  *
- * 抽屉要在左边画"原文渲染后的样子" ⇒ 必须用**编辑器自己的解析器**（同一个 schema、
- * 同一套 toDOM），否则预览和正文对不上（标题层级、软换行、字号 mark、图片节点…）。
- * 另找一个 markdown 渲染器就是两套渲染 ⇒ 那种坑已经踩过一次。
- *
- * 编辑器在 MilkdownProvider 里面，外层拿不到它的 ctx ⇒ 这里代为转发。
+ * - text：选中的那段文字
+ * - supplement：用户补的那句问题（可以为空）
+ * - blockFrom / blockTo：选中段落所在的块区间（写入的锚点）
+ * - blockText：那时候这段的纯文本（写之前要核对正文有没有被改过）
  */
-const docOfBody = (md) => editorRef.value?.docOf(md) ?? null
+function onAskAi(payload) {
+  askOpen.value = true
+  // 测验态里没有对话区，这一轮问答会看不见 ⇒ 回到问答（测验本来就是内存里的一次性东西）
+  if (quizOn.value) closeQuiz()
+  submitAsk('', {
+    question: buildSpotQuestion(payload.text, payload.supplement),
+    spot: {
+      blockFrom: payload.blockFrom,
+      blockTo: payload.blockTo,
+      blockText: payload.blockText
+    }
+  })
+}
 
-function applyEdited(body) {
-  // 编辑器没就绪时 replaceContent 返回 false —— 那时候写进去等于没写
-  if (!editorRef.value?.replaceContent(body)) {
-    ElMessage.error('没写进去：编辑器还没准备好')
+/**
+ * 选区提问的问法。
+ *
+ * **为什么把选中的原文塞进问题里**：后端只把整篇正文当上下文，
+ * 不告诉模型"你看的是哪一段" —— 不点名，它会把整篇都解释一遍。
+ *
+ * ⚠️ **前缀不能说死"解释"**（2026-11-05 改）：
+ * 用户在这一步可能说的不是"解释"，而是"把这段替换成更清晰的写法"。
+ * 前缀里写死"请解释"，模型就会去解释 ⇒ 交回来的是一段话，不是可应用的新正文。
+ * ⇒ **用户自己写了话，他的话就是这次的要求**，前缀只负责点明"是这一段"。
+ * 没写（留空回车）⇒ 默认要解释这一段。
+ */
+function buildSpotQuestion(text, supplement) {
+  const segment = String(text || '').trim()
+  const extra = String(supplement || '').trim()
+  if (extra) return `正文里的这一段：\n\n${segment}\n\n${extra}`
+  return `请解释正文里的这一段：\n\n${segment}`
+}
+
+// ---------- 「应用到正文 / 应用为新的知识点」的确认框 ----------
+const insertOpen = ref(false)
+/** 要应用的那段回答（markdown） */
+const insertAnswer = ref('')
+/** 写入锚点 */
+const insertSpot = ref(null)
+/** 'body' = 应用到正文；'topic' = 应用为新的知识点 */
+const insertMode = ref('body')
+/** **这一轮发给 AI 时用的正文本体**（改写模式左栏的"原文"就是它） */
+const insertBase = ref('')
+/** 正在建新知识点（落库那条链） */
+const insertSaving = ref(false)
+
+function openInsert(turn, mode = 'body') {
+  insertAnswer.value = turn.answer || ''
+  insertSpot.value = turn.spot || null
+  insertMode.value = mode
+  insertBase.value = turn.bodyAtAsk || ''
+  insertAdjustError.value = ''
+  insertAdjustTurn.value = null
+  insertOpen.value = true
+}
+
+/**
+ * 确认应用。
+ *
+ * **三种动作**（由弹窗那一侧定 —— 它知道这一轮交回来的是"一份改写后的整篇正文"
+ * 还是"一段解释"）：
+ * - `replace`：**整篇替换**（AI 按约定交回了改写后的完整正文）
+ * - `insert`：追加到选中段之后
+ * - `topic`：建一条新知识点，并在原正文里留一条指向它的链接
+ *
+ * **两种"正文被改过"的拒绝**：
+ * - `replace`：问完之后用户又编辑了正文 ⇒ 这份改写是基于旧正文的，
+ *   写进去会把他的修改盖掉 ⇒ 让他重新问一次；
+ * - `insert`：选区是"当时"选的，中间用户又编辑了正文 ⇒ 块位置会跟着正文变，
+ *   写进去的东西可能落在错的地方 ⇒ 让他重新选一次（总比写歪了好）。
+ *
+ * @param {{action: string, content: string, title?: string}} payload 弹窗交出来的
+ */
+function onInsertConfirm(payload = {}) {
+  const { action } = payload
+  const content = String(payload.content || '').trim()
+  if (!content) {
+    ElMessage.error('没写进去')
     return
   }
-  editOpen.value = false
-  ElMessage.success('已应用')
+  if (action === 'topic') {
+    createNewTopic(content, String(payload.title || '').trim())
+    return
+  }
+  if (action === 'replace') {
+    if (editContent.value !== insertBase.value) {
+      ElMessage.error('正文已经改过，请重新问一次')
+      return
+    }
+    if (!editorRef.value?.replaceContent(content)) {
+      ElMessage.error('没写进去')
+      return
+    }
+    insertOpen.value = false
+    return
+  }
+  const spot = insertSpot.value
+  // 没有锚点：追加这条路走不通（没有"写到哪里"这回事）
+  if (!spot) return
+  const now = blocksInRange(spot.blockFrom, spot.blockTo)
+    .map((b) => b.node.textContent)
+    .join('\n')
+  if (now !== spot.blockText) {
+    ElMessage.error('正文已经改过，请重新选中这一段')
+    return
+  }
+  if (!editorRef.value?.insertAfter(spot.blockFrom, spot.blockTo, content)) {
+    ElMessage.error('没写进去')
+    return
+  }
+  insertOpen.value = false
 }
+
+/**
+ * 建一条新知识点，并在原正文里留一条指向它的链接。
+ *
+ * **目录 / 类型跟原知识点一致**（原知识点没归类 ⇒ 新的一条也是"待归类"）。
+ *
+ * **链接是单向的**（用户定的）：原正文选中段之后插一条指向新知识点的内链，
+ * 新知识点那边不回指 —— 回指等于在新知识点的正文里塞一行"来源说明"，
+ * 那是另一件事，不该顺手带进来。
+ *
+ * ⚠️ **失败不自己弹提示**：走的是 request.js 那套 axios 实例，
+ * 全站唯一的错误提示出口在那里（见 request.js 的注释）⇒ 这里只回滚状态。
+ */
+async function createNewTopic(content, title) {
+  insertSaving.value = true
+  try {
+    const created = await createTopic({
+      title,
+      content,
+      categoryId: topic.value?.categoryId ?? null,
+      typeId: topic.value?.typeId ?? null,
+      tags: []
+    })
+    const spot = insertSpot.value
+    if (spot && created?.id) {
+      editorRef.value?.insertAfter(
+        spot.blockFrom,
+        spot.blockTo,
+        `[${title}](${topicHref(created.id)})`
+      )
+    }
+    ElMessage.success('已创建')
+    insertOpen.value = false
+  } finally {
+    insertSaving.value = false
+  }
+}
+
+/** 确认框里那句「重新生成」正在跑 */
+const insertAdjusting = ref(false)
+/** 「重新生成」那一轮（它的 turn.html 就是右栏要显示的实时内容） */
+const insertAdjustTurn = ref(null)
+/** 重新生成失败的错误原文（零前缀直出） */
+const insertAdjustError = ref('')
+
+/**
+ * 确认框里让 AI 再调一版（2026-11-05 用户定）。
+ *
+ * 走的是**问答主通道**（同一套 ask / history / 追问）⇒ 这一轮会进抽屉的历史，
+ * 关掉弹窗就能看到"我让它改了什么、它改成了什么"。
+ *
+ * ⚠️ **必须带上当前这一版**（用户在确认框的编辑器里改过的那份）：
+ * 历史里存的是 AI 的原版，不带上它等于让 AI 从头再写一遍，用户刚才的手工修改白费。
+ *
+ * ⚠️ **"正在生成"这个标志只能在真的发出去之后才置上**（2026-11-05 修的 bug）：
+ * 上一版先置标志再调 submitAsk，而 submitAsk 在"上一轮还在流"时会**早退**
+ * ⇒ 这一轮压根没发出去，标志永远没人复位 ⇒ 按钮转圈到天荒地老，
+ * 右边的内容当然也不会变（用户看到的正是这个）。
+ */
+function onInsertAdjust({ text, current }) {
+  if (insertAdjusting.value) return
+  const instruction = String(text || '').trim()
+  if (!instruction) return
+  insertAdjustError.value = ''
+  // **这一轮是不是"改写正文"**：回答里带着标记 ⇒ AI 交回的是一份改写后的整篇正文。
+  const rewrite = hasBodyMark(insertAnswer.value)
+  const started = submitAsk('', {
+    // 改写模式：那句话**就是**对正文的调整要求，按「可改写」约定发
+    // （要求 + 当前这一版正文 ⇒ 交回改写后的整篇正文）。
+    // 非改写模式：老规矩，让 AI 把**这条回答**重写一版。
+    question: rewrite
+      ? instruction
+      : `请按下面的要求重写上一条回答（保持原来的意思，只按要求调整，不要另起话题）：\n\n` +
+        `${instruction}\n\n【当前这一版】\n${String(current || '').trim()}`,
+    // 改写模式：**带上当前这一版**（上一版改写出来的正文）——
+    // 不带上它等于让 AI 从原文重写一遍，用户刚才的调整白费。
+    baseMd: rewrite ? String(current || '').trim() : undefined,
+    spot: insertSpot.value,
+    onStart: (turn) => {
+      // 这一轮就是"重新生成"的那一轮 ⇒ 它的 turn.html 是节流渲染好的实时内容，
+      // 右栏直接显示它（内容一点点长出来 = 看得见在动）。
+      insertAdjustTurn.value = turn
+    },
+    onDone: (turn) => {
+      insertAdjusting.value = false
+      insertAdjustTurn.value = null
+      if (turn.error) {
+        // 失败：**错误原文摆在这个弹窗里**。上一版失败只在抽屉里报错，
+        // 而抽屉被这个弹窗挡着 ⇒ 用户只看到"转圈转完了、内容没变"。
+        insertAdjustError.value = turn.answer || '生成失败'
+        return
+      }
+      // 出错的那一轮 answer 是报错文案 ⇒ 不能拿它去替换 diff 里的内容
+      insertAnswer.value = turn.answer
+    }
+  })
+  insertAdjusting.value = started
+  if (!started) {
+    // 上一轮还在流 ⇒ 这一轮根本没发出去（submitAsk 早退）
+    insertAdjustError.value = 'AI 还在生成'
+  }
+}
+
+// ⚠️ **详情页不再拉学习投影**（2026-11-12）：掌握度搬到**目录书**
+// （卡片右上角的档位签 + 书页顶部的概览条），这里既不显示掌握度、
+// 也没有「标记已学」按钮 ⇒ 这一页不再需要学习投影。
+// （随堂测验仍在这一页发起 —— 判分后证据照样落库，掌握度照样涨。）
 
 // 换一条知识就换一个答案：上一个问题的记录留着会张冠李戴。
 // 抽屉也一并关掉——开着上一条的问答面板看下一条，最容易认错。
@@ -942,18 +1545,26 @@ watch(() => topic.value?.id, () => {
   messages.value = []
   // 采纳框同理：它是拿上一条的回答去改这一条，不关的话点确认就把 A 的建议写进 B
   adoptOpen.value = false
-  // 调整正文的抽屉同理：它装着上一条正文的原文和改写结果。
-  // 不关的话，「应用到正文」会把 A 的改写写进 B。
-  editOpen.value = false
+  // 写入正文的确认框同理：它装着上一条正文的锚点和上一条的回答。
+  // 不关的话，「应用到正文」会把 A 的解释写进 B。
+  // ⚠️ 「重新生成」那两个状态也要清：它们装的是**那一轮**的流式内容，
+  // 留着就会在下一条知识点的弹窗里显示上一条的东西。
+  insertOpen.value = false
+  insertAdjustTurn.value = null
+  insertAdjustError.value = ''
   // 大纲同理：它是**上一条**正文的标题结构。换一条知识就换一份大纲。
   // 不清的话，新编辑器还没就绪的那一瞬间（重建编辑器要等它渲染完），
   // 页面上挂的还是上一条的大纲 —— 用户看到的是"这条知识没有目录，却有大纲"。
   // 编辑器就绪后会再报一次（报空数组），但那已经是几百毫秒之后了。
   outline.value = []
   activeHeadingId.value = ''
+  // 大纲浮层也收起来：开着的话下一秒弹的是**上一条**的目录
+  outlineHidden.value = true
 })
 
 async function handleDelete() {
+  // 空态没有可删的东西（头部图标排常驻，删除入口跟着它常在）
+  if (!topic.value) return
   // 确认框 + 删除 + 提示都在 store（和列表页卡片同一个入口），
   // 这里只负责"删完之后回上一页"。
   if (!(await confirmDeleteTopic(topic.value))) return
@@ -969,9 +1580,25 @@ function goBack() {
   }
 }
 
-function goCategory(id) {
-  router.push(categoryLink(id))
-}
+// ==================== 命中浮条（搜索上下文） ====================
+//
+// ⚠️ **这一整段删了**（2026-11-05 用户：「对于卡片栏来说 这个搜索直接做过滤就行了
+// 不用那个命中多少个的框 … 我点进卡片后那个命中栏竟然还在
+// 点击上下都不知道在往哪里跳」）：
+// 卡片栏（正文那档）是**纯过滤** —— 命中什么只剩什么 ⇒ 没有"第几个命中"这回事 ⇒
+// 列表页不画浮条、**详情页也不画**（点进来还挂着那个框，正是他说的"乱成一团"）。
+//
+// ⚠️ **命中浮条现在只在目录树里**（CategoryTree）：目录那档才有"哪一行命中了"，
+// 清单 / 游标 / ↑↓ 都在那一处。
+
+/**
+ * 顶栏那条目录路径的数据源：**把这条知识的目录归属报给壳**（store 的 `openTopicCategoryId`）。
+ * `topic` 是这一页的局部状态，AppLayout 顶栏拿不到 ⇒ 详情页写、顶栏读（只报目录 id 这一个最小值）。
+ * watch 的是**结果**：目录变的路径有两条（载入、AI 采纳改归类），watch 是结果不是某条路径 ⇒ 全覆盖。
+ */
+watch(() => topic.value?.categoryId, (cid) => {
+  openTopicCategoryId.value = cid ?? null
+}, { immediate: true })
 
 
 // 浏览器标签页标题 = 这条知识的标题。
@@ -998,15 +1625,9 @@ watch(() => topic.value?.title, applyTitle, { immediate: true })
 onActivated(applyTitle)
 onDeactivated(() => {
   document.title = DEFAULT_TITLE
-  // ⚠️ **滚动容器是壳的 `.app-content`，列表页和详情页共用同一个**。详情页进来时把位置往下推了，
-  // 切走时不归零的话，列表页会顶着"上一条知识的滚动位置"进场（尤其列表页顶部那几行
-  // 标题/筛选条正好被吃掉一截）。归零放在这里而不是 onBeforeUnmount：keep-alive 切走
-  // 不销毁，onBeforeUnmount 压根不触发。
-  const host = detailRef.value?.parentElement
-  if (host) host.scrollTop = 0
-  // 容器归零了，"上次对齐到哪儿"也得一起归零 —— 否则切回来时
-  // alignContentTop 会以为用户滚过（scrollTop 0 ≠ lastAlignedTop）而跳过对齐。
-  lastAlignedTop = 0
+  // v10 后壳在详情页收滚（`.app-content:has(.detail)` overflow:hidden）、内容恰好一屏高，
+  // 壳容器的 scrollTop 恒被浏览器夹到 0 ⇒ 切回列表页天然在页顶。旧版这里还有一段
+  // "给列表页归顶"的滚动重置（详情页当时会把壳的滚动往下推），随对齐体系一起删了。
 })
 
 
@@ -1017,184 +1638,318 @@ watch(() => route.params.id, () => {
   const id = Number(route.params.id)
   if (!Number.isFinite(id) || id <= 0) return
   if (topic.value && topic.value.id === id) return  // 同 id：复用缓存，不重新加载
+  // ⚠️ **换知识点 ⇒ 正文里的高亮要清**（2026-11-10 用户报「这里还是显示中了18处」）：
+  // **编辑器是复用的**（`switchContent` 走 `tr.replaceWith`）⇒ 那一下会触发
+  // 插件的 `docChanged` 分支 ⇒ **用旧词在新正文里重算命中** ⇒ 上一条的词
+  // 在新正文里又命中了一批（实测「28 处」就这么来的，而 URL 上早就没 `?q=` 了）。
+  // ⇒ 这里显式用空词清一次（装饰归零、计数归零），**不依赖壳那边的 watch**——
+  // 壳的 watch 有"输入框有焦点就早退"那条分支，靠它清不可靠。
+  applyBodySearch('', false)
+  // ⚠️ **换知识点 ⇒ 抽屉与随堂状态一并收掉**（2026-11-14 用户报「在其他知识点打开
+  // 随堂测验怎么打开的是 Java程序结构总览的」）：抽屉（askOpen）与随堂（quizOn）
+  // 都是**组件级状态**，keep-alive 复用实例时路由切换不重置 ⇒ 上一条知识的抽屉
+  // 原样出现在新知识点上（回看卷、答题现场全是别人的）。
+  askOpen.value = false
+  if (quizOn.value) closeQuiz()
   load()
 })
 onMounted(() => {
   load()
+  // 引导问题（配置树上那组）。拉不到就退回本地三条 —— 空态不能什么都不剩。
+  loadGuideQuestions()
+  // ⚠️ **这里原来还要按搜索词拉一次结构索引**（给命中浮条算"第几个命中"）——
+  // 浮条删了（2026-11-05：卡片栏是纯过滤，详情页不画浮条）⇒ 这句也不需要了。
+  // 索引本来就由壳启动时拉过一份，详情页自己再拉一遍是白拉。
 })
 
-/**
- * 往上找真正在滚的那一层。**故意不写死 `.app-content`，但也不去猜"哪一层在滚"**：
- * 判据只有"overflow-y 是滚动值"这一条，**不查 scrollHeight**。
- *
- * ⚠️ **查 scrollHeight 是我上一版写错的地方**：正文是 Milkdown 异步渲染的，`watch(topic)`
- * 触发那一刻编辑器还是空的（只有 min-height 135px），内容"装得下"→ 代码直接跳过，
- * 等正文长出来没人再触发。**能不能滚上取决于编辑器渲染快慢，所以时灵时不灵。**
- * 现在只认 overflow：装得下时 `scrollTop` 会被浏览器夹到 0，本来就是正确的"不用滚"。
- */
-function scrollParentOf(el) {
-  for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
-    if (/(auto|scroll|overlay)/.test(getComputedStyle(p).overflowY)) return p
-  }
-  return null
-}
-
-/**
- * 进来时把滚动位置对到「标签行那条分隔线 = 可视区顶部」：返回栏和标签行滚出视野，
- * 第一眼直接落在正文上（用户原话："滚到这条线就行"，图二就是那个效果）。
- *
- * ⚠️ **锚点是 `.tags` 的下沿，不是 `.content` 的上沿**。差的是 `.tags` 那个
- * `margin-bottom`（20px）：对齐下沿 = 那段间距留在分隔线和卡片之间，和用户给的图二一致；
- * 对齐卡片上沿会把间距也滚掉、卡片直接贴死顶栏，不一样。
- *
- * 用**双 rAF** 而不是 nextTick：nextTick 只保证 Vue 的 DOM 更新完了，**不保证浏览器已经
- * 算完布局**，Milkdown 还在异步起。这一条就是上一版"时灵时不灵"的另一半原因。
- *
- * ⚠️ **用序号合并而不是直接调**：一次进场会连着触发好几条（onMounted + watch(topic)，
- * 或 onActivated + 一次重渲染）。位移是相对的（`+=`），跑两遍就滚过头 —— 这里只认最后一次
- * 请求，把前面的丢掉。
- */
-let alignSeq = 0
-function scheduleAlign() {
-  const seq = ++alignSeq
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    if (seq !== alignSeq) return
-    alignContentTop()
-  }))
-}
-
-/**
- * 上次对齐之后，滚动容器停在哪儿。
- *
- * ⚠️ **这是「往下翻着翻着突然被刷回最上面」的根因所在**：
- * `alignContentTop()` 做的是**相对位移**（`scrollTop += 标签行下沿 - 容器上沿`），
- * 这个式子只有在"刚进场、正文还在顶上"时才对。用户自己往下翻了以后再触发它，
- * 那个 delta 是**负的** —— 等于把人从当前位置拽回顶部。
- *
- * 而**自动保存每次都会换一份 `topic` 快照**（`topic.value = { ...topic.value, content }`），
- * `watch(topic)` 就会调 `scheduleAlign` —— 于是"改一个字、1.5 秒后自动保存"，
- * 正好把正在往下读的人刷回顶部。
- *
- * 判据：容器现在的 scrollTop 跟上次对齐到的位置差得超过几个像素 ⇒
- * 说明用户（或别处）动过它 ⇒ **别再按"进场对齐"去动它**。
- * scrollTop 为 0 单独放行：那是"刚进来 / 刚从别处切回来"的状态。
- */
-let lastAlignedTop = 0
-
-function alignContentTop() {
-  const root = detailRef.value
-  const line = root?.querySelector('.tags')   // 目标就是它下沿那条 border-bottom
-  if (!line) return
-  const host = scrollParentOf(line)
-  if (!host) return   // 壳是 overflow:hidden + height:100%，整页滚不动，没有"第二选择"
-  // 用户已经自己滚走了 → 他的滚动位置优先，别动（详见 lastAlignedTop 的说明）
-  if (host.scrollTop > 4 && Math.abs(host.scrollTop - lastAlignedTop) > 4) return
-  host.scrollTop += line.getBoundingClientRect().bottom - host.getBoundingClientRect().top
-  lastAlignedTop = host.scrollTop
-}
-
-// 四个触发点缺一不可：keep-alive（onActivated）+ 异步加载（watch topic）+ 全屏（watch immersive）
-onMounted(scheduleAlign)
-onActivated(scheduleAlign)
-watch(topic, scheduleAlign)
-watch(() => immersive.on, scheduleAlign)
+// ── 旧「进场对齐」体系已删（2026-11-09 v10 清理）─────────────────────────────
+// scrollParentOf / alignPageTop / scheduleAlign / lastAlignedTop 一整套是给
+// 「壳的 .app-content 滚动」时代写的（对齐页头上沿 = 回到页顶）。v10 起壳在详情页
+// 收滚（:has(.detail) overflow:hidden），滚动容器只剩正文 .ProseMirror ⇒
+// scrollParentOf 恒返回 null、全链无操作；归顶由 resetBodyTop 直接作用于 .ProseMirror。
+// 要恢复旧模型先把壳的收滚撤了，再来 git 历史里找这套。
 
 // 离开详情页时清理自动保存定时器，避免后台 setTimeout 在组件销毁后还触发 updateTopic
 onBeforeUnmount(() => {
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null }
   if (statusTimer) { clearTimeout(statusTimer); statusTimer = null }
-  quizAbort?.abort()
 })
 </script>
 
 <style scoped>
-/* ⚠️ **这里刻意没有 max-width**（默认档，也是唯一的档）。原来写的是 `max-width: 920px`，而
-   `max-width` 是个定值：窗口一宽过 920，卡片就卡住不动、两侧空白一路增长 —— **卡片占屏
-   比例随窗口宽度一路往下掉，正是用户反复投诉的那个问题**（#134 当初给列表页/首页解除了
-   1440 上限，**只把详情页留作例外**，例外就是问题的来源）。#115/#116 当初定 920 的理由
-   是"长文一行别太长"，但那条理由后来用户自己推翻了：**比例恒定比行长重要**。
+/* ⚠️ **这里 2026-11-11 重新封顶了**（`max-width: 1200px` + 居中）。
+   这条改了两轮，过程别再走回头路 —— 两次动的**不是同一个东西**：
 
-   2026-10-21 顺手把「阅读宽度」那根可选封顶的滑块也删了 —— 它默认 2400 ≈ 不封顶，
-   在比它窄的窗口上根本不生效，**调它像调了个摆设**（用户原话："我试了调整好像一点用都没有"）。
-   现在详情页在所有窗口下都是 100% 铺满内容区。
+   **第一轮（#134 / 2026-10-09）删掉 920 封顶**，当时的原话是：
+   「**在比例相同的情况下 不应该被是否全屏影响啊 为什么会存在长度限制**」。
+   那条诉求**是对的**，它针对的是「卡片卡住不动、两侧空白一路增长、占屏比例一路往下掉」
+   —— 定值 max-width 让内容占比随窗口宽度掉，**这确实难看**。
+   ⇒ 当时 920 封顶删了，列表页/首页的 1440 上限也一起解了。
 
-   壳那边的 `.app-content:has(.home, .learn, .detail) > :where(*) { max-width: none }`
-   已经把内容区的 1440 定值解除了 ⇒ 这里不写 max-width 就是"不封顶"。 */
+   **但删掉封顶 ≠ 行长该无限涨**。不封顶之后详情页在 2560 视口下正文一行 **152 个汉字**
+   （实测：.ProseMirror 文字区 2122px ÷ 14px），全屏阅读态更到 **170 字**。
+   中文正文舒适区是 30–45 字，70 字已接近可接受上限 ⇒ 151 字一行是**排版事故**
+   （眼睛从行尾扫回行首要跨 15 厘米），不是"更充分利用屏幕"。
+
+   ⇒ **当年那句「比例恒定比行长重要」被拿去当"不封顶"的依据，是个偷换命题**：
+   当时的取舍是「920 封顶 vs 1440 封顶」——**两个都封顶**，只是宽窄不同；
+   现在这个取舍变成了「封顶 vs 不封顶」，行长从 65 字一路走到 152 字，
+   是**量变到质变**，根本不是同一个命题。
+   （而且那句注释里自己算的「920 ÷ 16 ≈ 60 个汉字」就是错的：正文用的是 14px 不是 16px，
+   真实值 920÷14 ≈ 65 字 —— **一个用来论证"必须有上限"的注释，它自己的数就是编的**，
+   见 base.css 那段。）
+
+   **2026-11-11 用户重新拍板**（原话：「我之前专门让改的…后来看其它系统其实都是固定大小
+   之后就有点动摇了」）：**固定大小是对的**，但要**固定在能读的范围里、再居中**。
+   ⇒ 封顶 + 居中，两个问题一起解：
+     · **行长恒定**（不再随屏宽涨）；
+     · **超宽时左右对称留白**（不是卡在左边 —— 那正是首页 A2 踩过的坑）。
+   与首页 `.home`（1160 居中）、列表页 `.learn`（1160 居中）**同一个口径**：
+   业务壳的三页版心规则必须一致，不能各写一份。
+
+   **1200px 怎么算出来的**（改宽度时按这条链推，别拍脑袋）：
+     .ProseMirror 文字区 1100（≈78 字/行）
+     + .ProseMirror 左右 gutter 34×2 = 68
+     + .doc > .content 左右内距 16×2 = 32
+     = .detail 1200
+   78 字是中文长文可接受的偏宽值：再宽眼睛回扫就吃力，再窄表格/代码块放不下。
+
+   ⚠️ **width: 100% 这条不能省**（#855 踩过的坑）：
+   `.app-content:has(.detail)` 是 **flex 列**，而 **flex 列里子项的 `margin: 0 auto`
+   不是"居中"** —— 交叉轴上的 auto 外边距会让子项**按内容宽度收缩**（而不是像 stretch
+   那样拉满），再把余量均分成左右两半 ⇒ **正文越短卡片越窄**（用户当时报的"窄卡"）。
+   ⇒ 封顶 + 居中必须配 `width: 100%`，让子项先拉满、再被 max-width 截住。
+   这也是壳那边 `.app-content:has(.detail) > :where(*) { margin-left/right: 0 }`
+   要改成 `margin: 0 auto` 的原因（见 AppLayout.vue 里的注释）。 */
 .detail {
+  display: flex;
+  flex-direction: column;
+  /* v10：壳 :has(.detail) 已改 flex 列 + 收滚，这里吃满剩余高度，让「固定头部 + 正文内滚」成立。
+     Dock 退役后那份底部让位（46+22）也一起撤了。 */
+  flex: 1;
+  min-height: 0;
+  /* 2026-11-11：版心封顶 + 居中（理由见上面那段）。 */
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* 正文列。大纲是**浮层**（fixed，不占版位），这里实际只剩正文卡一个孩子；
+   两列的 flex 形态留着（大纲的挂载点还在里面）。
+   min-width: 0 是必须的：否则长代码块 / 长表格会把这一列撑破。
+   v10：flex:1 + min-height:0 把高度传下去，卡片 = 头部固定 + 正文滚。 */
+.doc {
+  display: flex;
+  align-items: stretch;
+  gap: var(--sp-16);
+  flex: 1;
+  min-height: 0;
+}
+.doc > .content {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
 
-/* 正文 + 右侧大纲：两列。**只在正文有标题时**大纲那一列才存在（见模板 v-if），
-   所以这里不需要为"没有大纲"准备一个空位——flex 少一个子项就少一列。 */
-.doc {
+
+
+/* ---------- 标题行 + meta（v10：标题独占一行，类型收 meta 的 chip） ---------- */
+.title-row {
   display: flex;
-  align-items: flex-start;
-  gap: var(--sp-16);
+  align-items: center;
+  gap: var(--sp-12);
 }
-/* 正文列吃掉剩下的宽度。min-width: 0 是必须的：否则长代码块 / 长表格
-   会把这一列撑破，把大纲栏挤到屏幕外面去。 */
-.doc > .content {
+.title-row .title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+/* meta 行：左信息右操作，一整排不折行 */
+.meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-12);
+}
+.meta-row .meta {
   flex: 1;
   min-width: 0;
 }
-
-
-
-/* ---------- 顶栏 ---------- */
-.bar {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-10);
-  min-height: 29px;
-  /* 顶栏到下面那行的距离：**写死**（原来是「顶栏下」那根滑块，2026-10-21 去掉）。 */
-  margin-bottom: var(--sp-11);
-}
-.bar__right {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-10);
+/* 类型 chip（低频操作收起）：标题行右端 = 卡片右上角。
+   标题 flex:1 自然把它顶到最右，gap 由 .title-row 给，这里只要不被挤扁 */
+.title-type {
   flex-shrink: 0;
 }
-.bar__time {
-  font-size: var(--text-md);
-  color: var(--cc-text-4);
+/* ---------- 玉签返回钮（A 方案，2026-11-09 用户拍板「B 月弧」换「A 玉签」） ----------
+   骑跨卡片左边框、与标题第一行对齐。定位基准 .editor__before（position:relative
+   在 kb-editor.css），left 负值 = 白边(--kb-gutter) + 框内距(--sp-12)，
+   translateX(-50%) 把圆心钉在边框线上。
+   常态一枚 10px 窄玉片，**刻意做虚**（2026-11-09 用户反馈常态太显眼，
+   「虚一点或者细一点」⇒ 细 14→10px + 整体透明度 55% + 边框投影减淡，三件一起）：
+   只留一线若隐若现的玉色提示「这儿有东西」；悬停卡片 width 动画展开成
+   完整白玉圆扣、同时透明度回满，箭头淡入。 */
+.back-edge {
+  position: absolute;
+  left: calc(-1 * (var(--kb-gutter, 34px) + var(--sp-12)));
+  top: -4px;
+  transform: translateX(-50%);
+  z-index: 22;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 10px;
+  height: 48px;
+  padding: 0;
+  border-radius: 24px;
+  color: var(--cc-primary);
+  background: linear-gradient(135deg, var(--cc-primary-soft), var(--cc-surface) 70%);
+  border: 1px solid color-mix(in srgb, var(--cc-primary) 18%, var(--cc-border));
+  opacity: 0.55;
+  box-shadow:
+    0 1px 4px color-mix(in srgb, var(--cc-primary) 7%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  transition: all 0.24s cubic-bezier(0.25, 0.8, 0.3, 1);
+  cursor: pointer;
+  font-size: 20px;
+}
+.back-edge :deep(svg) {
+  opacity: 0;
+  transition: opacity 0.16s 0.06s;
+}
+.doc:hover .back-edge,
+.back-edge:hover,
+.back-edge:focus-visible {
+  width: 48px;
+  opacity: 1;
+  background: linear-gradient(135deg, var(--cc-primary-soft), var(--cc-surface));
+  box-shadow:
+    0 8px 22px color-mix(in srgb, var(--cc-primary) 26%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+.doc:hover .back-edge :deep(svg),
+.back-edge:hover :deep(svg),
+.back-edge:focus-visible :deep(svg) {
+  opacity: 1;
+}
+/* 触屏没有 hover：常显完整圆扣（同 §4.10(j) 的口径，"看不见就没法点"） */
+@media (hover: none) {
+  .back-edge {
+    width: 48px;
+    opacity: 1;
+    background: linear-gradient(135deg, var(--cc-primary-soft), var(--cc-surface));
+  }
+  .back-edge :deep(svg) {
+    opacity: 0.85;
+  }
+}
+/* ---------- 头部图标排（v10：AI / 大纲 / 工具栏 / 全屏 / 删除） ---------- */
+.hact {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.hact-btn {
+  height: 28px;
+  min-width: 28px;
+  padding: 0 6px;
+  border: none;
+  border-radius: var(--radius-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  color: var(--cc-text-3);
+  /* 16px = 图标家族标准档（.kb-icon-btn 同档、老稿 ghost-btn 也在此档）：
+     原来 --icon-sm 14px 比老稿小一圈、高分屏上显糊（2026-11-13 用户反馈后抬档）。 */
+  font-size: var(--icon-md);
+  cursor: pointer;
+  transition: var(--cc-transition);
+}
+.hact-btn:hover {
+  background: var(--cc-primary-soft);
+  color: var(--cc-primary);
+}
+.hact-btn.is-on {
+  background: var(--cc-primary-soft);
+  color: var(--cc-primary);
+}
+.hact-btn.is-danger:hover {
+  background: none;
+  color: var(--cc-danger, #b34d48);
+}
+.hact-sep {
+  width: 1px;
+  height: 14px;
+  background: var(--cc-border);
+  margin: 0 5px;
+  flex: none;
+}
+/* ---------- 阅读进度线：贴固定头部底缘，贯通整张卡片宽 ---------- */
+.read-progress {
+  position: absolute;
+  left: calc(-1 * (var(--kb-gutter, 34px) + var(--sp-12)));
+  right: calc(-1 * (var(--kb-gutter, 34px) + var(--sp-12)));
+  bottom: 0;
+  height: 2px;
+  background: var(--cc-surface-2);
+  pointer-events: none;
+}
+.read-progress > i {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--cc-primary);
+  transition: width 0.15s;
+}
+/* meta 行：保存状态 · 更新时间 · 字数。保存状态/更新时间原来在页内顶栏（.bar），
+   顶栏撤了它们跟着标题走。颜色 --cc-text-2：更新时间是要读的内容，不是装饰
+   ⇒ 不能用 --cc-text-4（对白底 ≈1.9:1）；§4.3 的口径是"层级差由字号与字重承担，
+   不再靠更灰"。 */
+.meta {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  margin-top: var(--sp-4);
+  /* 标题带 ↔ 正文的间距。⚠️ 这个变量原来归 .tags 行的 margin-bottom
+     （偏好项 ui.detail.detailTagsGap，"那行下面留多少"）——那一行收进标题行后
+     变量改落在这里，含义顺势变成"标题带下面留多少"：滑块还是同一个，
+     调的还是同一处呼吸，不给偏好面板留一根废的。 */
+  margin-bottom: var(--detail-tags-gap, var(--sp-13));
+  font-size: var(--text-sm);
+  color: var(--cc-text-2);
   font-variant-numeric: tabular-nums;
 }
-/* 返回键：和工具栏那些图标按钮不同，它是页面级的导航动作，用幽灵样式（无底无框） */
-.ghost {
+.meta-save {
   display: inline-flex;
   align-items: center;
   gap: var(--sp-4);
-  font-size: var(--text-base);
-  /* 负左边距把图标拉回来：幽灵按钮的 padding 让"返回"两字比旁边的面包屑缩进一格 */
-  margin-left: calc(-1 * var(--sp-8));
+  /* #2aa876 当年收进 --cc-success 的那条口径不变："已保存"这个语义全站一个绿 */
+  color: var(--cc-success);
 }
-.ghost:hover {
-  color: var(--cc-text-1);
-  background: transparent;
-}
-
-/* 保存状态：只在自动保存期间出现（2 秒后自己消失），所以**不占常驻位置** */
-.save-state {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-4);
-  font-size: var(--text-sm);
-  color: var(--cc-text-3);
-}
-.save-state__dot {
-  width: 6px;
-  height: 6px;
+.meta-save__dot {
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: currentColor;
 }
-.save-state.is-saved {
-  color: #2aa876;
-}
-.save-state.is-saving {
+/* 保存中：回到中性色 + 点闪 —— 动效说"在进行"，颜色说"还没成" */
+.meta-save.is-saving {
   color: var(--cc-text-3);
+}
+.meta-save.is-saving .meta-save__dot {
+  animation: kb-meta-blink 1s infinite;
+}
+@keyframes kb-meta-blink {
+  50% { opacity: 0.2; }
+}
+.meta-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--cc-text-4);
 }
 
 /* ---------- 框内标题（语雀那种"第一行就是标题"） ---------- */
@@ -1209,11 +1964,14 @@ onBeforeUnmount(() => {
    这次是让标题贴近框顶，不是把标题和正文挤在一起。 */
 .title {
   font-size: var(--text-h);
-  /* 700 是跟正文里的 H1 对齐的：prosemirror.css 没给 h1 任何规则，
-     粗细全是浏览器默认的 bold（=700），颜色则继承 .ProseMirror 的 --cc-text-1，
-     跟这里本来就是同一个色。之前写 600，比 H1 轻一档，同一句话并排出现时
-     上面的标题看着"不是标题"。字号没跟着改成 28px（h1 的 2em）——
-     那是排版尺寸，用户只要了粗细和颜色。 */
+  font-family: var(--font-display);
+  /* 700 = 与正文里的 H1 同档。
+     ⚠️ 这一段原先写的理由（"prosemirror.css 没给 h1 任何规则，粗细全是浏览器默认的
+     bold=700"）**已经过期**：kb-editor.css 早就显式给了 h1，而且给的是 **800**
+     ⇒ 页面级标题 700、正文 H1 800，同一句话并排出现时**下面那句反而更重**。
+     本轮把编辑器那边的 h1 也收到 700，两边才是真的一档（注释与代码必须说同一件事）。
+     字号仍不跟着 h1 的 2em 走 —— 那是排版尺寸，这里只要粗细和颜色一致
+     （颜色继承 .ProseMirror 的 --cc-text-1，本来就是同一个色）。 */
   font-weight: 700;
   line-height: 1.45;
   /* var() 不能直接取负（负号后面直接接 var()，整条声明会被浏览器丢掉 ⇒
@@ -1223,18 +1981,6 @@ onBeforeUnmount(() => {
   padding: var(--sp-4) 0 var(--sp-3);
   margin: 0 0 var(--sp-2);
 }
-
-/* ---------- 这一行（现在只剩类型） ---------- */
-.tags {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-7);
-  flex-wrap: wrap;
-  padding-bottom: var(--sp-11);
-  margin-bottom: var(--detail-tags-gap, var(--sp-13));
-  border-bottom: 1px solid var(--cc-border);
-}
-
 
 /* ---------- 正文框 ---------- */
 /* 和知识点卡片同一张脸：白底 + #eef0f3 细边 + 12px 圆角。
@@ -1304,6 +2050,14 @@ onBeforeUnmount(() => {
   color: var(--cc-primary);
   border-color: var(--cc-primary);
 }
+/* §4.10(j) 触屏兜底：把手常态 opacity:0，只靠 hover / :active 显现 ——
+   触屏没有 hover，而「看不见就没法点」，:active 那条永远轮不到触发
+   ⇒ 「AI 问答抽屉拉不宽」这件事在触屏上根本无法发现。
+   与 kb-editor.css 的 .kb-img__handle 同一个病、同一个药：hover:none 下常显半透明。
+   ⚠️ 写在本文件（而不是并进 kb-editor.css 那个 media 块）是因为 .ask__grip 的样式就定义在这里。 */
+@media (hover: none) {
+  .ask__grip { opacity: 0.5; }
+}
 .ask__body {
   flex: 1;
   min-height: 0;
@@ -1312,6 +2066,28 @@ onBeforeUnmount(() => {
      再叠一层就会比上方标题「AI 问答」和下方输入框都往右缩一截，看着是歪的。
      左边那一格已经被拖动把手占了 */
   padding: var(--sp-11) 0;
+  /* **容器查询的锚**。ExamRunner 里那条 `@container (max-width: 420px)` 靠它才分得清
+     自己是被塞进 320–1200px 的可拖抽屉里、还是待在 840px 封顶的考试页上 ——
+     抽屉宽度与视口无关，@media 判不出来（考试页那边由 `.exam__body` 挂同一条）。
+     ⚠️ inline-size containment 会让这一层成为 absolute/fixed 后代的包含块：
+     抽屉里目前只有纯文本气泡与 v-html 渲染的回答，没有这类后代
+     （.kb-img__handle、表格右键菜单都只活在可编辑的 Milkdown 里，不会出现在 v-html 中）。 */
+  container-type: inline-size;
+}
+/* 答完后的动作行（重做本卷 / 重新生成）+ 正文过期提示：中性、一行、不拦截。
+   与考试页顶栏那组是同一对词，形态跟着抽屉走（small 按钮）。 */
+.quiz-ops {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  margin-bottom: var(--sp-10);
+}
+.quiz-ops__stale {
+  font-size: var(--text-xs);
+  color: var(--cc-text-3);
+}
+.quiz-ops__gap {
+  flex: 1;
 }
 .turn {
   margin-bottom: var(--sp-14);
@@ -1358,22 +2134,26 @@ onBeforeUnmount(() => {
 }
 /* 「正在思考…」是折叠块的正文，跟着折叠块一起弱。
    「正在生成…已接收 N 字」是独立的实时信号——流式期间用户就盯着它，
-   弱到和折叠标题一样就等于没有，所以单独提一档。三层：正文 > 生成计数 > 折叠标题 */
+   弱到和折叠标题一样就等于没有，所以单独提一档。三层：正文 > 生成计数 > 折叠标题。
+   ⚠️ **这三层靠颜色分，不靠字号**：原先这两个都写 --text-2xs(11px)，比折叠标题的
+   --text-xs(12px) 还小 ⇒ 实际层次与上面这句话正好相反（计数最小）。
+   现在三者同为 12px，颜色依次 --cc-text-2 / -3 / -4；11px + text-4 也是"双低"
+   （字号掉出阶梯、对比度 1.9:1），一并收掉。 */
 .think__waiting {
   margin-top: var(--sp-6);
   padding-left: var(--sp-10);
-  color: var(--cc-text-4);
-  font-size: var(--text-2xs);
+  color: var(--cc-text-3);
+  font-size: var(--text-xs);
 }
 .think__count {
   margin-top: var(--sp-6);
   padding-left: var(--sp-10);
-  color: var(--cc-text-3);
-  font-size: var(--text-2xs);
+  color: var(--cc-text-2);
+  font-size: var(--text-xs);
 }
 /* 提交内容是**整段 messages**，比思考过程长得多，字号再小一号不然面板撑不住 */
 .sent__body {
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: var(--text-2xs);
   color: var(--cc-text-2);
 }
@@ -1402,14 +2182,48 @@ onBeforeUnmount(() => {
   font-size: var(--text-md);
   color: var(--cc-text-1);
 }
+/* ---------- AI 回答：渲染后的 markdown ---------- */
+/* 借正文的壳（.milkdown-editor-body + .ProseMirror）⇒ 标题、列表、表格、代码块
+   全走**正文那套排版**，零 CSS 重复；另找一个 markdown 渲染器就是两套渲染。
+   ⚠️ **`:deep()` 是必须的**：v-html 进来的节点没有 scoped 的 data-v 属性，
+   不写 :deep 这条规则压根不生效（编辑器自己那几条会漏出来：135px 最小高度、
+   80vh 内滚、左右给折叠箭头留的白）。 */
+.md-answer :deep(.ProseMirror) {
+  min-height: 0;
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+  /* 气泡是 pre-wrap（给纯文本用的），渲染出来的 HTML 不该继承它 */
+  white-space: normal;
+  font-size: var(--text-md);
+  line-height: 1.75;
+}
+/* 标题在正文里是"块级大标题"，在抽屉里得收一档 —— 抽屉窄，
+   正文那号的标题一行放不下几个字。 */
+/* §4.10(i)：原来只覆盖 h1-h3 ⇒ h4 吃到 kb-editor.css 的 `1.1em` = 15.4px，
+   **比 h1 的 14px 还大** ⇒ 层级反转；h5/h6（1em = 14px）与 h1-h3 同档 ⇒ 层级压平。
+   ⇒ 覆盖扩到 h1-h6 全部。 */
+.md-answer :deep(.ProseMirror h1),
+.md-answer :deep(.ProseMirror h2),
+.md-answer :deep(.ProseMirror h3),
+.md-answer :deep(.ProseMirror h4),
+.md-answer :deep(.ProseMirror h5),
+.md-answer :deep(.ProseMirror h6) {
+  font-size: var(--text-md);
+  margin-top: var(--sp-8);
+}
 .bubble.is-error {
-  color: var(--cc-danger, #f56c6c);
+  /* §4.3(d)：删掉死 fallback。`var(--cc-danger, #f56c6c)` —— token 恒存在，
+     fallback 永不生效，**而且它指向的是 EP 的红**（#f56c6c 系）⇒ 同屏两种红。 */
+  color: var(--cc-danger);
   font-size: var(--text-sm);
 }
-/* 「复制」「用这个」并排一行。两者形态完全一样（文字型次要按钮），差别只在含义，
-   所以只在这里给一组尺寸，不给它们各写一套变体 */
+/* 「复制」「应用到正文」「应用为新的知识点」并排一行。形态完全一样（文字型次要按钮），
+   差别只在含义，所以只在这里给一组尺寸，不给它们各写一套变体。
+   **允许换行**：三个按钮 + 两个图标 + 七字标签，一行放不下就折，别把按钮挤扁。 */
 .ask__ops {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--sp-2);
   margin-top: var(--sp-4);
 }
@@ -1536,19 +2350,22 @@ onBeforeUnmount(() => {
 }
 .ask__send:disabled {
   color: var(--cc-text-4);
-  background: #e2e6ec;
+  background: var(--cc-surface-3);
   cursor: not-allowed;
 }
 /* 在流中时这个钮**不是"停用的发送"，是"正在生成、点这里中断"**，
    所以图标用深色而不是跟着 disabled 一起变浅——一变浅就和上面那个空输入态撞脸了 */
 .ask__send.is-stop {
   color: var(--cc-text-2);
-  background: #e2e6ec;
+  background: var(--cc-surface-3);
 }
 
 /* ---------- 空 / 加载 ---------- */
 .state {
-  padding: 77px 0;
+  /* §4.10(h) 原来是裸写 `77px`——阶梯外的数，从何而来无从考证。
+     它的意图是"上下各留两格最大间距"，写成 calc 让来源可追（--sp-16 = 40px）。
+     ⚠️ 这里不改 --sp-* 阶梯本身：80px 只有这一处用，为它加一支 token 反而多一个要维护的名字。 */
+  padding: calc(var(--sp-16) * 2) 0;
   text-align: center;
   color: var(--cc-text-4);
   font-size: var(--text-base);

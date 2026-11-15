@@ -1,10 +1,17 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8">
     <link rel="icon" href="/favicon.ico">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Corecraft Web</title>
+    <!-- 素雅主题的衬线字体（渐进增强：加载失败回退本机宋体）。
+         media=print + onload 切回 all = 异步加载不阻塞首屏。 -->
+    <link rel="preconnect" href="https://fonts.loli.net" crossorigin>
+    <link rel="stylesheet" href="https://fonts.loli.net/css2?family=Noto+Serif+SC:wght@500;600;700&display=swap" media="print" onload="this.media='all'">
+    <!-- 主题西文口音（2026-11-14）：本色=Inter、量子=Space Grotesk、曜夜=Playfair Display。
+         只挂 Latin 字形 ⇒ 每个家族 ~15KB/字重，且浏览器只为**被当前主题栈引用到的**家族下单。 -->
+    <link rel="stylesheet" href="https://fonts.loli.net/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
   </head>
   <body>
     <div id="app"></div>

@@ -1,6 +1,7 @@
 import { bootstrapSession } from '../../utils/session'
+import { SEARCH_SCOPE_BOTH } from '../../utils/searchMode'
 import {
-  ensureTopicIndexLoaded, ensureCategoriesLoaded, ensureTopicTypesLoaded
+  ensureTopicIndexLoaded, ensureFullTopicIndexLoaded, ensureCategoriesLoaded, ensureTopicTypesLoaded
 } from './useCorecraftWebStore'
 import { ensureAiConfigLoaded } from './useAi'
 
@@ -33,11 +34,16 @@ import { ensureAiConfigLoaded } from './useAi'
  * 壳要整份、首页只要 profile。硬塞成一份共享 state 反而多一层间接。
  *
  * @param {string} keyword 当前关键词（URL 的 `?q=`）
+ * @param {string} scope 搜哪一块（标题 / 正文 / 都搜，见 utils/searchMode.js）
  */
-export async function loadShellData(keyword = '') {
+export async function loadShellData(keyword = '', scope = SEARCH_SCOPE_BOTH) {
   const [session] = await Promise.all([
     bootstrapSession(),
-    ensureTopicIndexLoaded(false, keyword),
+    // ⚠️ **顺序有意义**：搜索索引先调（它的"身份"在函数体开头就同步写下了），
+    // 全集索引那份才知道"现在有没有搜索词" ⇒ 没搜索词时它**直接复用**搜索索引，
+    // 不重复打同一个接口（见 store 的 ensureFullTopicIndexLoaded）。
+    ensureTopicIndexLoaded(false, keyword, scope),
+    ensureFullTopicIndexLoaded(false),
     ensureCategoriesLoaded(),
     ensureTopicTypesLoaded(),
     // AI 配置也在这里拉：界面各处用 aiEnabled 控制 AI 入口显不显示，

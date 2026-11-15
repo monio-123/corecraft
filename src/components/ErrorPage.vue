@@ -43,7 +43,7 @@ defineProps({
 
 .error-card p {
   font-size: var(--text-lg);
-  color: #909399;
+  color: var(--cc-text-3);
   margin: var(--sp-12) 0 var(--sp-14);
 }
 </style>

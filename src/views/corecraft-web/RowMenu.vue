@@ -17,12 +17,19 @@
 
        persistent=false 时内容**首次点开才渲染** ⇒ 挂载时一个 popper 都不建，
        列表里几十个菜单一个都不用花钱；真点开了再建那一个。
-       代价只是每次打开菜单重建一次 DOM（三个静态菜单项，可忽略）。 -->
-  <el-dropdown trigger="click" :persistent="false" @command="(cmd) => emit('command', cmd)">
+       ⚠️ **首开之后翻成 persistent=true（keepMounted，2026-11-13）**：false 的代价是
+       **每次打开都重建弹层**（挂载 + createPopper + 弹出动画前的强制布局）——
+       「点 ⋯ 到菜单弹出这段卡」的一部分就是它。首开那一次逃不掉（内容还没渲染过），
+       但开过一次之后的重开不该再付 ⇒ visible-change 首次为 true 时翻一次、不回退。 -->
+  <el-dropdown
+    trigger="click"
+    :persistent="keepMounted"
+    @visible-change="(v) => { if (v) keepMounted = true }"
+    @command="(cmd) => emit('command', cmd)"
+  >
     <!-- prevent.stop 必须写在这里：调用方那一行本身通常也是可点的（RouterLink / button），
          只 stop 拦得住冒泡，拦不住浏览器照着 href 或外层的 click 走。写一次，两处都受益。 -->
     <button
-      :ref="btnRef || undefined"
       class="row-menu__btn"
       :class="btnClass"
       type="button"
@@ -41,8 +48,11 @@
           :key="item.command"
           :command="item.command"
           :divided="item.divided"
+          :class="{ 'row-menu__item--danger': item.tone === 'danger', 'row-menu__item--has-meta': item.meta }"
         >
-          {{ item.label }}
+          <KbSvgIcon v-if="item.icon" class="row-menu__item-icon" :name="item.icon" :sw="1.7" />
+          <span class="row-menu__item-label">{{ item.label }}</span>
+          <span v-if="item.meta" class="row-menu__item-meta">{{ item.meta }}</span>
         </el-dropdown-item>
       </el-dropdown-menu>
     </template>
@@ -51,14 +61,20 @@
 
 <script setup>
 /**
- * 行尾「⋯」菜单的壳。菜单项由调用方给（`items: { command, label, divided? }[]`），
+ * 行尾「⋯」菜单的壳。菜单项由调用方给（`items: { command, label, icon?, meta?, tone?, divided? }[]`），
  * 点到哪一项由 `command` 事件抛出去——**这里不做任何业务动作**。
+ *
+ * 项的形态（2026-11-13）：`icon`（KbSvgIcon 名）+ `label` + 可选右对齐 `meta`（状态值，
+ * 如掌握度的「不参与」——不再把状态塞进 label 的括号里）+ `tone: 'danger'`（删除类动作，
+ * 红字红 hover）。长相全在 base.css 的下拉皮肤里，这里只做拼装。
  *
  * 为什么单独抽一个组件：目录行和标签行都要"行尾一个竖排 ⋯ + 点开菜单"，
  * 外观、旋转、prevent.stop 这些一字不差。各写一份的话，改一次样式要改两个文件，
  * 而且早晚会写成不一样的两份。
  */
+import { ref } from 'vue'
 import { MoreFilled } from '@element-plus/icons-vue'
+import KbSvgIcon from '../../components/corecraft-web/KbSvgIcon.vue'
 
 const props = defineProps({
   title: { type: String, default: '操作' },
@@ -70,15 +86,12 @@ const props = defineProps({
    * 显隐**不在这里做**：`opacity: var(--row-tools, 1)` 读的是所在行设的自定义属性，
    * 调用方改那个变量就行（自定义属性会继承到本组件里），两边不用抢同一条 opacity。
    */
-  btnClass: { type: String, default: '' },
-  /**
-   * 把按钮的真实 DOM 交出去。只有一种场景要：知识点卡片的「归类到目录」要用按钮的
-   * 位置决定浮层从哪儿弹（el-dropdown 的 command 回调拿不到触发元素，见 TopicCard）。
-   * 不需要就别传。
-   */
-  btnRef: { type: Function, default: null }
+  btnClass: { type: String, default: '' }
 })
 const emit = defineEmits(['command'])
+
+/** 首次打开后保持挂载（见模板顶部 persistent 注释）：false→true 只翻一次，不回退。 */
+const keepMounted = ref(false)
 </script>
 
 <style scoped>
@@ -94,7 +107,14 @@ const emit = defineEmits(['command'])
   cursor: pointer;
   padding: var(--sp-3);
   border-radius: var(--radius-xs);
-  font-size: var(--text-md);
+  /* §4.2：原来是 --text-md(14px)。这个「⋯」长在三种行上（侧栏书名 15px、
+     树行 15px、卡片标题 17px），而 AppLayout 的注释刚刚论证过"15px 的线性图标
+     实际只有 ~12px 的墨迹高度，摆在 15px 的中文旁边明显小一号"并因此把侧栏那两个
+     按钮提到 18px ⇒ **同一条论证没有应用到 ⋯ 上**。
+     ⇒ 提到 --text-2xl(18)，与 .app-side__op-btn 同规格。
+     ⚠️ **盒子保持 20×20 不变**（padding: var(--sp-3) + 18px 字 ≈ 20px）——
+     统一到 --ctl-sm(28) 会把树行从 ≈50px 顶到 ≈56px，50 行的树多 300px。 */
+  font-size: var(--text-2xl);
   flex-shrink: 0;
   /* 默认不显形，由**所在那一行**决定：行在自己 hover / focus-within 时设
      `--row-tools: 1`（自定义属性会继承到子组件里），这里只管照着用。
@@ -108,8 +128,11 @@ const emit = defineEmits(['command'])
   transition: opacity 0.15s;
 }
 .row-menu__btn:hover {
-  color: #606a75;
-  background: #f2f4f7;
+  /* §4.3 的硬编色映射表：#606a75 → --cc-text-2、#f2f4f7 → --cc-surface-2。
+     ⚠️ §4.4(a) hover 两档：这一颗是**图标型**可点 ⇒ 落"图标型"那档
+     （--cc-primary 字 + --cc-primary-soft 底），不是文字型那档。 */
+  color: var(--cc-primary);
+  background: var(--cc-primary-soft);
 }
 .row-menu__icon {
   transform: rotate(90deg);

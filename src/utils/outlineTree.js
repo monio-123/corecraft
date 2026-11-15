@@ -1,7 +1,7 @@
 /**
  * 目录树的解析与转换（**纯函数**，Node 里也能直接跑 ⇒ 能单独自测）。
  *
- * ## 只认一种格式：markdown 树
+ * ## 认三种格式（markdown 标题 / 缩进列表 / 树形符号）
  *
  * ```text
  * 操作系统
@@ -12,8 +12,9 @@
  *     └── 虚拟内存的工作原理
  * ```
  *
- * **AI 生成的那棵也必须是这个格式**（提示词里写死了）⇒ 一个解析器、两条路共用。
- * 围栏（```）会被跳过，粘贴带不带围栏都行。
+ * **AI 生成的那棵是树形符号那个格式**（提示词里写死的）⇒ 一个解析器、两条路共用。
+ * 用户粘贴则认 markdown 标题/列表（从 Typora / Notion / ChatGPT 复制出来就是它），
+ * 也认纯缩进和多级编号。围栏（```）会被跳过，粘贴带不带围栏都行。
  *
  * ## 叶子是知识点，不是目录
  *
@@ -84,27 +85,71 @@ export function indexByParentName(list) {
   return index
 }
 
+/** markdown 标题：`## 名字`（要求 # 后面有空格，避免把 `#标签` 当标题） */
+const MD_HEADING = /^(#{1,6})\s+(.+?)\s*#*$/
+/** markdown 列表项：`- 名字` / `* 名字` / `1. 名字`（缩进 2 空格一层） */
+const MD_ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.+)$/
+/** 多级编号：`1.1 名字` / `2.3.3 名字`（段数-1 = 层级）。单级 `1.` 不算，那种通常还靠缩进 */
+const DOTTED = /^(\d+(?:\.\d+)+)[.)、]?\s+(.+)$/
+
 /**
- * 一行 → `{ depth, name }`。
+ * 一行 → `{ level, name, kind }`。`level` **只用来判父子**（比大小），不是真实层数。
  *
- * <p>层数按**名字起始的那一列**算：一层 = 4 个字符（`│   ` 或 4 个空格都算一层）。
- * 用字符位置而不是数竖线，是因为手写的树**两种缩进会混着来**——
- * `│   ├── X` 和 `    ├── X` 都是"往下一层"，数竖线会把后者算浅一层。
+ * ## 认四种写法（用户粘什么进来都尽量认）
+ *
+ * | 写法 | 例 | 层级怎么算 |
+ * |---|---|---|
+ * | markdown 标题 | `## 内存结构` | `#` 的个数 |
+ * | markdown 列表 | `  - 程序计数器` | 上级标题 + 1 + 缩进/2 |
+ * | 树形符号 | `│   ├── 程序计数器` | 名字起始列 / 4（一层 4 个字符） |
+ * | 纯缩进 | `    程序计数器` | 缩进 / 4 |
+ * | 多级编号 | `2.3.3 低延迟收集器` | 段数 - 1 |
+ *
+ * ## 为什么不再只认树形符号
+ *
+ * 以前只认 `├──/└──`：用户从笔记里复制一份 markdown 大纲粘进来，**整棵树会塌成一层**
+ * （每行都被当根），看起来像"粘贴没生效"。而这几个格式里 **markdown 标题/列表才是最通用的**
+ * —— 从 Typora / Notion / ChatGPT 复制出来的就是它。树形符号继续认，是为了兼容老数据
+ * 和 AI 自己产出的那棵树（提示词里写死的是树形）。
  */
-function splitLine(line) {
+function splitLine(line, headingLevel) {
   const raw = line.replace(/\t/g, '    ')
-  // 树形符号的位置：名字从它后面开始
-  const mark = raw.search(/[├└][─-]/)
-  if (mark < 0) {
-    // 没有树形符号 = 一棵树的根（也可能是一行废话，那行没下级 ⇒ 会被当知识点，不勾）
-    return { depth: 0, name: raw.trim() }
+  const lead = raw.length - raw.trimStart().length
+  const body = raw.trim()
+
+  // ① markdown 标题
+  const h = body.match(MD_HEADING)
+  if (h) return { level: h[1].length, name: h[2].trim(), kind: 'head' }
+
+  // ② markdown 列表：挂在"最近一个标题"下面，再按缩进往下走
+  const it = raw.match(MD_ITEM)
+  if (it) {
+    return {
+      level: headingLevel + 1 + Math.floor(it[1].length / 2),
+      name: it[3].trim(),
+      kind: 'item'
+    }
   }
-  const head = raw.slice(mark)
-  const marker = head.match(/^[├└][─-]+\s*/)[0]
-  const name = raw.slice(mark + marker.length).trim()
-  // 名字起始的列 = 前缀有多长（含树形符号本身）
-  const prefixLen = mark + marker.length
-  return { depth: Math.ceil(prefixLen / INDENT), name }
+
+  // ③ 树形符号：名字起始的那一列决定层级
+  const mark = raw.search(/[├└][─-]/)
+  if (mark >= 0) {
+    const marker = raw.slice(mark).match(/^[├└][─-]+\s*/)[0]
+    return {
+      level: 1 + Math.ceil((mark + marker.length) / INDENT),
+      name: raw.slice(mark + marker.length).trim(),
+      kind: 'tree'
+    }
+  }
+
+  // ④ 多级编号（不带缩进时）：`1.1` 是一层，`2.3.3` 是两层
+  const d = body.match(DOTTED)
+  if (d && lead === 0) return { level: d[1].split('.').length - 1, name: body, kind: 'number' }
+
+  // ⑤ 纯缩进（4 空格 / 一个 tab 一层）
+  if (lead > 0) return { level: 1 + Math.ceil(lead / INDENT), name: body, kind: 'plain' }
+
+  return { level: 0, name: body, kind: 'root' }
 }
 
 /**
@@ -115,24 +160,51 @@ function splitLine(line) {
  */
 export function parseOutlineTree(text) {
   const roots = []
-  // 栈：最近见到的各级节点（深度 + 节点），用来认父
+  // 栈：最近见到的各级节点（层级 + 节点），用来认父
   const stack = []
+  // 最近一个 markdown 标题的级别：列表项要挂在它下面（`## A` 后面的 `- x` 是 A 的子节点）
+  let headingLevel = 0
   for (const line of String(text || '').split('\n')) {
     const t = line.trim()
     if (!t) continue
     if (t.startsWith('```')) continue // 围栏
-    const { depth, name } = splitLine(line)
+    const { level, name, kind } = splitLine(line, headingLevel)
+    if (kind === 'head') headingLevel = level
     if (!name) continue
     const node = { name, children: [] }
-    while (stack.length && stack[stack.length - 1].depth >= depth) stack.pop()
+    while (stack.length && stack[stack.length - 1].level >= level) stack.pop()
     if (stack.length) {
       stack[stack.length - 1].node.children.push(node)
     } else {
       roots.push(node)
     }
-    stack.push({ node, depth })
+    stack.push({ node, level })
   }
   return roots
+}
+
+/**
+ * **走一遍树**（通用遍历）。
+ *
+ * <p>⚠️ **只有这一份遍历范式**：骨架树要在好几个地方走（拆意图 / 收集定位 /
+ * 建目录对 id），各写一份递归的话改一边另一边就漂 —— 而且漂了不报错
+ * （表现是"这一批的定位丢了"，界面上什么异常都看不到）。
+ *
+ * <p>**路径按 `joinPath` 拼**（`a/b/c`）⇒ 与 `importPlan` 的 `points[].dirPath` 同形。
+ *
+ * @param {Array} nodes 子节点数组（`parseOutlineTree` / `markOutline` 的结果）
+ * @param {(node:object, path:string, depth:number, parentPath:string) => (void|false)} visit
+ *        访问每个节点；**返回 false 表示不再往下走这一支**（剪枝）。
+ *        `parentPath` = 父节点的路径（顶层是空串）—— 要顺着父链查东西的用它。
+ * @param {string} [path] 父路径（递归用，外部不用传）
+ * @param {number} [depth] 当前层（递归用，外部不用传）
+ */
+export function walkTree(nodes, visit, path = '', depth = 1) {
+  for (const n of nodes || []) {
+    const p = path ? joinPath(path, n.name) : n.name
+    if (visit(n, p, depth, path) === false) continue
+    walkTree(n.children, visit, p, depth + 1)
+  }
 }
 
 /**

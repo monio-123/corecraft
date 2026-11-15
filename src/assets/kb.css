@@ -33,73 +33,49 @@
   font-size: var(--text-xl);
   font-weight: 600;
   color: var(--cc-text-1);
+  /* 素雅主题下标题走衬线（--font-display 见 themes.css；本色=正文字体，零变化） */
+  font-family: var(--font-display);
 }
 .panel__extra {
   font-size: var(--text-md);
   color: var(--cc-text-3);
 }
 
-/* ---------- 标签 chip ----------
- * 知识点卡片（TopicCard）和知识点详情页的标签是同一个东西，
- * 之前各写一份 hex，两处灰度还不一样（#f4f5f7 vs 底色 token），
- * 在同一屏上并排出现时能看出色差。
- *
- * 尺寸是 2026-10-06 整体上调过的（见 FEATURES #48）：字号 11→13、
- * 内边距 1/6→1/7、圆角 4→5、图标 11→13。上调的是**可读尺度**
- * （字号 / 行高 / 内边距 / 图标），不是所有数值——1px 边框和色值没动。 */
-.kb-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-4);
-  font-size: var(--text-sm);
-  line-height: 1.6;
-  padding: var(--sp-1) var(--sp-7);
-  border-radius: var(--radius-sm);
-  background: var(--cc-surface-2);
-  color: var(--cc-text-3);
-  white-space: nowrap;
-  max-width: 190px;
-  flex-shrink: 0;
-}
-.kb-chip__text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* 可点的 chip（详情页删标签用的 × 按钮） */
-.kb-chip__x {
-  border: none;
-  background: transparent;
-  padding: 0;
-  /* var() 不能直接取负（负号后面直接接 var()，整条声明会被浏览器丢掉），
-     负值要包一层 calc */
-  margin-right: calc(-1 * var(--sp-2));
-  color: var(--cc-text-4);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  transition: var(--cc-transition);
-}
-.kb-chip__x svg {
-  width: 13px;
-  height: 13px;
-}
-.kb-chip__x:hover {
-  color: var(--el-color-danger);
+/* ---------- 分页条 ----------
+ * 居中一行，贴在列表下面。知识点列表页（AppLearnView）和考试记录页
+ * （AppExamRecordsView）都是"服务端分页的列表"，翻页条长得一样 ——
+ * 原来是 AppLearnView 的 scoped 样式，第 2 个列表页出现就收敛到这里（重复 2 处即收敛）。
+ */
+.pager {
+  display: flex;
+  justify-content: center;
+  padding: var(--sp-4) 0 var(--sp-2);
 }
 
 /* ---------- 图标按钮 ----------
  * AppLayout 顶栏、知识点卡片删除、知识点详情页删除是同一个控件的三处皮肤。
- * 尺寸 28×28 一档：够点，又不至于比旁边的文字抢眼。24→28、字号 14→16。 */
+ * 尺寸 28×28 一档：够点，又不至于比旁边的文字抢眼。24→28、字号 14→16。
+ *
+ * ⚠️ 常态色是 --cc-icon 不是 --cc-text-4（2026-11-06 改）：text-4(#b6bac1) 对白底只有
+ * 1.97:1，低于"非文字控件 3:1"那条线；--cc-icon(#8a9099) 是 base.css 里**专为纯图标控件
+ * 开的一支**（3.24:1），当时却几乎没人用。影响面 = 详情页顶栏 AI 钮 / 删除钮 / ViewToggles。
+ *
+ * ---- hover 反馈全站只有两档（2026-11-06 立，原来有五种）----
+ * ① **常态**（下面 :hover）= --cc-surface-2 底 + --cc-text-1 字。
+ * ② **主操作**（--primary，如侧栏「生成主题」「新建目录」）= --cc-primary-soft 底 +
+ *    --cc-primary 字。
+ * 文字型可点（书名、「总览」、面包屑、侧栏行）一律走 ①，**不要变蓝** —— 原来
+ * `.ct__title:hover` 变蓝、同一行并排的 `.ct__overview:hover` 变黑，两个不一样。
+ * 组件里不要再各写一份 hover；要哪一档就并 --primary / --danger 这两个变体类。 */
 .kb-icon-btn {
   border: none;
   background: transparent;
-  color: var(--cc-text-4);
+  color: var(--cc-icon);
   cursor: pointer;
   width: var(--ctl-sm);
   height: var(--ctl-sm);
   padding: 0;
-  border-radius: var(--cc-radius-sm);
+  border-radius: var(--radius-sm);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -111,9 +87,14 @@
   background: var(--cc-surface-2);
   color: var(--cc-text-1);
 }
+.kb-icon-btn--primary:hover {
+  background: var(--cc-primary-soft);
+  color: var(--cc-primary);
+}
+/* 危险色那一对（深红字 + 它的浅底）取自 base.css，原来是 EP 的 #f56c6c 系 ⇒ 同屏两种红。 */
 .kb-icon-btn--danger:hover {
-  background: var(--el-color-danger-light-9);
-  color: var(--el-color-danger);
+  background: var(--cc-danger-soft);
+  color: var(--cc-danger-deep);
 }
 .kb-icon-btn:disabled {
   cursor: not-allowed;
@@ -133,7 +114,7 @@
   font-size: var(--text-sm);
   line-height: 1.6;
   padding: var(--sp-4) var(--sp-10);
-  border-radius: var(--cc-radius-sm);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   flex-shrink: 0;
   transition: var(--cc-transition);
@@ -143,14 +124,25 @@
   color: var(--cc-text-1);
 }
 .kb-text-btn--danger:hover {
-  background: var(--el-color-danger-light-9);
-  color: var(--el-color-danger);
+  background: var(--cc-danger-soft);
+  color: var(--cc-danger-deep);
+}
+/* 文字型次要按钮里的图标。
+   **跟文字同一档大小**（1.05em ≈ 13px）：图标是"这句话是什么动作"的提示，
+   不是装饰 —— 装饰就该更小更淡，提示就得跟文字一样重。
+   竖直对齐用负 margin 压一点（em 单位的图标默认底边比文字低）。 */
+.kb-text-btn__ico {
+  font-size: 1.05em;
+  margin-right: 0.35em;
+  vertical-align: -0.12em;
 }
 
 /* ---------- 抽屉的头 ----------
- * 「AI 问答」（详情页）和「AI 调整正文」是同一个抽屉控件的两种用途，
- * 头（左边标题 + 右边关闭钮）长得一模一样 —— 两个组件各写一份 scoped 规则，
- * 逐字符相同，改一处就得记得改另一处。收到这里一份，两个组件引用。
+ * 头 = 左边标题 + 右边关闭钮。原来「AI 问答」（详情页）和「AI 调整正文」两个抽屉
+ * 各写一份 scoped 规则、逐字符相同，改一处就得记得改另一处 ⇒ 收到这里一份。
+ * ⚠️ 2026-11-06 订正：「AI 调整正文」那个抽屉（AiEditDrawer.vue）已经删了（换成
+ * AiInsertDialog 弹窗）⇒ **现在只剩「AI 问答」一个消费者**。不搬回组件：它是"浮层的头"
+ * 这个原语，再长出一个抽屉/弹窗就直接用；搬回去只是把同一份规则换个地方写。
  * ⚠️ 名字带 kb- 前缀：这两个 class 不带壳限定（不像 admin-page.css 的 .page
  * 能靠容器圈住），名字本身就是边界。 */
 .kb-drawer__head {
@@ -207,9 +199,27 @@
   color: var(--cc-text-3);
   font-size: var(--text-sm);
 }
-.kb-center .is-loading {
-  font-size: 28px;
-  color: var(--cc-primary);
+/* ⚠️ **这里原来有一条 `.kb-center .is-loading { font-size: 28px; color: var(--cc-primary) }`**
+   （2026-11-13 统一加载层删掉）：那是 Element Plus 的 `<el-icon class="is-loading">`
+   的字号/配色覆写。业务壳里 8 处 EP 加载图标**全部换成 KbLoader 组件**了
+   ⇒ 这条规则**零命中**，是死规则（留着会让下一个人以为还有人在用 EP 的转圈）。
+   ⚠️ 管理后台壳（views/*.vue）的 EP `v-loading` 指令走的是 Element Plus 自己的样式，
+   不经过这条规则 ⇒ 删掉不影响后台。
+   加载图形的尺寸与配色现在由 KbLoader + --kb-load-* token 决定（见 kb-loading.css）。 */
+.kb-center .kb-loader {
+  color: var(--kb-load-accent);
+}
+/* 这一块里的按钮（「重试」）跟筛选药丸同族：28px 高 + 全圆角。
+   原来同一个"重试"在考试页是 EP default(32)、在详情页写了 size="small"(24) ⇒ 两种高。
+   ⚠️ 组件里**别再给这个按钮加 size** —— 高度在这里统一。 */
+.kb-center .el-button {
+  height: var(--ctl-sm);
+  border-radius: var(--radius-pill);
+}
+/* 只装一句话（如"没有匹配"四个字）时用这个变体：上面那 40px 上下内距是给
+   "图标 + 一句话"两行内容留的，一行字会让它孤零零漂在 80px 高的空白中间。 */
+.kb-center--bare {
+  padding: var(--sp-13) 0;
 }
 /* 「出不了题」是**空结果不是错误**：内容太少而已，不用错误色 */
 .kb-error {
@@ -219,5 +229,102 @@
   color: var(--cc-text-3);
 }
 
+/* ---------- 筛选弹层壳（TopicFilters 的 el-popover，popper-class="tf__popper"） ----------
+ * 2026-11-08：EP 默认弹层是白底小圆角，和主题的卡片语言对不上 ⇒ 壳跟主题走
+ * （--cc-surface / --radius-lg / --cc-shadow-2），内边距由组件自己的 .tf__panel 给。 */
+.tf__popper.el-popper {
+  background: var(--cc-surface);
+  border: 1px solid var(--cc-border-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--cc-shadow-2);
+  padding: 0;
+}
+
+/* ---------- 「从列表里挑一项」的浮层 ----------
+ * 学习页筛选下拉的 .tagpanel 与类型下拉的 .ttp 是**同一个控件**：一列 button，
+ * hover 灰底、选中浅蓝底蓝字，行内左边名字（可选右边条数）。原来两处各写一份，
+ * 逐条属性几乎相同，只差文字色（#4b5563 vs --cc-text-2）与圆角（6 vs 8）——
+ * 正是"两份实现各自漂开"的起点 ⇒ 收到这里一份。
+ *
+ * 用法：容器 class="kb-pick"；每项 class="kb-pick__item"（选中再并 is-on）；
+ * 空态 .kb-pick__empty。
+ * 浮层宽度统一 --cc-popover-w(220)，写在 el-popover 的 width 上 —— EP 的 addUnit
+ * 对非数字字符串原样传出，所以 `width="var(--cc-popover-w)"` 是有效的（已核 2.9.10 源码）。
+ *
+ * ⚠️ 原来的 `.kb-pick__name`（ellipsis 名字）/ `.kb-pick__count`（条数）两条 **2026-11-13 删**：
+ * 两个使用方（学习页筛选 / 类型下拉）都只需要"一行文字"，没有任何一处并过这两个类 ——
+ * 留着就是"描述一个不存在的用法"的死规则。
+ * ⚠️ 名字带 kb- 前缀：这几个 class 不带壳限定，名字本身就是边界。 */
+.kb-pick {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  /* 一列能长（时间档 / 类型 / 条数都不定），封顶让它自己滚，别把浮层顶出屏幕 */
+  max-height: 288px;
+  overflow-y: auto;
+}
+.kb-pick__item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-10);
+  width: 100%;
+  padding: var(--sp-7) var(--sp-10);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-size: var(--text-base);
+  color: var(--cc-text-2);
+  cursor: pointer;
+  text-align: left;
+  transition: var(--cc-transition);
+}
+.kb-pick__item:hover {
+  background: var(--cc-surface-2);
+  color: var(--cc-text-1);
+}
+.kb-pick__item.is-on {
+  background: var(--cc-primary-soft);
+  color: var(--cc-primary);
+  font-weight: 500;
+}
+.kb-pick__empty {
+  margin: 0;
+  padding: var(--sp-7) var(--sp-10);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--cc-text-4);
+}
+
 /* 拖拽幽灵已回到 AppLayout 里的手写实现（原因见那里的注释）：
    SortableJS 的 fallback 会给克隆体写**行内** width/height 且每次移动重写，CSS 改不动。 */
+
+/* ============================================================
+ * 拖动进行中：常态反馈全部让位给"当前落点"
+ *
+ * `body.dnd-active` 由 useCategoryDrag 在**起拖那一刻**挂上去、结束/取消时摘掉
+ * （它是 body 上的类 ⇒ 放全局层，两个组件共用一条）。
+ *
+ * 拖动时指针扫过一行行，每一行都亮一下 hover 底色、还把行尾的条数和「⋯」
+ * 逼出来 —— 这些是**常态**反馈；拖动时唯一该显眼的是"当前落点"
+ * （is-drop 主色 / is-bad 红）。两套信号叠在一起，落点的颜色就被稀释了
+ * （用户 2026-11-03 报"看着像没反应"的同一类问题：反馈太多反而看不出反馈）。
+ *
+ * ⚠️ **落点自己不受影响**：`:not(.is-drop):not(.is-bad)` 把它排除在外。
+ * 这条排除**不是可选的**：本规则的选择器特异性（0,3,1）**高于** `.ct__node.is-drop`
+ * （0,2,0）—— 不排除的话，"拖到哪一行"那一行的落点底色会被这条 transparent 冲掉，
+ * 拖起来就完全没有落点反馈了（比不做还糟）。
+ * ⚠️ **侧边栏那条还排除了 `.is-on`**（当前选中的那本书）：它的底色是主色浅底，
+ * 同样会被本规则的高特异性压掉 —— 拖动时"当前在哪本书"这个提示不该消失。
+ * ⚠️ **必须放全局层**：scoped 样式选不中 body（scoped 会给选择器加 data-v）。
+ * ============================================================ */
+body.dnd-active .ct__node:not(.is-drop):not(.is-bad):hover,
+body.dnd-active .app-cats__item:not(.is-on):not(.is-drop):not(.is-bad):hover {
+  /* hover 底色撤掉 —— 落点的底色由 is-drop / is-bad 给 */
+  background: transparent;
+  /* 行尾工具（条数、「⋯」）不再随悬停显形 */
+  --row-tools: 0;
+}
+/* 「⋯」在拖动中不接指针：拖到哪一行都可能顺手把它点开（点一下"删除目录"就是误删）。 */
+body.dnd-active .ct__menu {
+  pointer-events: none;
+}

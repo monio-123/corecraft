@@ -1,5 +1,5 @@
 <template>
-  <ErrorPage code="403" message="抱歉，您没有权限访问此页面" color="var(--el-color-warning)" />
+  <ErrorPage code="403" message="没有权限" color="var(--el-color-warning)" />
 </template>
 
 <script setup>

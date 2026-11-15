@@ -19,9 +19,7 @@
             <!-- GROUP 类型：子菜单 -->
             <el-sub-menu v-if="group.type === 'GROUP' && group.children?.length" :index="group.code">
               <template #title>
-                <el-icon v-if="getIconComponent(parseMeta(group.meta).icon)">
-                  <component :is="getIconComponent(parseMeta(group.meta).icon)" />
-                </el-icon>
+                <MenuIcon :meta="group.meta" />
                 <span>{{ group.name }}</span>
               </template>
               <el-menu-item
@@ -29,34 +27,30 @@
                 :key="child.id"
                 :index="parseMeta(child.meta).path"
               >
-                <el-icon v-if="getIconComponent(parseMeta(child.meta).icon)">
-                  <component :is="getIconComponent(parseMeta(child.meta).icon)" />
-                </el-icon>
+                <MenuIcon :meta="child.meta" />
                 <span>{{ child.name }}</span>
               </el-menu-item>
             </el-sub-menu>
 
             <!-- MENU 类型：直接菜单项 -->
             <el-menu-item v-else-if="parseMeta(group.meta).path" :index="parseMeta(group.meta).path">
-              <el-icon v-if="getIconComponent(parseMeta(group.meta).icon)">
-                <component :is="getIconComponent(parseMeta(group.meta).icon)" />
-              </el-icon>
+              <MenuIcon :meta="group.meta" />
               <span>{{ group.name }}</span>
             </el-menu-item>
           </template>
         </el-menu>
       </div>
       <div class="user-info">
-        <el-tooltip v-if="hasAppShell" content="进入知识库" placement="bottom">
+        <KbTooltip v-if="hasAppShell" content="进入知识库" placement="bottom">
           <button class="icon-btn" @click="goApp">
             <el-icon><Reading /></el-icon>
           </button>
-        </el-tooltip>
-        <el-tooltip :content="tabsVisible ? '隐藏标签栏' : '显示标签栏'" placement="bottom">
+        </KbTooltip>
+        <KbTooltip :content="tabsVisible ? '隐藏标签栏' : '显示标签栏'" placement="bottom">
           <button class="icon-btn" @click="tabsVisible = !tabsVisible">
             <el-icon><component :is="tabsVisible ? ArrowDown : ArrowUp" /></el-icon>
           </button>
-        </el-tooltip>
+        </KbTooltip>
         <!-- 用户菜单：**两个壳共用这一份**（见 components/UserMenu.vue）。
              菜单项 + 个人信息/改密码两个弹窗 + 退出登录（确认框、清登录态、跳登录页）
              都在那边，这里只接"退出之后清什么"（这个壳的页面标签页）。 -->
@@ -136,9 +130,11 @@ import { useRoute, useRouter, RouterLink } from 'vue-router'
 import * as Icons from '@element-plus/icons-vue'
 import { ArrowDown, ArrowUp, Reading } from '@element-plus/icons-vue'
 import { getMenuPaths, getMenuTree } from '../utils/auth'
-import { parseMeta, getIconComponent, buildShellMenuTree } from '../utils/menu'
+import { parseMeta, buildShellMenuTree } from '../utils/menu'
 import { bootstrapSession, hasAppMenus, sessionProfile } from '../utils/session'
 import UserMenu from './UserMenu.vue'
+import KbTooltip from './corecraft-web/KbTooltip.vue'
+import MenuIcon from './corecraft-web/MenuIcon.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -544,8 +540,8 @@ onBeforeUnmount(() => {
 :deep(.admin-menu .el-menu--horizontal .el-menu) {
   top: 56px;
   border-top: none;
-  border-radius: var(--cc-radius);
-  box-shadow: 0 4px 16px rgba(31, 35, 41, 0.1);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--cc-shadow-2);
 }
 
 :deep(.admin-menu .el-menu-item) {
@@ -573,10 +569,11 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  /* 原来是 30×30：既不在 --ctl-* 阶梯上，又与同屏 UserMenu 的 28px 头像差 2px */
+  width: var(--ctl-sm);
+  height: var(--ctl-sm);
   border: none;
-  border-radius: var(--cc-radius-sm);
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--cc-icon);
   cursor: pointer;
@@ -663,8 +660,8 @@ onBeforeUnmount(() => {
   position: fixed;
   opacity: 0.98;
   cursor: grabbing;
-  box-shadow: 0 6px 16px rgba(31, 35, 41, 0.16);
-  border-radius: var(--cc-radius-sm);
+  box-shadow: var(--cc-shadow-2);
+  border-radius: var(--radius-sm);
   background: var(--cc-surface);
   transition: none;
   pointer-events: none;

@@ -2,11 +2,11 @@
   <el-dialog
     :model-value="modelValue"
     :title="mode === 'points' ? '写知识点' : '生成主题'"
-    width="640px"
+    width="var(--cc-dialog-w-lg)"
     :close-on-click-modal="false"
     @update:model-value="close"
   >
-    <!-- pack 模式四步：主题 → 目录 → 知识点 → 完成。
+    <!-- pack 模式三步：主题 → 规划 → 知识点（提交任务后弹窗关掉，没有"完成"页）。
          **每一步的名字就是它产出的是什么**（目录 / 知识点）——
          抽象词（「骨架」「正文」）在界面上没有对应物，用户得在脑子里翻译一遍。
          **目录那步只落结构**（目录 + 知识点占位：title 有、content 空）；
@@ -14,16 +14,29 @@
          points 模式只有一步：写知识点。 -->
     <el-steps v-if="mode === 'pack'" :active="step" simple class="steps">
       <el-step title="主题" />
-      <el-step title="目录" />
+      <el-step title="规划" />
       <el-step title="知识点" />
-      <el-step title="完成" />
     </el-steps>
 
     <!-- 第 1 步：来源 -->
     <section v-if="at.theme" class="pane">
-      <div class="tabs">
-        <button class="tabs__item" :class="{ 'is-on': source === 'ai' }" @click="source = 'ai'">AI 生成</button>
-        <button class="tabs__item" :class="{ 'is-on': source === 'paste' }" @click="source = 'paste'">粘贴</button>
+      <div class="tabs" role="tablist">
+        <button
+          type="button"
+          class="tabs__item"
+          :class="{ 'is-on': source === 'ai' }"
+          @click="source = 'ai'"
+        >
+          AI 生成
+        </button>
+        <button
+          type="button"
+          class="tabs__item"
+          :class="{ 'is-on': source === 'paste' }"
+          @click="source = 'paste'"
+        >
+          粘贴
+        </button>
       </div>
 
       <template v-if="source === 'ai'">
@@ -35,132 +48,133 @@
         </div>
         <div class="field">
           <label class="field__label">补充说明</label>
-          <el-input v-model="extra" type="textarea" :rows="3" placeholder="如：面向初学者" />
-        </div>
-        <!-- **层数上限**：目录最多几层（0 = 不限）。只管 AI 生成的骨架，
-             粘贴的树是用户自己写的，本来就多深都行。 -->
-        <div class="field">
-          <label class="field__label">层数上限</label>
-          <el-select v-model="maxDepth" size="small" class="field__select">
-            <el-option v-for="n in [3, 4, 5, 6, 7, 8]" :key="n" :label="`${n} 层`" :value="n" />
-            <el-option :label="'不限'" :value="0" />
-          </el-select>
+          <!-- 这一格是"面向谁、要多深、什么场景"的整体限定。
+               **层数不在这里暗示**：层数是内容长出来的结果，不是输入项 ——
+               写"最多 4 层"会让模型把该分的内容硬压回一层，得不偿失。 -->
+          <el-input
+            v-model="extra"
+            type="textarea"
+            :rows="3"
+            placeholder="如：面向初学者"
+          />
         </div>
       </template>
 
+      <!-- 只留一个框：**没有标题、没有格式说明**。
+           框里的示例本身就是格式说明（照着它写就对了），再补一段"我们认哪几种写法"
+           等于让用户先读一遍文档再动手 —— 解析器什么都认，用户不需要知道。 -->
       <template v-else>
         <el-input
           v-model="text"
           type="textarea"
-          :rows="8"
-          placeholder="主题
-├── 模块一
-│   ├── 知识点一
-│   └── 知识点二
-└── 模块二
-    └── 知识点三"
+          :rows="10"
+          placeholder="# 中国近代史
+## 鸦片战争
+- 背景与导火索
+- 结果与影响
+## 洋务运动
+- 代表人物与主张"
         />
       </template>
     </section>
 
-    <!-- 第 2 步：目录。**目录 = 有下级的节点，知识点 = 叶子**，两件事都在这棵树里 -->
+    <!-- 第 2 步：规划。**目录 = 有下级的节点，知识点 = 叶子**，两件事都在这棵树里 -->
     <section v-else-if="at.skeleton" class="pane">
-      <div class="sum">
-        <span>将建 {{ plan.dirCount }} 个目录</span>
-        <!-- 叶子是**知识点占位**（标题有、内容空）⇒ 内容在下一步写 -->
-        <span v-if="plan.pointCount">· {{ plan.pointCount }} 个知识点待写</span>
-      </div>
-      <p v-if="plan.tooLong.length" class="warn">{{ plan.tooLong.length }} 个目录名超过 {{ MAX_NAME }} 字</p>
-      <p v-if="plan.tooMany" class="warn">一次最多创建 {{ MAX_NODES }} 个目录，这批有 {{ plan.tooMany }} 个</p>
-      <p v-if="plan.orphan.length" class="pane__hint">{{ plan.orphan.length }} 个知识点没有目录可挂</p>
-
-      <div class="tools">
-        <el-button size="small" text @click="checkAll">全选</el-button>
-        <el-button size="small" text @click="checkNone">全不选</el-button>
-      </div>
-
-      <div class="tree">
-        <div v-for="r in rows" :key="r.key" class="row" :style="{ paddingLeft: (r.depth - 1) * 16 + 'px' }">
-          <button
-            class="row__fold"
-            :class="{ 'is-empty': !r.node.children.length }"
-            :aria-label="collapsed.has(r.node) ? '展开' : '收起'"
-            @click="fold(r.node)"
-          >
-            <!-- ⚠️ **class 必须绑在 el-icon 上**，不能绑在里面那个 ArrowRight 上：
-                 ArrowRight 自己渲染一个 <svg>，class 落在它身上 ⇒ 选择器
-                 `.el-icon.is-open`（要求同一个元素同时有两个 class）永远匹配不上
-                 ⇒ 箭头不转，展开/收起看起来"没反应"。 -->
-            <el-icon v-if="r.node.children.length" :class="{ 'is-open': !collapsed.has(r.node) }">
-              <ArrowRight />
-            </el-icon>
-          </button>
-          <el-checkbox :model-value="r.node.checked" @change="(v) => toggle(r.node, v)" />
-          <!-- 名字可以直接改：AI 起的名不一定好用，改完再落库比导进去再一个个改名少一半事。 -->
-          <el-input v-model="r.node.name" size="small" class="row__input" :class="{ 'is-bad': isBadName(r.node) }" />
-          <span v-if="r.node.exists" class="tag tag--exists">合并</span>
-          <span v-else-if="r.node.leaf" class="tag tag--point">知识点</span>
-        </div>
-      </div>
-    </section>
-
-    <!-- 知识点那一步：pack 模式写「刚建好的这一批」，points 模式给「一个现成目录」写 -->
-    <section v-else-if="at.points" class="pane">
-      <!-- 还没开始：pack 先说清写多少、让用户选两个开关；
-           points 先让用户看清"要给哪个目录写"，再点开始（写一堆知识是不可逆的） -->
-      <template v-if="!started">
-        <div v-if="mode === 'pack'" class="opts">
-          <p class="opts__sum">将写 {{ result.points }} 个知识点</p>
-          <div class="opts__row">
-            <!-- **两个开关只在这一步出现**：生成目录那步看不到它们。 -->
-            <el-checkbox v-model="withTags" class="opt">
-              <span class="opt__name">生成标签</span>
-              <span class="opt__hint">每条另挑一次标签</span>
-            </el-checkbox>
-            <el-checkbox v-model="withLinks" class="opt">
-              <span class="opt__name">知识点关联</span>
-              <span class="opt__hint">正文里提到的知识点给链接</span>
-            </el-checkbox>
-          </div>
-        </div>
-        <p v-else class="done">给「{{ category?.name }}」写知识点</p>
-      </template>
-      <template v-else>
-        <p class="prog">
-          <!-- points 模式事先不知道要写几条（模型自己定）⇒ total = 0 ⇒ 只报"已写入多少" -->
-          <template v-if="progress.total">第 {{ progress.done }} / {{ progress.total }} 条 · </template>已写入 {{ progress.points }} 条
+      <!-- 规划中：**骨架屏**。点「生成规划」就切到这一步（不在第 1 步原地转圈）——
+           等待有了内容位置，主题/说明那些表单也自然不用逐个禁用。
+           「上一步」此时 = 中断这次调用（见 backFromPlan）。 -->
+      <div v-if="planning" class="skel">
+        <p class="skel__tip">正在规划「{{ topic || '这个主题' }}」的目录结构…</p>
+        <div
+          v-for="(w, i) in [88, 72, 80, 64, 84, 58]"
+          :key="i"
+          class="skel__row"
+          :style="{ width: w + '%', animationDelay: i * 0.12 + 's' }"
+        />
+        <!-- 秒数**一直显示**：等 20 秒和等 4 分钟，用户要看得出区别；
+             超过 90 秒就把"可以取消"说出来 —— 不然人只会以为卡死了。 -->
+        <p class="skel__eta">
+          已等 {{ planSeconds }} 秒<template v-if="planSeconds < 90"> · 一般 30~60 秒</template>
+          <template v-else> · 比平时久，可以点「取消」</template>
         </p>
-        <p v-if="stopped" class="pane__hint">已停止</p>
-        <div class="log">
-          <div v-for="(r, i) in results" :key="i" class="log__row">
-            <span class="log__dir">{{ r.dir }}</span>
-            <span class="log__num">{{ r.count }} 个</span>
-            <span v-if="r.error" class="log__err">{{ r.error }}</span>
+      </div>
+
+      <template v-else>
+        <div class="sum">
+          <span>{{ plan.dirCount }} 个目录</span>
+          <span v-if="plan.pointCount">· {{ plan.pointCount }} 条知识点</span>
+        </div>
+        <p v-if="plan.tooLong.length" class="warn">{{ plan.tooLong.length }} 个目录名超过 {{ MAX_NAME }} 字</p>
+        <p v-if="plan.tooMany" class="warn">一次最多创建 {{ MAX_NODES }} 个目录，这批有 {{ plan.tooMany }} 个</p>
+        <p v-if="planIssue" class="warn">{{ planIssue }}</p>
+        <!-- **中性说明**（不是告警）：比如"这棵树来自后台任务"。
+             用 .warn 的红色会让人以为出了问题，而这只是交代来历。 -->
+        <p v-if="planNote" class="pane__hint">{{ planNote }}</p>
+        <p v-if="plan.orphan.length" class="pane__hint">{{ plan.orphan.length }} 个知识点没有目录可挂</p>
+
+        <!-- 建结构：逐条落库（目录 + 知识点占位），**不给取消**（写了一半会留脏数据）。
+             进度条放树外面：树此刻是只读淡出的，进度得看得见。 -->
+        <div v-if="building" class="prog">
+          <i :style="{ width: buildPercent }" />
+          <span class="prog__text">正在创建结构 {{ buildProgress.done }} / {{ buildProgress.total }}</span>
+        </div>
+
+        <div class="tools">
+          <!-- 用 default 尺寸（14px）：size="small" 是 12px，和旁边的名字输入框
+               差一档，看着像"另一套界面"。 -->
+          <el-button text :disabled="building" @click="setAllChecked(true)">全选</el-button>
+          <el-button text :disabled="building" @click="setAllChecked(false)">全不选</el-button>
+        </div>
+
+        <div class="tree" :class="{ 'is-busy': building }">
+          <div v-for="r in rows" :key="r.key" class="row-item">
+            <div class="row" :style="{ paddingLeft: (r.depth - 1) * 16 + 'px' }">
+              <button
+                class="row__fold"
+                :class="{ 'is-empty': !r.node.children.length }"
+                :aria-label="collapsed.has(r.node) ? '展开' : '收起'"
+                @click="fold(r.node)"
+              >
+                <!-- ⚠️ **class 必须绑在 el-icon 上**，不能绑在里面那个 ArrowRight 上：
+                     ArrowRight 自己渲染一个 <svg>，class 落在它身上 ⇒ 选择器
+                     `.el-icon.is-open`（要求同一个元素同时有两个 class）永远匹配不上
+                     ⇒ 箭头不转，展开/收起看起来"没反应"。 -->
+                <el-icon v-if="r.node.children.length" :class="{ 'is-open': !collapsed.has(r.node) }">
+                  <ArrowRight />
+                </el-icon>
+              </button>
+              <el-checkbox :model-value="r.node.checked" @change="(v) => toggle(r.node, v)" />
+              <!-- 名字可以直接改：AI 起的名不一定好用，改完再落库比导进去再一个个改名少一半事。 -->
+              <el-input v-model="r.node.name" size="small" class="row__input" :class="{ 'is-bad': isBadName(r.node) }" />
+              <span v-if="r.node.exists" class="tag tag--exists">合并</span>
+              <span v-else-if="r.node.leaf" class="tag tag--point">知识点</span>
+            </div>
+            <!-- 知识点（叶子）多一行「定位」：讲什么、讲到什么程度。可改可留空，
+                 只进材料不落库。**不再写一句说明这段是什么** —— 输入框自己的
+                 placeholder 已经说清了，正文里再解释一遍是重复。 -->
+            <div
+              v-if="r.node.leaf"
+              class="row__intent"
+              :style="{ paddingLeft: (r.depth - 1) * 16 + ROW_GUTTER + 'px' }"
+            >
+              <el-input
+                v-model="r.node.intent"
+                size="small"
+                placeholder="这条讲什么、讲到什么程度（可留空）"
+              />
+            </div>
           </div>
         </div>
       </template>
     </section>
 
-    <!-- 完成 -->
-    <section v-else class="pane">
-      <div class="donebox">
-        <el-icon class="donebox__icon"><CircleCheckFilled /></el-icon>
-        <p class="done">{{ doneText }}</p>
+    <!-- 知识点那一步：pack 提交「刚建好的这一批」，points 提交「一个现成目录」 -->
+    <section v-else-if="at.points" class="pane">
+      <div v-if="mode === 'pack'" class="opts">
+        <p class="opts__sum">{{ result.points }} 条知识点</p>
+        <p class="pane__hint">提交后后台逐条写，关页面不影响；进度在「任务」里看</p>
       </div>
-      <!-- **失败明细跟到完成页**：正文那一步一结束这页就换掉了，
-           哪几条没写出来、为什么，不能跟着消失（2026-10-28：跑到一半跳到"完成"，
-           用户只看到一个对不上的数字，不知道该重写哪几条）。 -->
-      <div v-if="failedResults.length" class="log">
-        <div v-for="(r, i) in failedResults" :key="i" class="log__row">
-          <span class="log__dir">{{ r.dir }}</span>
-          <span class="log__num">{{ r.count }} 个</span>
-          <span class="log__err">{{ r.error }}</span>
-        </div>
-      </div>
-      <!-- **没写完**（被停了 / 有几条失败）⇒ 告诉用户还能接着写 -->
-      <p v-if="mode === 'pack' && result.points > result.written" class="pane__hint">
-        没写完的可在目录「⋯ → 写知识点」里接着写
-      </p>
+      <p v-else class="done">给「{{ category?.name }}」写知识点</p>
     </section>
 
     <!-- 底部一排：**左边是上一步，右边是这次生成的参数 + 主按钮**。
@@ -168,52 +182,52 @@
     <template #footer>
       <div class="foot">
         <div class="foot__side">
-          <el-button v-if="at.skeleton" size="small" @click="step = 0">上一步</el-button>
+          <!-- 规划中：这一下就是**取消**（中断这次调用并回第 1 步）；已出结果则是普通返回。
+               不额外摆一个"停止"按钮 —— 同一个动作在同一位置，心智负担更小。 -->
+          <el-button v-if="at.skeleton" @click="backFromPlan">{{ planning ? '取消' : '上一步' }}</el-button>
         </div>
         <div class="foot__side foot__side--right">
-          <!-- **模型和思考，每一步都在**：生成中途改了也生效（作用于下一次调用）。 -->
-          <template v-if="!at.done">
-            <el-select v-model="pickEndpointId" size="small" class="foot__model" placeholder="模型">
-              <el-option
-                v-for="e in aiEndpoints"
-                :key="e.id"
-                :label="e.name || e.model"
-                :value="e.id"
-                :disabled="!e.ready"
-              />
-            </el-select>
-            <el-checkbox v-model="thinking">开启思考</el-checkbox>
-          </template>
-
+          <!-- **模型和思考，每一步都在**：规划与正文各按当时的设置走（任务会把它们存进参数快照）。 -->
+          <el-select v-model="pickEndpointId" class="foot__model" placeholder="模型">
+            <el-option
+              v-for="e in aiEndpoints"
+              :key="e.id"
+              :label="e.name || e.model"
+              :value="e.id"
+              :disabled="!e.ready"
+            />
+          </el-select>
+          <!-- **思考开关删了**（2026-11-12）：思考是厂商参数，且"开"的写法就是"不发"，
+               放在界面上对一半模型无效。改成**按环节固定策略**（`AiStagePolicy`）：
+               规划关思考、正文开思考，由服务端决定。 -->
           <el-button
             v-if="at.theme && source === 'ai'"
             type="primary"
-            size="small"
             :loading="generating"
             :disabled="!topic.trim()"
             @click="generateOutline"
           >
-            生成目录
+            生成规划
           </el-button>
-          <el-button v-else-if="at.theme" type="primary" size="small" :disabled="!text.trim()" @click="parseOutline">
+          <el-button v-else-if="at.theme" type="primary" :disabled="!text.trim()" @click="parseOutline">
             解析
           </el-button>
-          <!-- 目录那步的按钮是「下一步」：**这一步建结构，下一步才写知识点** -->
+          <!-- 第 1 步主按钮分两条路（2026-11-13）：
+               · **后台任务交回来的树**（任务中心「确认」）⇒「确认并生成」：树交给服务端，
+                 建目录 / 写正文是任务链上的节点，一口气跑 —— 暂停 / 恢复都不会重建目录。
+               · 本地树（解析 / 粘贴）⇒ 老路「下一步」：本地建结构，进正文那一步挑范围。 -->
           <el-button
             v-if="at.skeleton"
             type="primary"
-            size="small"
             :loading="building"
-            :disabled="!canBuild"
-            @click="build"
+            :disabled="planning || !canBuild"
+            @click="confirmStep"
           >
-            下一步
+            {{ building ? (planTask ? '确认中…' : '创建中…') : planTask ? '确认并生成' : '下一步' }}
           </el-button>
-          <el-button v-if="at.points && !started" type="primary" size="small" @click="startContent">开始生成</el-button>
-          <el-button v-if="at.points && started" type="primary" size="small" :loading="running" @click="stop">
-            停止
+          <el-button v-if="at.points" type="primary" :loading="submitting" @click="startContent">
+            开始生成
           </el-button>
-          <el-button v-if="at.done" type="primary" size="small" @click="close">完成</el-button>
         </div>
       </div>
     </template>
@@ -222,46 +236,48 @@
 
 <script setup>
 /**
- * 生成主题：**主题 → 目录 → 逐目录写知识点**。
+ * 生成主题：**主题 → 规划 → 提交后台逐条写正文**。
  *
- * ## 为什么是两步（目录先、知识点后）
+ * ## 为什么分两段（先规划、后正文）
  *
  * 一次调用出不了几十篇正文（那是几万 token 的输出，硬要它一次吐，它会重复、
- * 写空、越写越水）。所以：**先出目录**（目录 + 每个目录的知识点标题），
- * **再对着标题写正文**。标题先定下来，写正文时才不会跑题、不会重复。
+ * 写空、越写越水）。所以：**先出规划**（目录层级 + 每个知识点的标题与一句定位），
+ * **再对着标题逐条写**。标题先定下来，写正文时才不会跑题、不会重复。
  *
  * ## 这棵树同时是两份清单
  *
  * - **目录 = 有下级的节点**（要建出来）
  * - **知识点 = 叶子**（要写正文，挂在它直接的那个目录下）
  *
- * 叶子不再是"被扔掉的条目"——它是要写正文的东西。
- *
  * ## 两种模式
  *
- * - `pack`（侧边栏入口）：主题 → 目录 → **知识点** → 完成（**四步是固定的**）。
- *   目录那步**只落结构**（目录 + 每个目录的知识点标题占位），点「下一步」建完结构
- *   就进「知识点」那步 —— 那一步再选**要不要标签 / 要不要知识点关联**，然后写正文。
- *   ⇒ 标题先定下来，写正文时才不会跑题、不会重复；中断了可以在目录的
- *   「⋯ → 写知识点」里接着写（**只写还没写正文的那几条**）。
- * - `points`（目录「⋯」入口）：目录是现成的，直接给它写知识点。
+ * - `pack`（侧边栏「生成主题」）：主题 → 规划（带定位、可改）→ 建结构 → **提交任务**。
+ *   建结构时落「目录 + 知识点占位」（标题有、正文空），然后把这个目录下的
+ *   **每一条待写知识点**打包成任务步骤交给服务端 ⇒ 弹窗关掉也继续写。
+ * - `points`（目录「⋯ → 写知识点」）：目录是现成的，直接给它写。
  *   材料里带上**这个目录现有的子目录**，模型就知道哪些领域已经有人管了。
  *
- * ## 后端几乎不用改
+ * ## 编排位置（2026-11-10 改过一次）
  *
  * 目录走 `POST /kp/category/import`（一个事务建完整棵树，返回这批目录的 id）；
- * 知识点走现有的 `POST /kp/topic`。**"逐目录生成"这个编排在前端**，
- * 因为进度、停止、单目录重试都是界面状态。
+ * 知识点占位走 `POST /kp/topic`。**材料在这里算好**（`buildMaterial` 唯一一份定义），
+ * 但**执行在服务端**（`/kp/gen-task`）：前端只负责"算材料 + 提交 + 关窗"。
+ * 老的前端本地循环（关页面就断、空正文没人管）已整条删除。
+ *
+ * ## 任务模式不做"生成时关联"
+ *
+ * 正文里提到别的知识点时，**不在生成时换成链接**：改为阅读页按标题**现算**
+ * （`components/kbAutoLink.js`）—— 改标题、移动目录、后建的条目都能自动跟上。
+ * 服务端落库前会把模型写的 `[[标题]]` 剥成纯文字，正好由自动链接接上。
  */
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { ArrowRight, CircleCheckFilled } from '@element-plus/icons-vue'
-import { ask, aiEndpoints, currentEndpointId, ensureAiConfigLoaded } from './useAi'
+import { ArrowRight } from '@element-plus/icons-vue'
+import { aiEndpoints, currentEndpointId, ensureAiConfigLoaded } from './useAi'
 import {
   importCategories,
   createTopic,
-  updateTopic,
-  ensureTopicIndexLoaded,
+  refreshTopicIndexes,
   ensureTopicTypesLoaded,
   getCategories,
   getChildCategories,
@@ -277,26 +293,47 @@ import {
   importPlan,
   renderOutlineTree,
   allNodes,
-  joinPath,
   indexByParentName,
+  walkTree,
   MAX_NAME,
   MAX_NODES
 } from '../../utils/outlineTree'
-import { parsePoints, buildMaterial, buildTagMaterial, parseTagNames, fixCategoryLinks, linkTopicMarks, splitShortContent } from '../../utils/knowledgePoints'
+import { toggleInSet } from '../../utils/categoryTree'
+import { buildMaterial } from '../../utils/knowledgePoints'
+import { percentText } from '../../utils/progress'
 import { getMyConfig } from '../../api/config'
-import { categoryHref } from '../../utils/categoryNav'
+import { createGenTask, continueGenTask } from '../../api/genTask'
+import { genTaskCreated } from './useGenTasks'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
   /** pack = 生成一整套（主题 → 骨架 → 知识点）；points = 给一个现成目录写知识点 */
   mode: { type: String, default: 'pack' },
   /** points 模式的目标目录 */
-  category: { type: Object, default: null }
+  category: { type: Object, default: null },
+  /**
+   * 后台目录任务（任务中心「继续编辑」交过来的）+ 它生成好的树。
+   *
+   * <p>有这两个 ⇒ 打开就直接进第 2 步：树已经在库里了，**不再调一次模型**。
+   * 没有 ⇒ 走"点生成规划 → 建任务 → 转后台"。
+   */
+  planTask: { type: Object, default: null },
+  planOutline: { type: String, default: '' }
 })
+// ⚠️ **`openTasks` 已删**（2026-11-12）：那个事件没有任何监听方，
+// 是个"发出去就消失"的空事件 ⇒ 任务列表刷不出来的原因之一。
+// 现在统一走 `genTaskCreated()`（见 useGenTasks）。
 const emit = defineEmits(['update:modelValue', 'done'])
 
 const step = ref(0)
 const source = ref('ai')
+/**
+ * 新版：每个知识点的「定位」（规划阶段产出，**只进材料、不落库**）。
+ *
+ * key = `目录全路径|标题` —— 同名知识点可能出现在不同目录里，只用标题当键会串。
+ * 落库要加列，这一版先不动后端（对比完再定）。
+ */
+const intentMap = ref(new Map())
 /** 目录名称（也是骨架的根目录名） */
 const topic = ref('')
 /** 补充说明：用户自己写的一句话（"面向开发"、"面向考试"……）。空 = 没有补充 */
@@ -308,21 +345,42 @@ const extra = ref('')
  * <p>**没配 = 材料里就不给这一段**（模型按统一提示词写）。
  */
 const genPref = ref('')
-/**
- * 目录层数上限。**5 = 目录最多 5 层**（知识点是叶子，不占目录的层数）；0 = 不限。
- *
- * <p>**只管 AI 生成**：粘贴的树是用户自己写的，本来就多深都行。
- * 这个值只进材料（`层数上限：N`），由提示词照着办 —— 代码不拦（`kp_category`
- * 是邻接表，层数只是数据）。
- */
-const maxDepth = ref(5)
 const text = ref('')
+/**
+ * 名字输入框相对行首的左边距（px）。
+ *
+ * <p>「定位」那行要跟**上一行的名字**左对齐，所以得自己算缩进 —— 值 = 折叠按钮 24
+ * + 勾选框 22 + 间距 4。写成常量是因为以前这里硬编码 44，实测差 6px（定位框整排
+ * 比名字往左探出去一截），而这种 6px 在截图里不逐像素量根本看不出来。
+ */
+const ROW_GUTTER = 50
+
 const generating = ref(false)
+/** 规划已经等了多久（秒）。骨架屏上要显示 —— "预计 30~60 秒"在等到 4 分钟时是句假话 */
+const planSeconds = ref(0)
+let planTick = null
+/** 规划中（**第 2 步的骨架屏**看它）：点「生成规划」立刻切到第 2 步，等待有内容位置 */
+const planning = ref(false)
+/** 规划这次调用的中断器：**只有规划可取消**（建结构已经在写库，取消了会留半成品） */
+let planAbort = null
 const building = ref(false)
-const running = ref(false)
-const stopped = ref(false)
-/** 知识点那一步有没有开始（points 模式要先点"开始"，别一打开就写一堆知识） */
-const started = ref(false)
+/**
+ * 第 2 步顶部的提醒（现在只有一种来源：规划被截断、用的是半棵树）。
+ *
+ * <p>空串 = 没话要说。**不弹 toast**：这句话要一直挂在树上陪着用户删改，
+ * 而不是三秒后消失、留下半棵树让人自己猜为什么少了几个模块。
+ */
+const planIssue = ref('')
+/** 中性说明（不是问题）：如"这棵树来自后台任务" */
+const planNote = ref('')
+/** 建结构的进度（逐条 createTopic）—— 树那一刻是只读淡出的，进度得另外显示 */
+const buildProgress = ref({ done: 0, total: 0 })
+const buildPercent = computed(() => {
+  const { done, total } = buildProgress.value
+  return percentText(done, total)
+})
+/** 提交任务中（防连点提交两次） */
+const submitting = ref(false)
 /**
  * **这次用哪个模型**（用户注册过的 API）。
  *
@@ -331,35 +389,15 @@ const started = ref(false)
  */
 const pickEndpointId = ref(null)
 /**
- * **这次要不要模型的思考**。默认开着。
+ * ⚠️ **「开启思考」开关已删**（2026-11-12）。
  *
- * <p>关掉能快好几倍（实测正文快 3~4 倍），代价是**更容易出事实错误**：
- * 同一份提示词，关思考那份出现过「MySQL 8.0.29 起 TRUNCATE 可回滚」这种硬伤，
- * 开思考那份没有 ⇒ 所以它**默认开着**，要快自己关。
+ * <p>三条理由：① 它是厂商参数，对一半模型无效（"开"的写法就是"不发"）；
+ * ② 它压过后端策略，策略配了也白配；③ 用户拍板"能开就开、别给我开关"。
+ * 现在由 {@code AiStagePolicy} 按环节定：规划关思考、正文开思考。
  */
-const thinking = ref(true)
-/**
- * **正文那一步的两个开关**（只在 pack 模式的「正文」那步出现，生成目录那步看不到）。
- *
- * - `withTags`：要不要给每条知识点挑标签（标签是**另一次**调用，见 pickTags）
- * - `withLinks`：要不要让正文里提到的**这次生成结构里的**知识点变成链接
- *   （模型写 `[[标题]]`，落库前换成 `/app/topic/<id>`，见 linkTopicMarks）
- *
- * **默认都开着**（= 现在的行为）。关掉哪一个，那一项的工作就一点不做：
- * 标签不调模型；关联不给模型"可标的名字清单"，它就不会写标记。
- *
- * <p>⚠️ **只有 pack 模式露这两个开关**：用户改的是「生成主题」这一步的流程，
- * 目录「⋯ → 写知识点」那个入口保持原样（标签和关联照做）。
- */
-const withTags = ref(true)
-const withLinks = ref(true)
 /** 解析 + 标记之后的树 */
 const marked = ref([])
 const collapsed = ref(new Set())
-const progress = ref({ done: 0, total: 0, points: 0 })
-const results = ref([])
-/** 有失败的那些目录（完成页要接着显示，不能让失败明细跟着正文那一步一起消失） */
-const failedResults = computed(() => results.value.filter((r) => r.error))
 const result = ref({ dirs: 0, points: 0, written: 0 })
 /**
  * **这一批的上下文**（建完结构后**从库里现取**的）：写正文那一步要用
@@ -373,7 +411,6 @@ const result = ref({ dirs: 0, points: 0, written: 0 })
  * （2026-10-28 实测：少算 74 条 ⇒ 一半知识点没写，界面却显示"完成"）。
  */
 const batch = ref(null)
-let controller = null
 
 /**
  * 当前落在哪一步。
@@ -385,16 +422,14 @@ const at = computed(() => {
   const pack = props.mode === 'pack'
   if (!pack) {
     // points 模式：目录是现成的，它的一步就是"写正文"
-    return { theme: false, skeleton: false, points: step.value === 0, done: step.value === 1 }
+    return { theme: false, skeleton: false, points: step.value === 0 }
   }
-  // pack 模式：主题(0) → 目录(1) → 知识点(2) → 完成(3)
-  // **四步是固定的**：目录那步点「下一步」建完结构就进知识点那步，
-  // 不再由一个勾选决定"有没有知识点那一步"。
+  // pack 模式：主题(0) → 规划(1) → 知识点(2)。
+  // **没有"完成"这一步**：提交任务之后弹窗直接关掉，进度去侧边栏「任务」里看。
   return {
     theme: step.value === 0,
     skeleton: step.value === 1,
-    points: step.value === 2,
-    done: step.value === 3
+    points: step.value === 2
   }
 })
 
@@ -415,22 +450,6 @@ const rows = computed(() => {
 /** **唯一的口径**：要建的目录 + 要写的知识点（见 utils/outlineTree#importPlan） */
 const plan = computed(() => importPlan(marked.value))
 
-/**
- * 完成页那一句。
- *
- * <p>pack 模式说三样：建了多少目录、多少知识点（**标题**，都落库了）、
- * 写了多少篇正文（**被停了 / 有几条失败时可能少于知识点数**）。
- */
-const doneText = computed(() => {
-  if (props.mode === 'pack') {
-    const parts = [`已建 ${result.value.dirs} 个目录`]
-    if (result.value.points) parts.push(`${result.value.points} 个知识点`)
-    if (result.value.written) parts.push(`写了 ${result.value.written} 篇正文`)
-    return parts.join('，')
-  }
-  return `已写入 ${result.value.written || result.value.points} 条正文`
-})
-
 const canBuild = computed(
   () =>
     plan.value.dirCount > 0 &&
@@ -447,6 +466,9 @@ watch(
     }
     // pack 模式第 0 步是"主题"，points 模式第 0 步是"开始"—— 两种都从 0 起
     step.value = 0
+    // **上一批的定位不能带到这一批**：key 是「目录路径|标题」，
+    // 两批如果有同名目录 + 同名知识点，残留的定位会喂进材料（且界面看不出来）。
+    intentMap.value = new Map()
     // **偏好是系统级的**：读一次就够，一次生成中途不会变
     loadGenPref()
     // **默认用全局当前选中的那个模型**（AI 设置里选的那条）。
@@ -455,6 +477,13 @@ watch(
       pickEndpointId.value =
         currentEndpointId.value ?? aiEndpoints.value.find((e) => e.ready)?.id ?? null
     })
+    // **任务中心「继续编辑」交回来的树**：直接进第 2 步，不再调模型。
+    // 树的文本就是任务 result 里的 outline（树形符号），解析规则仍然只有一份。
+    if (props.planTask && props.planOutline) {
+      topic.value = props.planTask.title || ''
+      planNote.value = '这棵树来自后台任务，已经过校验 —— 可以删改后再建目录'
+      applyOutline(props.planOutline, true)
+    }
   }
 )
 
@@ -474,30 +503,31 @@ async function loadGenPref() {
 }
 
 function reset() {
+  // 关掉弹窗再打开时，上一批的"规划中"不能残留（否则第 2 步一进来就是骨架屏）
+  planAbort?.abort()
+  planAbort = null
+  planning.value = false
+  generating.value = false
+  building.value = false
+  buildProgress.value = { done: 0, total: 0 }
   step.value = 0
   source.value = 'ai'
   topic.value = ''
   extra.value = ''
-  maxDepth.value = 5
   text.value = ''
   pickEndpointId.value = null
-  thinking.value = true
-  withTags.value = true
-  withLinks.value = true
   marked.value = []
   collapsed.value = new Set()
-  progress.value = { done: 0, total: 0, points: 0 }
-  results.value = []
-  result.value = { dirs: 0, points: 0, written: 0 }
+  intentMap.value = new Map()
+  planIssue.value = ''
+  planNote.value = ''
+  result.value = { dirs: 0, points: 0 }
   batch.value = null
-  stopped.value = false
-  started.value = false
-  controller?.abort()
-  controller = null
 }
 
 function close() {
-  controller?.abort()
+  // 关窗/关弹窗时把在途的规划掐掉：后台还在跑一次几十秒的调用，白烧额度
+  planAbort?.abort()
   emit('update:modelValue', false)
 }
 
@@ -516,20 +546,20 @@ function toggle(node, checked) {
   for (const child of node.children) toggle(child, checked)
 }
 
-/** 全选 / 全不选：所有节点（含知识点那些叶子）—— "全选"不选全等于没全选 */
-function checkAll() {
-  for (const n of allNodes(marked.value)) n.checked = true
-}
-
-function checkNone() {
-  for (const n of allNodes(marked.value)) n.checked = false
+/**
+ * 全选 / 全不选：所有节点（含知识点那些叶子）—— "全选"不选全等于没全选。
+ *
+ * <p>⚠️ **只有这一份实现**（原来 `checkAll` / `checkNone` 是两段一模一样的遍历，
+ * 只差一个常量）⇒ 以后加"全选但跳过某某"这种规则，改一处就够。
+ *
+ * @param {boolean} checked 勾 / 不勾
+ */
+function setAllChecked(checked) {
+  for (const n of allNodes(marked.value)) n.checked = checked
 }
 
 function fold(node) {
-  const next = new Set(collapsed.value)
-  if (next.has(node)) next.delete(node)
-  else next.add(node)
-  collapsed.value = next
+  collapsed.value = toggleInSet(collapsed.value, node)
 }
 
 /**
@@ -550,19 +580,22 @@ function collapseDefault() {
 // ---------------- 第 1 步：出骨架 ----------------
 
 /**
- * 这次调用的两个参数：**模型 + 思考**。
+ * 生成规划：**不再在弹窗里等**（2026-11-12）。
  *
- * <p>**每次调用都现取** —— 生成中途改了模型或思考开关，下一条立刻生效
- * （一次生成要跑几十次调用，中间换模型是正常需求）。
+ * <p>规划开思考要 3~5 分钟（实测 219~268 秒），在浏览器里等会撞超时、关页面就白跑。
+ * ⇒ 改成建一个 `theme` 后台任务：服务端按「骨架 → 逐章展开 → 校验」跑，
+ * 跑完停在「待你确认」，任务卡上点「继续」把树交回这个弹窗第 2 步。
  *
- * @returns {{endpointId: number|null, thinking: boolean}}
+ * <p>⚠️ **类型是 `theme` 不是 `plan`**（v2 单任务化）：
+ * `theme` 任务的节点链是「生成目录 → 确认 → 生成正文」——
+ * 用户确认完目录之后，正文那一步**挂在同一个任务上**接着跑，
+ * 而不是新建第二张卡（「生成主题」本来就是一件事，拆成两张卡用户看不到全貌）。
+ *
+ * <p>材料在这里算好带上去（主题 + 补充说明 + 现有目录清单）；
+ * 展开每一章的材料由后端按骨架补 —— 每章只装这一章，上下文才聚焦。
  */
-function callOpts() {
-  return { endpointId: pickEndpointId.value, thinking: thinking.value }
-}
-
-/** AI 生成骨架：目录名称 + 补充说明 + 层数上限 + 现有目录清单（让它避开重复造同义目录） */
 async function generateOutline() {
+  if (generating.value) return
   generating.value = true
   try {
     const cats = getCategories()
@@ -570,26 +603,70 @@ async function generateOutline() {
     // **补充说明**紧跟主题：它是"这一批要写什么"的整体限定
     // （面向开发 / 面向考试 / 只要原理……），放在现有目录清单前面。
     if (extra.value.trim()) parts.push(`补充说明：${extra.value.trim()}`)
-    // **层数上限**：0 = 不限。写成一句人话，提示词里点名要用它。
-    parts.push(maxDepth.value ? `层数上限：${maxDepth.value} 层` : '层数上限：不限')
     const existing = renderOutlineTree(cats)
     if (existing) parts.push(`现有目录清单（缩进表示层级）：\n${existing}`)
-    const answerText = await ask('生成目录骨架', {
-      material: parts.join('\n\n'),
-      questionKey: 'ai.prompt.knowledge.outline',
-      ...callOpts()
+
+    await createGenTask({
+      type: 'theme',
+      title: topic.value.trim(),
+      params: JSON.stringify({
+        endpointId: pickEndpointId.value,
+        theme: topic.value.trim(),
+        material: parts.join('\n\n'),
+        pref: genPref.value || ''
+      }),
+      steps: []
     })
-    applyOutline(answerText)
+    ElMessage.success('已转到后台生成，可以在任务里看进度')
+    // ⚠️ **走统一出口**（2026-11-12）：任务列表要**立刻**出现这张卡。
+    // 以前这里发的是 `emit('openTasks')` —— 那个事件**没人监听**（AppLayout 只绑了 @done），
+    // ⇒ 任务列表要刷新页面才看得到（用户原话「创建主题后任务列表不能马上看到任务」）。
+    await genTaskCreated()
+    close()
   } catch (e) {
-    ElMessage.error(e?.message || '生成失败')
+    ElMessage.error(e?.message || '创建任务失败')
   } finally {
     generating.value = false
   }
 }
 
+/**
+ * 第 2 步的「上一步 / 取消」。
+ *
+ * <p>规划中 ⇒ **中断这次调用**（catch 里会回第 1 步）；已出结果 ⇒ 普通返回。
+ * 同一个位置承担"取消"和"返回"，是因为它们**对用户是同一件事**：我不想看这个了。
+ */
+function backFromPlan() {
+  if (planning.value) {
+    planAbort?.abort()
+    return
+  }
+  step.value = 0
+}
+
 /** 粘贴的树 → 骨架。**解析和"没认出"的判断都在 applyOutline 里**，这里不重复一遍 */
 function parseOutline() {
-  applyOutline(text.value)
+  // 粘贴的树是用户自己写的：**不拆定位**（名字本身就可能带竖线，如「数组｜切片」）
+  applyOutline(text.value, false)
+}
+
+/**
+ * 把新版规划输出里「名字 ｜ 定位」的定位拆到节点上。
+ *
+ * <p>**只对「AI 规划」的输出拆**：粘贴的树（用户自己写的）不拆 —— 那里的名字本身
+ * 就可能带竖线（「数组｜切片」），硬拆会把名字切坏。
+ * <p>拆不出来就原样保留（定位为空）—— 定位是增强，不该让整棵树解析失败。
+ *
+ * @param {Array} nodes `parseOutlineTree` 的节点（就地修改）
+ */
+function splitIntents(nodes) {
+  walkTree(nodes, (n) => {
+    const m = String(n.name || '').match(/^(.*?)\s*[｜|]\s*(.+)$/)
+    if (m && m[1].trim()) {
+      n.name = m[1].trim()
+      n.intent = m[2].trim()
+    }
+  })
 }
 
 /**
@@ -597,14 +674,18 @@ function parseOutline() {
  *
  * @param {string} raw 模型或用户给的 markdown 树
  */
-function applyOutline(raw) {
+function applyOutline(raw, splitIntent = true, goStep = true) {
   const forest = parseOutlineTree(raw)
   if (!forest.length) {
     ElMessage.error('没认出目录树')
+    //  AI 规划这条路上界面已经在第 2 步了 ⇒ 解析失败要退回第 1 步，别把人留在空骨架屏
+    if (!goStep) step.value = 0
     return
   }
+  // AI 规划的输出行尾带「｜定位」，拆到节点上；粘贴的树不拆
+  if (splitIntent) splitIntents(forest)
   marked.value = markOutline(forest, getCategories(), { id: 0 })
-  step.value = 1
+  if (goStep) step.value = 1
   collapseDefault()
 }
 
@@ -620,16 +701,15 @@ function applyOutline(raw) {
 function resolveDirIds(dirs, rows, mountId = 0) {
   const byParent = indexByParentName(rows)
   const map = new Map()
-  const walk = (nodes, parentId, path) => {
-    for (const n of nodes) {
-      const id = (byParent.get(parentId) || new Map()).get(n.name)
-      if (id == null) continue
-      const p = joinPath(path, n.name)
-      map.set(p, id)
-      walk(n.children, id, p)
-    }
-  }
-  walk(dirs, mountId, '')
+  // ⚠️ **路径按 `joinPath` 拼**（`walkTree` 里的规矩）⇒ 与 `importPlan.points[].dirPath` 同形。
+  //   父的目录 id 从 `map` 里按**父路径**取（父先走过 ⇒ 已经在 map 里），
+  //   顶层没有父 ⇒ 用 `mountId`。
+  walkTree(dirs, (n, path, depth, parentPath) => {
+    const parentId = parentPath ? map.get(parentPath) : mountId
+    const id = (byParent.get(parentId) || new Map()).get(n.name)
+    if (id == null) return false
+    map.set(path, id)
+  })
   return map
 }
 
@@ -747,31 +827,171 @@ async function ensureLearnTypeId() {
  *
  * <p>**占位为什么也要落库**：① 用户要看到的是"目录**和知识点**"，不落库就没地方存标题；
  * ② 知识点之间的跳转靠**标题 → id**，标题先在库里，链接才有目标（正文晚点写不影响）。
- * ⇒ 写正文时走的是**更新占位**（`runGroups` 里 `g.topicIds[ti]`），不是新建。
+ * ⇒ 写正文时走的是**更新占位**（`submitAsTask` 里 `g.topicIds[ti]` 带上 topicId），不是新建。
  */
+/**
+ * 新版：把这批知识点的定位收成 `目录全路径|标题 → 定位`。
+ *
+ * <p>**为什么用「路径 + 标题」当键**：同一个标题可能出现在不同目录（"概述"到处都有），
+ * 只用标题会串；只用路径又区分不了同目录的兄弟。
+ *
+ * <p>路径按 `importPlan` 的同一套 `joinPath` 拼 ⇒ 与写正文时 `scope.pathOf`
+ * 给出来的目录链同形，能对上。
+ */
+function collectIntents() {
+  const map = new Map()
+  walkTree(marked.value, (n, path, depth, parentPath) => {
+    const children = n.children || []
+    if (children.length) return
+    // **叶子 = 知识点，挂在「父目录」下** —— key 的前半必须是父目录路径，
+    // 不是叶子自己的路径（`importPlan.points[].dirPath` 就是父目录）。
+    // 写成叶子全路径会永远取不到（命中率 0，而且不报错）。
+    //
+    // ⚠️ **父目录路径用 `walkTree` 直接给的 `parentPath`，不要从 `path` 里切**：
+    // 知识点名里带斜杠是常事（"TCP/IP"、"A/B 测试"）⇒ 按最后一个斜杠切会把
+    // 父目录算成 "xxx/TCP" ⇒ key 对不上 ⇒ 这条的定位取不到（而且不报错）。
+    const intent = String(n.intent || '').trim()
+    if (intent && parentPath) map.set(`${parentPath}|${n.name}`, intent)
+  })
+  return map
+}
+
+/**
+ * 建结构进度**前进一步**（每条知识点都走一次）。
+ *
+ * <p>⚠️ **只有这一份**：原来循环里写了两遍一模一样的
+ * `buildProgress.value = { ...buildProgress.value, done: … + 1 }`
+ * （一处 `continue` 前、一处循环末）⇒ 改一处漏一处 ⇒ 进度条会差 1 或卡住。
+ */
+function stepBuildProgress() {
+  buildProgress.value = { ...buildProgress.value, done: buildProgress.value.done + 1 }
+}
+
+/**
+ * 第 1 步主按钮的唯一出口：后台任务的树 ⇒ 确认并续跑；本地的树 ⇒ 老的本地建结构。
+ */
+function confirmStep() {
+  return props.planTask?.id ? confirmAndContinue() : build()
+}
+
+/**
+ * **确认这棵树并直接续跑**（2026-11-13）：树原样交给服务端，
+ * 建目录、建占位、写正文都是任务链上的节点（有步骤、有耗时）。
+ *
+ * <p>⇒ **暂停 / 恢复不会再重建目录**。老做法目录建在前端：确认完没提交就关弹窗，
+ * 任务还停在「待确认」，下次点确认又建一遍（用户实测「重复了都」）。
+ *
+ * <p>⚠️ 材料在这里算好（复用 `buildMaterial`）—— 后端不理解材料语义，
+ * 两份定义必然漂；服务端只负责落库 + 按序执行。
+ */
+async function confirmAndContinue() {
+  building.value = true
+  try {
+    const steps = stepsFromPlan()
+    if (!steps.length) {
+      ElMessage.error('这棵树里没有勾选的知识点')
+      return
+    }
+    await continueGenTask(props.planTask.id, {
+      // 不带 topicId：占位还没建，服务端建完目录自己解析
+      steps: steps.map((s) => ({ seq: s.seq, title: s.title, dirPath: s.dirPath, material: s.material })),
+      // 确认过的树原样上传 —— 服务端建目录（同层重名合并，复用 /kp/category/import 那套规则）
+      nodes: plan.value.dirs,
+      mountParentId: 0,
+      endpointId: pickEndpointId.value
+    })
+    ElMessage.success('已确认：建目录、写正文都在后台进行，进度在「任务」里看')
+    emit('done')
+    close()
+  } catch (e) {
+    ElMessage.error(e?.message || '确认失败')
+  } finally {
+    building.value = false
+  }
+}
+
+/**
+ * 从**这棵树**算每条知识点的材料（不落库、不带 topicId —— 占位由服务端建）。
+ *
+ * <p>口径与 `submitAsTask` 完全一致：同目录的互为 siblings、子目录名进 kids、
+ * 最近 30 条进 written、「定位」进 intent —— 材料只有前端这一份，换个地方算就会漂。
+ */
+function stepsFromPlan() {
+  // 路径 → 节点（要拿某个目录的子目录名给 kids）
+  const nodeByPath = new Map()
+  walkTree(plan.value.dirs, (n, path) => {
+    nodeByPath.set(path, n)
+  })
+  // 目录 → 同目录的全部标题（siblings 用）
+  const siblingsByDir = new Map()
+  for (const p of plan.value.points) {
+    const list = siblingsByDir.get(p.dirPath) || []
+    list.push(p.title)
+    siblingsByDir.set(p.dirPath, list)
+  }
+  const steps = []
+  let seq = 0
+  for (const p of plan.value.points) {
+    const kids = (nodeByPath.get(p.dirPath)?.children || []).map((c) => c.name)
+    seq += 1
+    steps.push({
+      seq,
+      title: p.title,
+      dirPath: p.dirPath,
+      material: buildMaterial({
+        topic: topic.value,
+        extra: extra.value.trim(),
+        pref: genPref.value.trim(),
+        dirPath: p.dirPath,
+        titles: [p.title],
+        siblings: (siblingsByDir.get(p.dirPath) || []).filter((t) => t !== p.title),
+        written: steps.slice(-30).map((x) => x.title),
+        kids,
+        intent: intentMap.value.get(`${p.dirPath}|${p.title}`) || ''
+      })
+    })
+  }
+  return steps
+}
+
 async function build() {
   building.value = true
   try {
     const rows = await importCategories(plan.value.dirs, 0)
     const ids = resolveDirIds(plan.value.dirs, rows, 0)
     const typeId = await ensureLearnTypeId()
+    // 进度按**知识点条数**算（目录是批量 import 的，一次调用；知识点才是逐条）
+    const total = plan.value.points.length
+    buildProgress.value = { done: 0, total }
     let n = 0
     for (const p of plan.value.points) {
       const cid = ids.get(p.dirPath)
-      if (cid == null) continue
+      if (cid == null) {
+        // 找不到目录 ⇒ 这条建不了（但**算它试过了**，进度条要走完，不能卡住）
+        stepBuildProgress()
+        continue
+      }
       // **content 传空串**：占位就是"还没写正文"。
       // （`updateTopic` 把 null 当"不修改"⇒ 只能写 ''；库里本来就有一条空正文的老数据，约定一致。）
       await createTopic({ title: p.title, content: '', categoryId: cid, typeId }, { refresh: false })
       n += 1
+      stepBuildProgress()
     }
-    await ensureTopicIndexLoaded(true)
-    result.value = { dirs: plan.value.dirCount, points: n, written: 0 }
+    // **两份索引都刷**（搜索索引 + 全集索引）——
+    // ⚠️ **别用裸的 `ensureTopicIndexLoaded(true)`**（2026-11-09 用户报
+    // 「生成主题后目录树计数全是 0，必须刷新才有」）：树的行尾数字读的是
+    // `fullTopicIndex`（"完整的书"那份），只刷搜索索引 ⇒ 树上每个章/节都是 0，
+    // **界面上什么异常都看不出来**。
+    await refreshTopicIndexes()
+    result.value = { dirs: plan.value.dirCount, points: n }
     // **上下文从库里现取**（结构刚落库）⇒ 标题清单、目录链接集合都是最新的。
     // ⚠️ 这一步**现拉一份索引**，不拿 store 的共享缓存：那份可能停在旧快照
     // （2026-10-28 实测：少算 74 条 ⇒ 界面显示"完成"，实际有一半没写）。
     // 范围 = **这批刚建出来的目录**（骨架路径 → 目录 id 的映射）——
     // 骨架可能有**多棵根**（粘贴路径能粘多棵）⇒ 把这批目录的 id 全收进来。
     batch.value = await makeScope(new Set(ids.values()))
+    // 把这批的定位收进内存（写正文时进材料，**不落库**）
+    intentMap.value = collectIntents()
     // **通知外面刷新**：目录树和知识点列表都变了
     emit('done')
     // 结构建好 ⇒ 进「正文」那一步（写哪几个、要不要标签 / 关联，由那一步定）
@@ -787,408 +1007,214 @@ async function build() {
 }
 
 /**
- * 「正文」那一步的「开始生成」：pack 写**刚建好的这一批**，points 给**一个现成目录**写。
+ * 「正文」那一步的「开始生成」：**把这一批打包成任务提交给服务端**。
  *
- * <p>两个入口共用一条生成链路（`runGroups`）⇒ 差在哪一步、两个开关怎么用，
- * 全都在一处（`runGroups` / `materialFor`），不各写一份。
- *
- * <p>**`running` 在这里同步置位**：生成链路里第一个 await 之前还有一段同步代码，
- * 只在 `runGroups` 里置位的话，**连点两下「开始生成」会并发跑两批**（各写一遍正文）。
+ * <p>提交完就关弹窗 —— 之后关页面 / 断网 / 睡眠都不影响，进度去侧边栏「任务」看。
+ * （老的前端本地循环已整条删除：那套把浏览器标签页当运行器，关掉就断，
+ * 留下一堆"有目录没正文"的空条目。）
  */
 async function startContent() {
-  if (running.value) return
-  running.value = true
-  try {
-    if (props.mode === 'pack') await startPackContent()
-    else await startPoints()
-  } catch (e) {
-    // **失败要说出来**（别把异常吞成"点了没反应"）
-    ElMessage.error(e?.message || '生成失败')
-    running.value = false
-  }
+  if (submitting.value) return
+  await submitAsTask()
 }
 
 /**
- * pack 模式：写**刚建好的这一批**的正文。
+ * 新版：把这一批**打包成任务提交给服务端**。
  *
- * <p>**范围取 `batch`**（`build()` 建完结构时从库里取的）：标题清单、目录链接集合
- * 都是这批新建的东西。**只写还没写正文的那几条** ⇒ 中断之后再点一次接着写。
+ * <p>材料在这里算好（复用 `buildMaterial`），后端只按序调用 + 落库 + 记进度 ——
+ * 所以任务中心才能通用（出卷、判分是同一个形状），后端也不必把材料拼装重写一份。
+ *
+ * <p>⚠️ **任务模式不做「知识点关联」**：老链路是模型写 `[[标题]]`、落库前换成 id，
+ * 服务端执行器不认这个标记（认了等于把一条前端格式规则搬进后端）。
+ * 关联的正确形态是**渲染层自动链接**（设计文档里的目标态），在那之前先不给名单。
  */
-async function startPackContent() {
-  const scope = batch.value
+async function submitAsTask() {
+  const scope = props.mode === 'pack'
+    ? batch.value
+    : await makeScope(getCategorySubtreeIds(props.category?.id))
   if (!scope) return
   const pending = scope.topics.filter((t) => !t.hasContent)
-  await runGroups(groupByCategory(pending, scope), scope)
-}
-
-/**
- * points 模式：给一个**现成目录**写知识点（目录「⋯ → 写知识点」）。
- *
- * <p>**两条分支，同一个入口**：
- * ① 这棵子树里有**还没写正文的知识点**（骨架落库时留的占位）⇒ 按标题逐条写
- *    （一条一次调用，漏一条只丢一条）；
- * ② 一条占位都没有 ⇒ 让模型自己定这个目录该有哪几条（提示词里"没给标题清单"那条分支）。
- *
- * <p>**只写没正文的** ⇒ 中断之后再点一次接着写，不会把写好的重写一遍。
- */
-async function startPoints() {
-  const cat = props.category
-  if (!cat?.id) return
-  // 范围 = **这棵子树**（进目录 = 看整棵子树，规则只有一份，在 store 的 getCategorySubtreeIds）
-  const scope = await makeScope(getCategorySubtreeIds(cat.id))
-  const pending = scope.topics.filter((t) => !t.hasContent)
-  if (pending.length) {
-    await runGroups(groupByCategory(pending, scope), scope)
-  } else {
-    // ⚠️ **目录名给全路径**（跟上面分组那条一样）：材料里那段「目录：…」和
-    // 完成页那一行，两处口径必须一样 —— 不然同一个目录在一条链路上是全路径、
-    // 在另一条链路上是单名，模型看到的目录对不上。
-    await runGroups([{ dirId: cat.id, dirName: scope.pathOf(cat.id), titles: [], topicIds: [], kids: kidsOf(cat.id) }], scope)
+  if (!pending.length) {
+    ElMessage.error('没有要写的知识点')
+    return
   }
-}
 
-/**
- * 逐目录写知识点。
- *
- * <p>**一次一条**（有标题清单时）：
- * 一次问一个目录的全部知识点 ⇒ 一次调用要吐 N 条正文。
- * 而后端请求**没带 `max_tokens`**（`AiChatServiceImpl.stream` 只发 model/stream/messages）
- * ⇒ 吃上游默认的输出上限（OpenAI 兼容协议默认 4096 tokens）
- * ⇒ 一个目录 4 条 × 1500 字就**撞上限被截断**，界面上表现为「少 N 条」，
- * 而且**看不出是截断**（模型自己也不知道）。
- * ⇒ 拆成**一条一次调用**：每条只吐一条正文，永远撞不到上限；
- * 而且漏一条只丢一条（能单独重来），不用整目录重跑。
- *
- * <p>**没有标题清单时**（points 模式：给一个现成目录补内容）：
- * 事先不知道这个目录该有哪几条 ⇒ 只能**一次调用**，模型自己定 3 到 5 条。
- * 提示词 `ai.prompt.knowledge.point` 里「**没给标题清单**时：先自己定这个目录该有的
- * 3 到 5 个知识点标题，再按同样的格式写正文」就是为这条路写的。
- * ⇒ 两种情况是**同一条规则的两个分支**，不是两套流程：
- * 「一次调用」拿回若干条 → 逐条落库；「一次一条」拿回一条 → 落库。
- *
- * <p>**目录仍然是外层单位**：结果一行一个目录（用户看的是目录），
- * 同目录的兄弟标题作为"别写成同一件事"的提示一起给模型。
- *
- * @param {Array<{dirId:number, dirName:string, titles:string[], topicIds:number[]}>} groups
- *        每个目录一组。titles 为空 = 让模型自己定这个目录该有哪几条；
- *        titles 非空 = 按这些标题逐条写（topicIds 是对应的**占位**知识点）。
- * @param {object} scope 这棵子树的上下文（标题清单 / 目录链接的合法集合）
- */
-async function runGroups(groups, scope) {
-  // **知识点类型**：落「学习」档（以前不传 typeId ⇒ 一批教材式正文全被标成「笔记」，
-  // 界面上完全看不出来）。判据和"没有就报错停"都在 `ensureLearnTypeId` 里。
-  const typeId = await ensureLearnTypeId()
-  running.value = true
-  started.value = true
-  stopped.value = false
-  results.value = []
-  // **进度按「知识点条数」算**（一次一条之后，目录不再是进度单位）。
-  // points 模式是「模型自己定写哪几条」⇒ 事先不知道总数 ⇒ total = 0，
-  // 界面改成只报「已写入 N 条」（见模板里 progress.total 的判断）。
-  const totalPoints = groups.reduce((n, g) => n + g.titles.length, 0)
-  progress.value = { done: 0, total: totalPoints, points: 0 }
-  controller = new AbortController()
-  const written = []
-  // **知识点之间的链接**：模型写 `[[标题]]`，**落库前**换成指向 id 的链接。
-  // 标题 → id 的映射**一次建好**（这棵子树的知识点都已经在库里了）⇒ 不用等整批结束
-  // 再回填（那样中断会在库里留一堆方括号）。
-  // **不做关联时映射是空的** ⇒ 认不出来的标记退成普通文字（`[[x]]` → `x`）。
-  const idByTitle = withLinks.value ? titleIdMap(scope.topics) : new Map()
-  // **目录链接**：正文里指向目录的链接，地址由材料给模型照抄。
-  // 认不出来的（模型把 id 写错了）一律退成普通文字 —— 宁可少一个链接，
-  // 不要一个点进去是空列表的链接。
-  const validHrefs = [...scope.dirIds].map((id) => categoryHref(id))
-  let done = 0
-  for (const g of groups) {
-    if (controller.signal.aborted) break
-    const cid = g.dirId
-    if (cid == null) {
-      results.value.push({ dir: g.dirName, count: 0, error: '目录没建出来' })
-      continue
-    }
-    let n = 0
-    const notes = []
-    // 保存失败（后端挂了 / 库写不进去）⇒ **这个目录剩下的都不试了**，
-    // 但下一个目录照常试（是这一目录的问题，不是全局的）。
-    let saveBroken = false
-    // **这一目录要写哪几条**：
-    // - 有清单（pack 模式，标题来自骨架）⇒ 一条一次调用
-    // - 没清单（points 模式）⇒ 一次调用，模型自己定写哪几条
-    const targets = g.titles.length ? g.titles : [null]
-    for (let ti = 0; ti < targets.length; ti++) {
-      const title = targets[ti]
-      if (controller.signal.aborted || saveBroken) break
-      // **一次一条**时，兄弟标题作为"别写成同一件事"的提示一起给
-      // （原来一次问整个目录时，模型看得见兄弟标题 —— 拆开之后得补上这个上下文）。
-      const one = {
-        dirName: g.dirName,
-        titles: title ? [title] : [],
-        siblings: title ? g.titles.filter((t) => t !== title) : [],
-        // **这个目录现有的子目录**（材料里"别写这些领域"那段）
-        kids: g.kids || []
-      }
-      const { text: answerText, error: askError, aborted } = await askWithRetry(materialFor(one, written, scope))
-      done += 1
-      progress.value = { done, total: totalPoints, points: written.length }
-      if (aborted) break
-      if (askError) {
-        notes.push(`${title || g.dirName}：${askError?.message || '失败'}`)
-        continue
-      }
-      // 有标题清单 ⇒ 只认那一条（**按标题对齐，不是按位置**）；
-      // 没清单 ⇒ 模型写了几条就是几条（`parsePoints` 不给清单时返回全部）。
-      const parsed = parsePoints(answerText, one.titles).map((p) => ({
-        ...p,
-        content: fixCategoryLinks(p.content, validHrefs)
-      }))
-      if (!parsed.length) {
-        notes.push(`${title || g.dirName}：模型没输出正文`)
-        continue
-      }
-      // **正文过短的不落库**：模型把"材料里没写"当正文写出来的卡片，比没有更糟。
-      const { keep, short } = splitShortContent(parsed)
-      for (const s of short) notes.push(`${s.title}：正文过短`)
-      for (const p of keep) {
-        // **标签**：单独一次调用（见 pickTags 的注释）；**关掉标签就不调**（省一次调用）。
-        // 传 undefined 而不是 []：`updateTopic` 只在 tags **存在**时才改它
-        // ⇒ 关掉标签不会把占位上原有的标签抹掉。
-        const tags = withTags.value ? await pickTags(p.title, p.content, g.dirName) : undefined
-        // **标记在落库前替换** ⇒ 落库的就是带链接的正文（不用事后再回填一遍）
-        const content = linkTopicMarks(p.content, idByTitle)
-        try {
-          // **不刷新缓存**：批量写几十条时，每写一条都全量拉一次列表是纯浪费
-          // （80 条 = 80 次请求）。整批结束统一刷一次。
-          // **tags 一起带上**：后端按名字 upsert（同一个 (user, name) 复用同一个 tag）
-          // ⇒ 不用先建标签再关联，也就不用再改一次。
-          const existingId = title ? g.topicIds[ti] : null
-          if (existingId) {
-            // 有占位 ⇒ **更新它**（标题早就在那儿了，只补正文和标签）
-            await updateTopic(existingId, { content, tags }, { refresh: false })
-          } else {
-            // 模型自己定的标题 ⇒ **新建**
-            await createTopic({ title: p.title, content, categoryId: cid, typeId, tags }, { refresh: false })
-          }
-          written.push(p.title)
-          n += 1
-        } catch (e) {
-          notes.push(`${p.title}：${e?.message || '保存失败'}`)
-          saveBroken = true
-          break
-        }
-      }
-    }
-    // 一行说清这一目录的情况：**每条各是什么问题**（模型没写出来 / 正文过短 / 失败）。
-    // 只放前三条 —— 一次写十条的话，错误串会长到看不清。
-    const errText = notes.length
-      ? notes.slice(0, 3).join('；') + (notes.length > 3 ? ` 等 ${notes.length} 条` : '')
-      : ''
-    results.value.push({ dir: g.dirName, count: n, error: errText })
-    progress.value = { done, total: totalPoints, points: written.length }
-  }
-  running.value = false
-  stopped.value = controller?.signal.aborted
-  // 整批结束统一刷一次知识列表（写的时候没刷）
-  await ensureTopicIndexLoaded(true)
-  // **只加"写了多少"，不覆盖别的**（pack 模式已经填了目录数和知识点数）
-  result.value = { ...result.value, written: progress.value.points }
-  // pack 模式写完 ⇒ 到完成页（正文那一步是第 2 步）；points 模式写完 ⇒ 也到完成页
-  step.value = props.mode === 'pack' ? 3 : 1
-  emit('done')
-}
-
-/**
- * 标题 → 知识点 id。**只收标题不重名的那些**。
- *
- * <p>**重名为什么指不出来**：同一棵子树里两个知识点同名 ⇒ 不知道正文里那个 `[[X]]`
- * 指的是哪一个 ⇒ 退成普通文字（宁可少一个链接，也不要一个点进去是空的）。
- *
- * <p>**为什么一次建好**：正文是**另一次**生成的，生成时那些知识点都已经在库里了
- * ⇒ 映射表不用等整批结束再算，**落库前**就能把 `[[标题]]` 换成真链接
- * （以前是整批结束再回填一遍：中断就在库里留一堆方括号）。
- *
- * @param {Array<{id:number, title:string}>} topics 这棵子树里的知识点
- * @returns {Map<string, number>} 标题 → id
- */
-function titleIdMap(topics) {
-  const byTitle = new Map()
-  for (const t of topics || []) {
-    const title = String(t.title || '').trim()
-    if (!title) continue
-    // 第二次出现同名 ⇒ 把 id 抹掉（标成"指不出来"）
-    if (byTitle.has(title)) byTitle.set(title, null)
-    else byTitle.set(title, t.id)
-  }
-  const out = new Map()
-  for (const [title, id] of byTitle) if (id != null) out.set(title, id)
-  return out
-}
-
-/**
- * 问模型要这个目录的正文，**失败重试一次**。
- *
- * <p>**为什么要重试**：模型接口的瞬时错误很多（限流 / 断流 / 网关超时）——
- * 实测「8.3 政府会计报告」那一次就是流里回了 error，整目录空着，用户还得自己
- * 去那个目录点「⋯ → 写知识点」重跑一遍。**重问一次就好** ⇒ 别让一个目录
- * 因为一次抖动就空在那儿。
- *
- * <p>**只重试一次**：连续两次还失败，基本是配置 / 额度 / 内容本身的问题，
- * 再问也是白问（还白烧额度）。
- *
- * <p>用户中途「停止」时**不重试**（AbortError 直接返回 aborted）。
- *
- * @param {string} material 这一批的材料
- * @returns {Promise<{ text: string, error: Error|null, aborted: boolean }>}
- */
-async function askWithRetry(material) {
-  let error = null
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const text = await ask('写知识点', {
-        material,
-        questionKey: 'ai.prompt.knowledge.point',
-        signal: controller.signal,
-        ...callOpts()
+  const steps = []
+  let seq = 0
+  for (const g of groupByCategory(pending, scope)) {
+    for (let ti = 0; ti < g.titles.length; ti++) {
+      const title = g.titles[ti]
+      const material = buildMaterial({
+        topic: topic.value,
+        extra: extra.value.trim(),
+        pref: genPref.value.trim(),
+        dirPath: g.dirName,
+        titles: [title],
+        siblings: g.titles.filter((t) => t !== title),
+        // 「前面写了什么」只带最近 30 条：几百条全带上会把材料撑成一大段标题清单，
+        // 而防重复只需要"附近"的上下文。
+        written: steps.slice(-30).map((s) => s.title),
+        kids: g.kids || [],
+        intent: intentMap.value.get(`${g.dirName}|${title}`) || ''
       })
-      return { text, error: null, aborted: false }
-    } catch (e) {
-      if (e?.name === 'AbortError') return { text: '', error: null, aborted: true }
-      error = e
+      seq += 1
+      steps.push({ seq, title, topicId: g.topicIds[ti], material })
     }
   }
-  return { text: '', error, aborted: false }
-}
 
-/**
- * 给这条知识挑标签。**单独一次调用**。
- *
- * <p>**复用已有的标签判据，不新增第二份规则**：questionKey 指向
- * `ai.prompt.knowledge.tags:tags` —— 它的【判据】是**引用**现成那条
- * （`ai.prompt.question.pick_tags:tags`）的，**判据只有一份**；
- * 它自己的【格式】只多一句「没有合适的标签就写一行「无」」
- * （不那样定的话，模型会**一个字都不吐** —— 实测它的推理原话是
- * 「没有合适的标签就返回空」，而空串分不清是"没有"还是"失败"）。
- * 后端还会顺带附上**用户现有的标签名**（"统一叫法"就靠那份清单）。
- * ⇒ 材料里只需要给"这条知识是什么"。
- *
- * <p>**为什么不放进正文那次调用**：① 标签是**跨知识点**的决策
- * （「索引」和「索引优化」只能留一个叫法），单看一条知识没有全局视野；
- * ② 正文那次调用刚把输出上限的问题解决掉，再往里塞东西等于往超载的调用上加。
- *
- * <p>**失败不抛**：标签拿不到就把知识点照常落库 —— 正文比标签重要。
- *
- * @param {string} title 这条知识的标题
- * @param {string} content 这条知识的正文
- * @param {string} dirPath 它挂在哪个目录（主归属）
- * @returns {Promise<string[]>} 标签名（没有就空数组）
- */
-async function pickTags(title, content, dirPath) {
+  submitting.value = true
   try {
-    const text = await ask('给这条知识挑标签', {
-      material: buildTagMaterial({ title, content, dirPath }),
-      questionKey: 'ai.prompt.knowledge.tags:tags',
-      signal: controller.signal,
-      ...callOpts()
-    })
-    return parseTagNames(text)
+    const buildSum = `创建目录 ${result.value.dirs} 个 · 知识点 ${result.value.points} 个`
+    // ⚠️ **两条路**（v2 单任务化）：
+    // ① **从后台规划接着来的**（`planTask` 有）⇒ 正文挂在**同一个任务**上（`continue`）
+    //    ⇒ 卡片上只有一张「生成主题」卡，三个节点：生成目录 → 确认 → 生成正文。
+    // ② **没有后台规划**（目录页「写知识点」/ 粘贴模式）⇒ 新建一个 `content` 任务。
+    if (props.planTask?.id) {
+      await continueGenTask(props.planTask.id, {
+        steps,
+        buildSummary: buildSum,
+        endpointId: pickEndpointId.value
+      })
+      ElMessage.success(`已提交（${steps.length} 条），可在「任务」里看进度`)
+    } else {
+      await createGenTask({
+        type: 'content',
+        // 标题里的"是什么"：pack 用主题名（粘贴模式没有主题输入 ⇒ 退到根节点名），
+        // points 用目录名。别让它变成千篇一律的"知识 · N 条"。
+        title: `${topic.value.trim() || marked.value[0]?.name || props.category?.name || '知识'} · ${steps.length} 条`,
+        promptKey: 'ai.prompt.knowledge.point',
+        // 参数快照：重跑要一模一样，就靠这一份
+        // ⚠️ **不再带 thinking**（2026-11-12）：思考由服务端按环节定（AiStagePolicy），
+        // 带了也被忽略；留着只会让人以为"界面那个开关还在起作用"。
+        // buildSummary 让任务卡上能显示「建结构」那一段做了多少事。
+        params: JSON.stringify({
+          endpointId: pickEndpointId.value,
+          buildSummary: buildSum
+        }),
+        steps
+      })
+      ElMessage.success(`已提交任务（${steps.length} 条），可在「任务」里看进度`)
+    }
+    // ⚠️ **任务列表立刻出现这张卡**（走统一出口，不靠父组件碰巧绑了 @done）。
+    // `emit('done')` 那一路是给**目录树 / 知识点列表**刷新的（壳里那个回调管），
+    // 它不保证刷任务列表 ⇒ 这里自己调一次统一出口。
+    await genTaskCreated()
+    emit('done')
+    close()
   } catch (e) {
-    // 停止是用户主动的，不是错误；这里一律当作"没有标签"
-    return []
+    ElMessage.error(e?.message || '提交失败')
+  } finally {
+    submitting.value = false
   }
 }
 
-/**
- * 给模型的材料：主题 / 目录 / 要写什么 / 已经写过什么 / 下级章节。
- *
- * <p>拼法在 `utils/knowledgePoints#buildMaterial`（**只有一份定义**）：
- * 弹窗和验证脚本喂给模型的是同一段话，脚本才能证明界面这条路走得通。
- *
- * @param {object} group 这一批（一个目录；一次一条时 titles 只有一条，兄弟在 siblings）
- * @param {Array<string>} written 已经写过的知识点标题
- * @param {object} scope 这棵子树的上下文
- */
-function materialFor(group, written, scope) {
-  return buildMaterial({
-    topic: topic.value,
-    // **补充说明**跟着每一条正文走：它是这一批的总要求
-    // （面向开发 / 面向考试……），模型写每一条时都要看到。
-    extra: extra.value.trim(),
-    // **生成偏好**：系统级的默认口味，一直生效（跟「补充说明」的区别就是"这次"和"一直"）。
-    pref: genPref.value.trim(),
-    dirPath: group.dirName,
-    titles: group.titles,
-    siblings: group.siblings || [],
-    written,
-    // **这个目录现有的子目录**（按目录各给各的 ⇒ 别把该属于子目录的内容写在这里）
-    kids: group.kids || [],
-    // ⚠️ **不给骨架节点**（`node: null`）：正文是**另一次**生成的，骨架那会儿已经不在内存里。
-    // ⇒ 总览知识点拿不到"下级章节"那份材料 ⇒ 它写不出索引（**已知不足**，记在 FEATURES）。
-    node: null,
-    linkOf: null,
-    // **这棵子树里的全部知识点**：正文里提到哪一个可以写成 [[标题]]，
-    // 落库前由 `titleIdMap` 的映射换成链接（标题都已经在库里了 ⇒ 换得了）。
-    // **不做关联时不给这份清单** ⇒ 模型不知道哪些名字可标 ⇒ 不会写标记。
-    allPoints: withLinks.value ? scope.allPoints : []
-  })
-}
-
-/** 停止：掐掉正在进行的流，已经写好的留着 */
-function stop() {
-  controller?.abort()
-}
 </script>
 
 <style scoped>
+/* ---------- 字号口径（这个弹窗里只有三档）----------
+   18 弹窗标题（el-dialog 给的）
+   14 正文与控件（输入框 / 下拉 / 按钮 / tab）
+   12 标签与说明（label / hint）
+   以前是 13（label）+ 14（input）+ 12（small 下拉）混着来，同一屏三种大小、
+   控件高度还差 8px —— 就是"字忽大忽小"的来源。**控件一律 default 尺寸**。 */
 .steps {
-  margin-bottom: var(--sp-14);
+  margin-bottom: var(--sp-13);
+}
+/* 步骤条默认标题是 16px —— 比下面所有正文都大，一进弹窗最抢眼的就是它。
+   降到 14 跟正文同档，靠颜色（未做=浅、当前=主色）分状态，而不是靠字号。 */
+.steps :deep(.el-step__title) {
+  font-size: var(--text-md);
+  line-height: 24px;
+  color: var(--cc-text-3);
+}
+.steps :deep(.el-step__title.is-process) {
+  color: var(--cc-primary);
+  font-weight: 500;
+}
+.steps :deep(.el-step__icon.is-text) {
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
+}
+.steps :deep(.el-step__head.is-process .el-step__icon) {
+  border-color: var(--cc-primary);
+  color: var(--cc-primary);
+}
+.steps :deep(.el-step__head.is-wait .el-step__icon) {
+  border-color: var(--cc-border-card);
+  color: var(--cc-text-4);
+}
+.steps :deep(.el-step__arrow::before),
+.steps :deep(.el-step__arrow::after) {
+  border-color: var(--cc-border-strong);
 }
 .pane {
   min-height: 180px;
 }
+
+/* 来源切换：**一个轨道 + 一个选中块**（分段控件），不是两个独立按钮 ——
+   两个按钮读起来像"两个动作"，而这里是一次二选一。 */
 .tabs {
-  display: flex;
-  gap: var(--sp-6);
-  margin-bottom: var(--sp-10);
+  display: inline-flex;
+  padding: 2px;
+  margin-bottom: var(--sp-13);
+  border-radius: var(--radius-sm);
+  background: var(--cc-surface-2);
 }
 .tabs__item {
   border: none;
   background: transparent;
-  padding: var(--sp-5) var(--sp-9);
-  border-radius: var(--radius-sm);
+  padding: var(--sp-4) var(--sp-11);
+  border-radius: calc(var(--radius-sm) - 2px);
   color: var(--cc-text-3);
   font-size: var(--text-md);
+  line-height: 20px;
   cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.tabs__item:hover {
+  color: var(--cc-text-2);
 }
 .tabs__item.is-on {
-  background: var(--cc-primary-soft);
-  color: var(--cc-primary);
-  font-weight: 600;
+  background: var(--cc-surface);
+  color: var(--cc-text-1);
+  font-weight: 500;
+  box-shadow: var(--cc-shadow-1);
 }
+
 /* 一个带标题的输入块。**标题用 label 而不是 placeholder**——
    placeholder 一输入就没了，用户不知道那格是干什么的。 */
 .field {
-  margin-bottom: var(--sp-12);
+  margin-bottom: var(--sp-13);
+}
+.field:last-child {
+  margin-bottom: 0;
 }
 .field__label {
   display: block;
-  margin-bottom: var(--sp-6);
-  font-size: var(--text-sm);
-  color: var(--cc-text-2);
+  margin-bottom: var(--sp-8);
+  font-size: var(--text-xs);
+  line-height: 16px;
+  color: var(--cc-text-3);
 }
-/* 下拉跟上面那两个输入框一样宽，别一格宽一格窄 */
-.field__select {
-  width: 100%;
-}
-/* 底部一排：左边上一步，右边这次生成的参数 + 主按钮 */
+
+/* 底部动作行和内容之间拉一条浅分隔：不然"上一步 / 模型 / 按钮"飘在空白里，
+   看起来像忘了排版。
+   ⚠️ 分隔线挂在 `.foot` 上而不是 `:deep(.el-dialog__footer)`：后者隔着 teleport
+   匹配不到（实测 border 仍是 0px），而 `.foot` 是本次模板里的节点，scoped 直接命中。 */
 .foot {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-12);
+  margin-top: calc(-1 * var(--sp-6));
+  padding-top: var(--sp-12);
+  border-top: 1px solid var(--cc-border-strong);
 }
 .foot__side {
   display: flex;
   align-items: center;
-  gap: var(--sp-10);
+  gap: var(--sp-9);
 }
 .foot__side--right {
   margin-left: auto;
@@ -1201,7 +1227,7 @@ function stop() {
   display: flex;
   flex-wrap: wrap;
   gap: var(--sp-9);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   color: var(--cc-text-2);
 }
 /* 知识点那步的两个开关：装在一个盒子里 ⇒ 一眼看出"这一步要选什么"，
@@ -1249,7 +1275,7 @@ function stop() {
   color: var(--cc-text-1);
 }
 .opt__hint {
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   color: var(--cc-text-3);
 }
 /* 完成页：一个勾 + 一句话。**不用文字说"完成了"** */
@@ -1264,7 +1290,7 @@ function stop() {
 }
 .warn {
   margin: var(--sp-6) 0 0;
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   color: var(--cc-danger);
 }
 /* 说明文字。**故意不叫 .hint**：admin-page.css 里有一份全局 .hint（给 teleport 到
@@ -1272,17 +1298,85 @@ function stop() {
    叠在一起谁生效看权重。这里用自己的名字，跟全局那份彻底分开。 */
 .pane__hint {
   margin: var(--sp-6) 0 0;
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   line-height: 1.6;
   color: var(--cc-text-3);
 }
 .tools {
   margin-top: var(--sp-10);
 }
+/* 建结构的细进度条：树那一刻只读淡出，进度必须放在树外面看得见 */
+.prog {
+  position: relative;
+  margin-top: var(--sp-10);
+  height: 20px;
+  border-radius: 99px;
+  background: var(--cc-surface-2);
+  overflow: hidden;
+}
+.prog i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--cc-primary-soft);
+  transition: width 0.25s ease;
+}
+.prog__text {
+  position: relative;
+  display: block;
+  padding-left: var(--sp-9);
+  font-size: var(--text-xs);
+  line-height: 20px;
+  color: var(--cc-text-2);
+  font-variant-numeric: tabular-nums;
+}
 .tree {
   margin-top: var(--sp-6);
   max-height: 300px;
   overflow-y: auto;
+}
+/* 建结构期间：**只读不消失**。让用户看得见"我正在建的就是这棵树"，
+   但别让他一边建一边改（改了也不会被这次采用）。 */
+.tree.is-busy {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+/* ---------- 规划中：骨架屏 ----------
+   点「生成规划」就切到这一步（不在第 1 步锁表单）。行宽左右不齐 + 依次错开的
+   扫光，读起来像"正在长出来的目录"，比一条居中的 spinner 更像"有内容在来"。 */
+.skel {
+  padding: var(--sp-6) 0;
+}
+.skel__tip {
+  margin: 0 0 var(--sp-12);
+  font-size: var(--text-md);
+  color: var(--cc-text-2);
+}
+.skel__row {
+  height: 14px;
+  margin-bottom: var(--sp-10);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--cc-surface-2) 25%,
+    var(--cc-surface-3, #eceff1) 37%,
+    var(--cc-surface-2) 63%
+  );
+  background-size: 400% 100%;
+  animation: skel-sweep 1.4s ease infinite;
+}
+@keyframes skel-sweep {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+.skel__eta {
+  margin: var(--sp-12) 0 0;
+  font-size: 12px;
+  color: var(--cc-text-4);
 }
 .row {
   display: flex;
@@ -1292,10 +1386,23 @@ function stop() {
   font-size: var(--text-md);
   color: var(--cc-text-1);
 }
+/* 新版：知识点下面那行「定位」输入。缩进由内联 style 给，这里只管视觉重量 */
+.row__intent {
+  padding-bottom: var(--sp-4);
+}
+.row__intent :deep(.el-input__wrapper) {
+  box-shadow: none;
+  background: var(--cc-surface-2);
+}
+.row__intent :deep(.el-input__inner) {
+  font-size: var(--text-md);
+  color: var(--cc-text-2);
+}
 .row__fold {
-  width: 16px;
-  height: 16px;
-  flex: 0 0 16px;
+  /* 命中区 24px（图标 14px 继承自 .row）：可点区域跟图标一样大就难点了；行高 28px 不变 */
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1325,6 +1432,7 @@ function stop() {
   padding: 0 var(--sp-4) 0 0;
 }
 .row__input :deep(.el-input__inner) {
+  font-size: var(--text-md);
   border-bottom: 1px solid var(--cc-border);
   color: var(--cc-text-1);
   height: 22px;
@@ -1387,5 +1495,10 @@ function stop() {
   margin: 0;
   font-size: var(--text-base);
   color: var(--cc-text-1);
+}
+
+/* 主按钮统一最小宽度：三个步骤的文案长短不同，宽度别跟着跳 */
+.foot :deep(.el-button--primary) {
+  min-width: 92px;
 }
 </style>

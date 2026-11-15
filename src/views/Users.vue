@@ -21,7 +21,7 @@
           <div class="ops">
             <el-button link type="primary" @click="editUser(scope.row)">编辑</el-button>
             <el-button link @click="openAssignRole(scope.row)">分配角色</el-button>
-            <el-button link type="danger" @click="removeUser(scope.row.id)">删除</el-button>
+            <el-button link type="danger" @click="removeUser(scope.row)">删除</el-button>
           </div>
         </template>
       </el-table-column>
@@ -94,11 +94,12 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { assignUserRole, createUser, deleteUser, getUserPage, updateUser } from '../api/sysUser'
 import { getRoleList } from '../api/role'
 import { hasPermission } from '../utils/auth'
+import { confirmAction } from '../utils/confirm'
 
 const usersList = ref([])
 const loading = ref(false)
@@ -219,9 +220,9 @@ const openAssignRole = async (row) => {
   roleDialogVisible.value = true
 }
 
-const removeUser = async (id) => {
-  await ElMessageBox.confirm(`确认删除用户ID: ${id} ?`, '提示', { type: 'warning' })
-  await deleteUser(id)
+const removeUser = async (row) => {
+  if (!(await confirmAction('删除用户'))) return
+  await deleteUser(row.id)
   ElMessage.success('已删除')
   await fetchPage()
 }

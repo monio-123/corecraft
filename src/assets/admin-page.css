@@ -48,7 +48,7 @@
 .page .panel {
   background: var(--cc-surface);
   border: 1px solid var(--cc-border-strong);
-  border-radius: var(--cc-radius);
+  border-radius: var(--radius-lg);
   padding: var(--sp-12);
   min-height: 520px;
   overflow: auto;
@@ -58,6 +58,16 @@
   font-size: var(--text-base);
   font-weight: 600;
   color: var(--cc-text-1);
+}
+
+/* 标题下面那行次要信息（编码 / 描述 / 条数）。
+   Dictionaries 与 Configs 原来各写一份、逐字符相同 ⇒ 收到这里。
+   色用 text-2 不用 text-3：它是要读的**主数据**（配置键、字典编码），
+   层级差由字号承担，不靠"更灰"（对比度 2.48:1 → 6.14:1）。 */
+.page .panel-subtitle {
+  margin-top: var(--sp-4);
+  color: var(--cc-text-2);
+  font-size: var(--text-sm);
 }
 
 /* 面板头部：标题 + 一组操作 */
@@ -93,7 +103,7 @@
    加前缀会让弹窗内那一份彻底没有样式（面板内的还在，看起来"半边生效"）。 */
 .hint {
   font-size: var(--text-xs);
-  color: var(--cc-text-3);
+  color: var(--cc-text-2);
   line-height: 1.6;
   margin-top: var(--sp-6);
 }
@@ -113,7 +123,7 @@
   --el-table-header-bg-color: transparent;
   --el-table-row-hover-bg-color: var(--cc-surface-2);
   font-size: var(--text-md);
-  border-radius: var(--cc-radius);
+  border-radius: var(--radius-lg);
   overflow: hidden;
 }
 
@@ -202,6 +212,18 @@
   font-weight: 500;
 }
 
+/* 树节点的行内布局：资源树（Permissions）/ 分类树（Configs）/ 资源分配树（Roles）
+   三处原来各写一份，前两处还**同名不同构**。共用的这一份只管"一行 = 名字 + 右侧标签"，
+   个别页面要撑满、两端对齐（Configs 的计数贴到最右）在自己的 scoped 里叠加。
+   ⚠️ Roles 那棵树在 `el-dialog` 里 —— EP 的 dialog 默认**不** teleport（`appendToBody`
+   默认 false），仍在 `.page` 之内，所以带前缀能命中（同下面 `.permission-node__tag`）。 */
+.page .tree-node,
+.page .permission-node {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+}
+
 /* 树节点里的类型标签：再降一档，12px 就够，它是结构信息不是状态信息 */
 .page .tree-node__tag,
 .page .permission-node__tag {
@@ -214,22 +236,14 @@
 /* ============================================================
  * 空状态
  *
- * EP 的 el-empty 自带一张巨大的灰色几何插画，半屏都是它，和这里的
- * 扁平基调完全不是一回事。去掉插画，只留一行淡字。
- * 表格空态（el-table__empty-block）内部也是 el-empty，一并生效。
+ * 表格空态：**一个字都不说** —— 表头在、下面没行，用户自己看得懂。
+ * EP 默认给的是「暂无数据」，准则 §8 ④ 点名的就是这种话（一处 CSS 收掉全部表格）。
+ *
+ * ⚠️ 这一节原来还有一段给 `el-empty` 去皮（藏插画、只留一行淡字），2026-11-06 随
+ * 三处「请选择左侧…」空态一起删了：admin 侧再没有 `el-empty` 的消费者。
+ * 别照着旧注释以为表格空态也是 el-empty —— EP 渲染的是 `span.el-table__empty-text`
+ * （全 EP 只有 `el-table-v2` 内部用 el-empty，本项目没用它）。
  * ============================================================ */
-.page .el-empty {
-  padding: var(--sp-15) 0;
-}
-.page .el-empty__image {
-  display: none;
-}
-.page .el-empty__description {
-  color: var(--cc-text-3);
-  font-size: var(--text-sm);
-}
-/* 表格空态：**一个字都不说** —— 表头在、下面没行，用户自己看得懂。
-   EP 默认给的是「暂无数据」，准则 §8 ④ 点名的就是这种话（一处 CSS 收掉全部表格）。 */
 .page .el-table__empty-text {
   display: none;
 }

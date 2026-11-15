@@ -96,17 +96,20 @@ const handleLogin = async () => {
   display: flex;
   justify-content: center;
   align-items: center;
-  background-color: #f5f5f5;
+  background-color: var(--cc-bg);
   overflow: hidden;
 }
 
+/* 尺寸不写死：原来 1000×600 + 外层 `overflow:hidden` ⇒ 窗口比 648px 矮时
+   登录按钮被裁掉**而且滚不动**（进不了系统）。`min()` 让框自己缩，
+   外层那条 `overflow:hidden` 就够用了。 */
 .login-box {
-  width: 1000px;
-  height: 600px;
+  width: min(1000px, 92vw);
+  height: min(600px, calc(100vh - 48px));
   display: flex;
-  background: white;
+  background: var(--cc-surface);
   border-radius: var(--radius);
-  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+  box-shadow: var(--cc-shadow-card);
   overflow: hidden;
 }
 
@@ -140,12 +143,14 @@ const handleLogin = async () => {
   display: flex;
   flex-direction: column;
   justify-content: center;
+  /* 框被压矮到表单（约 380px）装不下时，靠这里滚，而不是把按钮裁掉 */
+  overflow-y: auto;
 }
 
 h2 {
   text-align: center;
   margin-bottom: var(--sp-16);
-  color: #333;
+  color: var(--cc-text-2);
   font-size: var(--text-h);
 }
 
@@ -175,7 +180,8 @@ h2 {
 @media screen and (min-width: 769px) and (max-width: 1024px) {
   .login-box {
     width: 90%;
-    height: 500px;
+    /* 同样带上视口守卫：这个断点原来写死 500px，矮窗口下又把登录按钮裁掉了 */
+    height: min(500px, calc(100vh - 48px));
   }
 }
 </style> 
