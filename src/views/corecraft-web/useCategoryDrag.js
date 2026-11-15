@@ -31,7 +31,7 @@
  * `-webkit-touch-callout` 管的（都挂在拖拽源那一行上），跟拖拽逻辑无关。
  */
 import { onBeforeUnmount, ref } from 'vue'
-import { dndStart, dndMove, dndDrop, dndReset } from './useCorecraftWebStore'
+import { dndStart, dndMove, dndDrop, dndReset } from './useCategoryDnd'
 
 /** 位移超过这个像素才算起拖（横竖取最大值，跟库一致）。 */
 const TOLERANCE = 8

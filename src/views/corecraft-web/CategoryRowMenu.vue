@@ -13,7 +13,7 @@
  * 收成一个菜单之后，行上不再有任何"该显示哪个图标"的判断。
  */
 import RowMenu from './RowMenu.vue'
-import { confirmDeleteCategory } from './useCorecraftWebStore'
+import { confirmDeleteCategory } from './categoryDeleteDialog'
 
 const props = defineProps({
   category: { type: Object, required: true },

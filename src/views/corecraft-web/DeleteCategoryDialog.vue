@@ -44,7 +44,7 @@
 import { ref, computed, watch } from 'vue'
 import {
   deleteCategoryState, cancelDeleteCategory, submitDeleteCategory
-} from './useCorecraftWebStore'
+} from './categoryDeleteDialog'
 
 const state = deleteCategoryState
 

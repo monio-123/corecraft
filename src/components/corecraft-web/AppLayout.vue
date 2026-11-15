@@ -411,13 +411,14 @@ import { taskType } from '../../utils/taskTypes'
 import { useImmersive } from '../../views/corecraft-web/useImmersive'
 import {
   getChildCategories, categoriesState,
-  getCategoryCountMap, dnd, ROOT_CATEGORY,
+  getCategoryCountMap, ROOT_CATEGORY,
   getCategories, getCategoryPath, ensureTopicIndexLoaded,
   ensureCategoryMasteryLoaded, getCategoryMastery,
   openTopicCategoryId, bodySearchKeyword, bodySearchHits, bodySearchJump,
   treeSearchHits, treeSearchJump,
   refreshTopicIndexes, bumpDataVersion
 } from '../../views/corecraft-web/useCorecraftWebStore'
+import { dnd } from '../../views/corecraft-web/useCategoryDnd'
 import { visibleRootCategoriesOf } from '../../utils/categoryTree'
 import {
   searchModeFromRoute, searchScopeOf, isCatMode,

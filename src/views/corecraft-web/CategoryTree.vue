@@ -316,10 +316,11 @@ import {
 import { matchNameFromRoute } from '../../utils/searchMode'
 import { keywordFromRoute } from '../../utils/routeQuery'
 import {
-  dnd, flattenCategoryTree, getFullCategoryCountMap, getCategoryMastery, getTopicLevel,
+  flattenCategoryTree, getFullCategoryCountMap, getCategoryMastery, getTopicLevel,
   ensureTopicLevelsLoaded,
   treeSearchHits, treeSearchJump
 } from './useCorecraftWebStore'
+import { dnd } from './useCategoryDnd'
 
 const route = useRoute()
 

@@ -111,16 +111,9 @@ export const TASK_TYPES = {
       const ids = paramsOf(t).topicIds || []
       return ids.length ? `/app/topic/${ids[0]}?quizTask=${t.id}` : ''
     },
-  },
-  /** 判分 */
-  grade: {
-    key: 'grade',
-    name: '判分',
-    icon: 'check',
-    unit: '题',
-    doneVerb: '已判分',
-    runningVerb: '正在判分',
   }
+  // 「判分」（grade）注册项已删：判分走 /ai/chat/stream，任务链从未有过创建方
+  //（与后端 GenTaskNodes 同步删除，2026-11-15）。真进任务链时按 task-protocol 三步重新登记。
 }
 
 /**

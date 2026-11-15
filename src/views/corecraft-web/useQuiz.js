@@ -33,11 +33,12 @@
  * 不是坏了 ⇒ 不给错误色、不给「重试」按钮（重试也没用）。
  */
 import { computed, ref, watch } from 'vue'
-import { CFG_KEYS, consumePaperTask, loadExamSpec, paperTaskPayload, typesBadNote } from './exam'
+import { loadExamSpec, paperTaskPayload, typesBadNote } from './exam'
 import { createAttempt, getQuizCurrent, replayAttempt } from '../../api/exam'
-import { ackGenTask, createGenTask } from '../../api/genTask'
+import { ackGenTask } from '../../api/genTask'
 import { ensureAiConfigLoaded, endpointProblem, resolveEndpoint } from './useAi'
 import { genTasks, refreshGenTasksNow } from './useGenTasks'
+import { usePaperTask } from './usePaperTask'
 
 /**
  * @param {object} opts
@@ -93,6 +94,38 @@ export function useQuiz({ topicIds, titleOf, topicUpdatedAt, onBeforeStart } = {
         return Number(p.topicIds?.[0]) === tid
       }) || null
     )
+  })
+
+  /**
+   * 出题任务的提交/等待/消费/收档骨架（与考试页共用 `usePaperTask`）。
+   * 落点只给两个：**任务脱靶的收口走下面 quizTask 的 watch**（它同时覆盖
+   * 「本方在跟的」和「走开再回来重新对上的」两种来源，composable 的 onVanish 就不重复给了）。
+   */
+  const paperTask = usePaperTask({
+    async onResult(r) {
+      if (r.error) {
+        quizQuiet.value = r.quiet
+        quizError.value = r.error
+        quizPhase.value = 'error'
+        return
+      }
+      const bits = []
+      if (r.note) bits.push(r.note)
+      const spec = quizSpec.value || (quizSpec.value = await loadExamSpec())
+      const bad = typesBadNote(spec.quizTypes.bad)
+      if (bad) bits.push(bad)
+      quizNote.value = bits.join('，')
+      quizQuestions.value = r.questions
+      quizPlan.value = r.plan || []
+      quizAttemptId.value = r.attemptId
+      // 刚出的卷不可能过期
+      quizStale.value = false
+      quizPhase.value = 'running'
+    },
+    onFail(message) {
+      quizError.value = message
+      quizPhase.value = 'error'
+    }
   })
 
   /**
@@ -192,19 +225,9 @@ export function useQuiz({ topicIds, titleOf, topicUpdatedAt, onBeforeStart } = {
         title: paperTitle,
         endpointId: endpoint.id
       })
-      const id = (
-        await createGenTask({
-          type: 'quiz',
-          title: paperTitle,
-          // ⚠️ **promptKey 必须带**（2026-11-15 修随堂「出不了题」）：
-          // 不带 ⇒ 后端按默认问题「写知识点」问模型 ⇒ 它写了一篇知识梳理而不是题。
-          promptKey: CFG_KEYS.paper,
-          params,
-          steps: [{ seq: 1, phase: 'quiz', phaseSeq: 1, title: '出题', material }]
-        })
-      )?.data
-      if (!Number.isFinite(Number(id))) throw new Error('任务没有创建成功')
-      await refreshGenTasksNow()
+      // 提交/等待/消费/收档的骨架在 usePaperTask（promptKey、作废 awaiting 任务
+      // 这些不变量都收在那一边，与考试页同一份）
+      await paperTask.submit({ type: 'quiz', phaseKey: 'quiz', title: paperTitle, params, material })
     } catch (e) {
       quizError.value = e?.message || '出题失败'
       quizPhase.value = 'error'
@@ -213,9 +236,9 @@ export function useQuiz({ topicIds, titleOf, topicUpdatedAt, onBeforeStart } = {
 
   /**
    * **消费出题任务**（任务转「待作答」后的动作；任务卡「作答」跳回来也走这里）：
-   * 拿原文 → 解析 → 建卷落库 → 直接进答题；成卷那一刻 ack（任务收档、角标灭）。
+   * 拿原文 → 解析 → 建卷落库 → 直接进答题。收档/作废都在骨架里（usePaperTask）。
    */
-  async function answerQuizTask(id) {
+  function answerQuizTask(id) {
     // id 可显式传（任务卡「作答」跳回来带 ?quizTask=）：那一刻任务列表可能还没拉到
     const taskId = Number(id || quizTask.value?.id)
     if (!Number.isFinite(taskId) || quizPhase.value === 'loading') return
@@ -223,36 +246,7 @@ export function useQuiz({ topicIds, titleOf, topicUpdatedAt, onBeforeStart } = {
     quizLoading.value = '正在建卷…'
     quizError.value = ''
     quizQuiet.value = false
-    try {
-      const spec = quizSpec.value || (quizSpec.value = await loadExamSpec())
-      const r = await consumePaperTask(taskId)
-      if (r.error) {
-        quizQuiet.value = r.quiet
-        quizError.value = r.error
-        quizPhase.value = 'error'
-        // ⚠️ **出题没产出可用的卷 ⇒ 作废这条任务**（2026-11-15 修死循环）：
-        // 任务停在 awaiting ⇒ quizTask 每次都找到它 ⇒ 重新打开抽屉又回到同一个错，
-        // 永远出不来。作废后 quizTask 不再命中，下次生成就是干净的新任务。
-        ackGenTask(taskId).finally(refreshGenTasksNow)
-        return
-      }
-      const bits = []
-      if (r.note) bits.push(r.note)
-      const bad = typesBadNote(spec.quizTypes.bad)
-      if (bad) bits.push(bad)
-      quizNote.value = bits.join('，')
-      quizQuestions.value = r.questions
-      quizPlan.value = r.plan || []
-      quizAttemptId.value = r.attemptId
-      // 刚出的卷不可能过期
-      quizStale.value = false
-      quizPhase.value = 'running'
-      // 成卷收档（幂等）：任务转已完成、角标灭；失败不挡考试
-      ackGenTask(taskId).finally(refreshGenTasksNow)
-    } catch (e) {
-      quizError.value = e?.message || '建卷失败'
-      quizPhase.value = 'error'
-    }
+    paperTask.consume(taskId)
   }
 
   /**

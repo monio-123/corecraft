@@ -177,10 +177,9 @@ import { ElMessage } from 'element-plus'
 import { ensureAiConfigLoaded, endpointProblem, resolveEndpoint } from './useAi'
 import { categoryLink } from '../../utils/categoryNav'
 import { DEFAULT_SCORE } from './examParse'
-import { CFG_KEYS, consumePaperTask, loadExamSpec, maxScoreOf, paperTaskPayload, totalOf, typesBadNote, TYPE_OPTIONS } from './exam'
+import { loadExamSpec, maxScoreOf, paperTaskPayload, totalOf, typesBadNote, TYPE_OPTIONS } from './exam'
 import { getPapers, replayAttempt } from '../../api/exam'
-import { ackGenTask, createGenTask } from '../../api/genTask'
-import { genTasks, refreshGenTasksNow } from './useGenTasks'
+import { usePaperTask } from './usePaperTask'
 import ExamRunner from './ExamRunner.vue'
 
 defineOptions({ name: 'AppExam' })
@@ -347,7 +346,7 @@ async function generate() {
   phase.value = 'task'
   try {
     // ⚠️ **端点必须在快照里**（2026-11-15 修「还没选好 API」）：后端建任务时从快照读
-    // endpointId 判端点配全没 —— 没有 ⇒ requireReady(null) ⇒ 每一步都撞同一堵墙。
+    // endpointId 判端点配全没 —— 没有 ⇒ requireEndpoint(null) ⇒ 每一步都撞同一堵墙。
     const endpoint = resolveEndpoint()
     if (!endpoint) throw new Error(endpointProblem() || '还没选好 API')
     const { material, params } = paperTaskPayload({
@@ -364,73 +363,20 @@ async function generate() {
       scopeName: scopeTitle.value,
       endpointId: endpoint.id
     })
-    const id = (
-      await createGenTask({
-        type: 'exam',
-        title: params.title,
-        // ⚠️ **promptKey 必须带**（2026-11-15 修随堂「出不了题」）：不带 ⇒ 后端按
-        // 默认问题「写知识点」问模型 ⇒ 它写的是知识梳理，不是题。
-        promptKey: CFG_KEYS.paper,
-        params,
-        steps: [{ seq: 1, phase: 'exam', phaseSeq: 1, title: '出题', material }]
-      })
-    )?.data
-    if (!Number.isFinite(Number(id))) throw new Error('任务没有创建成功')
-    examTaskId.value = Number(id)
-    await refreshGenTasksNow()
+    // 提交/等待/消费/收档的骨架在 usePaperTask（与随堂抽屉共用，含全部不变量）
+    await paperTask.submit({ type: 'exam', phaseKey: 'exam', title: params.title, params, material })
   } catch (e) {
     error.value = e?.message || '生成试卷失败'
     phase.value = 'error'
   }
 }
 
-/** 本页在跟的出题任务（提交后记下 id；离开页面也不丢——任务在服务端） */
-const examTaskId = ref(null)
-
-// 任务状态一变就对账：转「待作答」⇒ 本页自动消费（人还等在这儿）；
-// 失败 ⇒ 把任务的错误摆出来。挂了/删了 ⇒ 回设置态。
-watch(
-  () => genTasks.value.find((t) => t.id === examTaskId.value),
-  (t) => {
-    if (!t || examTaskId.value == null) return
-    if (t.status === 'awaiting') answerTask(t.id)
-    else if (t.status === 'failed') {
-      error.value = t.error || '出题失败'
-      phase.value = 'error'
-      examTaskId.value = null
-    } else if (['canceled', 'succeeded'].includes(t.status)) {
-      examTaskId.value = null
-      // 回设置态是 'idle'（模板里设置区的分支）。写成别的值会落进末尾 v-else
-      // 渲染答题器，而它拿到 null attemptId 就永远停在「恢复中」。
-      if (phase.value === 'task') phase.value = 'idle'
-    }
-  }
-)
-
-// 任务卡「作答」跳回来（?examTask=<id>）：直接消费那个任务
-watch(
-  () => route.query.examTask,
-  (v) => {
-    const id = Number(v)
-    if (!Number.isFinite(id) || id <= 0) return
-    examTaskId.value = id
-    answerTask(id)
-  },
-  { immediate: true }
-)
-
 /**
- * 消费出题任务：拿原文 → 解析 → 建卷落库 → 进答题；成卷那一刻 ack（任务收档）。
+ * 出题任务骨架的三个落点：消费完成（含中性结果）/ 任务失败 / 任务被取消或他处消费。
+ * （骨架与不变量见 `usePaperTask.js` 文件头。）
  */
-async function answerTask(id) {
-  if (phase.value === 'loading') return
-  phase.value = 'loading'
-  error.value = ''
-  quiet.value = false
-  note.value = ''
-  questions.value = []
-  try {
-    const r = await consumePaperTask(id)
+const paperTask = usePaperTask({
+  async onResult(r) {
     if (r.error) {
       quiet.value = r.quiet
       error.value = r.error
@@ -444,14 +390,29 @@ async function answerTask(id) {
     // router.replace 是异步的，抢在它前面切阶段会让答题器拿到 null ⇒ 卡在「恢复中」。
     await router.replace({ query: { ...route.query, paper: r.paperId, attempt: r.attemptId } })
     phase.value = 'running'
-    examTaskId.value = null
-    // 成卷收档（幂等）：任务转已完成、角标灭；失败不挡考试
-    ackGenTask(id).finally(refreshGenTasksNow)
-  } catch (e) {
-    error.value = e?.message || '生成试卷失败'
+  },
+  onFail(message) {
+    error.value = message
     phase.value = 'error'
+  },
+  onVanish() {
+    // 回设置态是 'idle'（模板里设置区的分支）。写成别的值会落进末尾 v-else
+    // 渲染答题器，而它拿到 null attemptId 就永远停在「恢复中」。
+    if (phase.value === 'task') phase.value = 'idle'
   }
-}
+})
+
+// 任务卡「作答」跳回来（?examTask=<id>）：直接消费那个任务（那一刻任务列表可能还没拉到）
+watch(
+  () => route.query.examTask,
+  (v) => {
+    const id = Number(v)
+    if (!Number.isFinite(id) || id <= 0) return
+    phase.value = 'loading'
+    paperTask.consume(id)
+  },
+  { immediate: true }
+)
 
 /**
  * 重做本卷：**同卷新 attempt**（原记录不动，设计 §10.2.1）。
