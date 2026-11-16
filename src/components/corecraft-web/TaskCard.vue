@@ -3,7 +3,7 @@
     <!-- 第 1 行：类型 + 标题 + **状态（全卡唯一一处）** + 开合箭头（整行可点开合）。 -->
     <header class="card__head" @click="toggleOpen">
       <span class="card__type">{{ type.name }}</span>
-      <span class="card__title">{{ task.title || '未命名任务' }}</span>
+      <span class="card__title">{{ titleText || '未命名任务' }}</span>
       <span class="card__st" :class="`is-${state.key}`">
         <i v-if="state.key === 'running'" class="card__dot" />
         {{ statusText }}
@@ -32,9 +32,7 @@
       <i class="card__current-ico" />
       <span class="card__current-main">
         <b>{{ summaryNode.name }}</b>
-        <small>
-          {{ nodeStatus(summaryNode.status).text }}<template v-if="nodeCount(summaryNode)"> · {{ nodeCount(summaryNode) }}</template>
-        </small>
+        <small>{{ summarySubText }}</small>
       </span>
       <span class="card__current-side">
         <small v-if="totalElapsedText">已用时 {{ totalElapsedText }}</small>
@@ -52,10 +50,9 @@
 
     <!-- 第 5 行：**左下一个主动作 + 右下一个次要动作**（2026-11-12 用户定）。
          - 左下：进行中 ⇒「暂停」；暂停了 ⇒「恢复」；有人工节点 ⇒「确认」；跑坏了 ⇒「重试」。
-         - 右下：**删除**。**进行中的任务没有删除**（执行线程还在写步骤，删了它会写回来）。
-         两边都直接写成文字按钮，不套「···」—— 一项的菜单要多点一次、还多一层浮层
-         （用户原话「里面不是只有一个按钮么」）。 -->
-    <div class="card__ops" @click.stop>
+         - 右下：**删除**。进行中是**禁用态**（不是消失——两边永远都有内容，2026-11-15
+           用户：「两边始终有一边是没有按钮的空的 不好看」）；为什么点不了 hover 一句说清。 -->
+    <div class="card__ops" :class="{ 'is-solo': !primaryAction }" @click.stop>
       <button
         v-if="primaryAction"
         class="card__op card__op--go"
@@ -66,14 +63,20 @@
         <KbLoader v-if="primaryAction.busy" size="sm" />
         {{ primaryAction.label }}
       </button>
-      <button
-        v-if="secondaryAction"
-        class="card__act"
-        :class="{ 'is-danger': secondaryAction.key === 'remove' }"
-        @click="secondaryAction.run"
-      >
-        {{ secondaryAction.label }}
-      </button>
+      <span v-if="secondaryAction" class="card__act-slot">
+        <KbTooltip v-if="secondaryAction.disabled" content="先暂停再删除">
+          <button type="button" class="card__act" disabled>{{ secondaryAction.label }}</button>
+        </KbTooltip>
+        <button
+          v-else
+          type="button"
+          class="card__act"
+          :class="{ 'is-danger': secondaryAction.key === 'remove' }"
+          @click="secondaryAction.run"
+        >
+          {{ secondaryAction.label }}
+        </button>
+      </span>
     </div>
 
     <!-- 展开：**一次只显示一个节点**的细节区。
@@ -104,7 +107,7 @@
             <span class="stage__main">
               <span class="stage__line">
                 <b class="stage__name">{{ n.name }}</b>
-                <span class="stage__state">{{ nodeStatus(n.status).text }}</span>
+                <span v-if="n.status !== 'ok'" class="stage__state">{{ nodeStatus(n.status).text }}</span>
               </span>
               <small v-if="nodeCount(n)" class="stage__sub">{{ nodeCount(n) }}</small>
             </span>
@@ -119,13 +122,11 @@
         </div>
         <template v-else-if="currentNode">
           <!-- 第 2 层：**单阶段详情（所有节点同一个模板）**。
-               不写节点名（轨上选中的那个就是）；说明有才画；右侧只放这个阶段自己的量。 -->
-          <div class="detail__head">
-            <p v-if="currentNode.desc" class="detail__desc" :title="currentNode.desc">
-              {{ currentNode.desc }}
-            </p>
-            <span v-if="detailMetaText" class="detail__meta">{{ detailMetaText }}</span>
-          </div>
+               不写节点名（轨上选中的那个就是）；说明有才画。头部的「已用时 · N 步」
+               2026-11-15 删（用户：「节点右侧已经展示过了，重复」）——用时看轨行、步数看列表。 -->
+          <p v-if="currentNode.desc" class="detail__desc" :title="currentNode.desc">
+            {{ currentNode.desc }}
+          </p>
 
           <!-- 产物摘要（确认节点等）：数据有就画一行，同一个位置同一个样式 -->
           <p v-if="currentNode.summary" class="detail__sum">{{ currentNode.summary }}</p>
@@ -196,6 +197,7 @@ import { computed, ref, watch } from 'vue'
 import { taskType, taskStatus, isActive, nodeStatus, elapsedText, formatSeconds } from '../../utils/taskTypes'
 import { percentText } from '../../utils/progress'
 import KbLoader from './KbLoader.vue'
+import KbTooltip from './KbTooltip.vue'
 
 const props = defineProps({
   task: { type: Object, required: true },
@@ -210,6 +212,20 @@ const type = computed(() => taskType(props.task?.type))
 const state = computed(() => taskStatus(props.task))
 const done = computed(() => props.task?.doneCount || 0)
 const total = computed(() => props.task?.total || 0)
+
+/**
+ * 标题**不复述类型**（2026-11-15 用户：「随堂测验·JAVA程序结构总览 名字显示重了」）：
+ * 类型 chip 就在标题左边，标题里的「随堂测验·」「生成主题：」这类前缀剥掉再显示。
+ * 老任务存量标题也能治（后端拼好的不动，只在展示层剥）。
+ */
+const titleText = computed(() => {
+  const raw = props.task?.title || ''
+  for (const sep of ['·', '：', ':']) {
+    const head = type.value.name + sep
+    if (raw.startsWith(head)) return raw.slice(head.length).trim() || raw
+  }
+  return raw
+})
 
 const statusText = computed(() => {
   const st = state.value
@@ -298,6 +314,20 @@ watch(
 const currentNode = computed(() => nodes.value.find((n) => n.key === selectedNode.value) || null)
 
 /**
+ * 收起态第二行的小字 = 状态字（**ok 不写**——绿了就是成了，2026-11-15 用户：
+ * 「绿色节点不用在右侧还标个完成两个字」）+ 计数 / 「人工节点」。
+ */
+const summarySubText = computed(() => {
+  const n = summaryNode.value
+  if (!n) return ''
+  const bits = []
+  if (n.status !== 'ok') bits.push(nodeStatus(n.status).text)
+  const c = nodeCount(n)
+  if (c) bits.push(c)
+  return bits.join(' · ')
+})
+
+/**
  * **收起态显示哪一段**。
  *
  * <p>优先用户手动选中的那一段；否则选默认当前段。收起态不铺完整链，
@@ -329,7 +359,9 @@ const nodeTitle = (n) => {
   const st = nodeStatus(n.status)
   // ⚠️ **tooltip 不再塞 desc**：描述属于阶段详情，混进节点会让一行里同时出现
   // "节点名 / 状态 / 数量 / 用时 / 任务说明"，哪个都看不清（2026-11-13 用户指出）。
-  const bits = [n.name, st.text]
+  // ok 也不写状态字（与轨上同口径：绿了就是成了）。
+  const bits = [n.name]
+  if (n.status !== 'ok' && st.text) bits.push(st.text)
   if (n.summary) bits.push(n.summary)
   if (n.elapsedMs > 0) bits.push('已用时 ' + msText(n.elapsedMs))
   return bits.join(' · ')
@@ -446,7 +478,8 @@ const primaryAction = computed(() => {
  * **次要动作**（永远只有一个，直接摆成文字按钮，靠右下角）。
  *
  * <ol>
- *   <li><b>进行中 ⇒ 没有</b>（执行线程还在写步骤，删了它下一步会把步骤写回来）</li>
+ *   <li>进行中 ⇒ **禁用态的「删除」**（2026-11-15 用户：「两边始终有一边是没有按钮的空的
+ *       不好看」——比消失好：位置在、点不了、hover 一句「先暂停再删除」说清为什么）</li>
  *   <li>其余 ⇒ 「删除」</li>
  * </ol>
  *
@@ -455,9 +488,8 @@ const primaryAction = computed(() => {
  */
 const secondaryAction = computed(() => {
   const t = props.task
-  // ⚠️ **进行中的任务没有删除**（2026-11-12 用户要求「进行中的任务不能删除」）：
-  // 执行线程还在写步骤，删了它下一步会把步骤写回来 ⇒ 只能先暂停再删。
-  if (isActive(t)) return null
+  // 进行中不能删（执行线程还在写步骤，删了会被写回来）—— 但按钮**在**，只是禁用。
+  if (isActive(t)) return { key: 'remove', label: '删除', disabled: true }
   return { key: 'remove', label: '删除', run: () => emit('remove', t) }
 })
 
@@ -493,17 +525,6 @@ const nodeSteps = computed(() => {
 })
 
 const shownSteps = computed(() => nodeSteps.value.shown)
-
-/** 详情头右侧：这个阶段自己的量（已用时 · N 步，有哪样写哪样） */
-const detailMetaText = computed(() => {
-  const n = currentNode.value
-  if (!n) return ''
-  const parts = []
-  const t = nodeTime(n)
-  if (t) parts.push(`已用时 ${t}`)
-  if (n.total > 0) parts.push(`${n.total} 步`)
-  return parts.join(' · ')
-})
 
 /** 有多少步没展示出来（**只用来决定画不画省略号**，不解释不计数）。
  *  ⚠️ 旧实现读 `g.failed`——组对象上没有这个字段，`total - undefined = NaN`
@@ -978,53 +999,74 @@ const stepText = (s) => nodeStatus(s).text
   gap: var(--sp-6);
   margin-top: var(--sp-9);
 }
+/* 没有主操作（真完成）⇒ 次要动作不靠右、贴左（2026-11-15 用户：「两边始终
+   有一边是没有按钮的空的 不好看」）—— 单按钮贴左下，行不空。 */
+.card__ops.is-solo {
+  justify-content: flex-start;
+}
+.card__ops.is-solo .card__act-slot {
+  margin-left: 0;
+}
 .card__op {
-  padding: 2px 0;
+  padding: var(--sp-4) var(--sp-8);
   border: none;
   background: transparent;
   border-radius: var(--radius-sm);
   font-size: 12px;
   color: var(--cc-primary);
   cursor: pointer;
+  /* 文字按钮也给足反馈（2026-11-15 用户：「点击后就一个下划线 而且感觉还有点迟钝感
+     hover 都没有」）—— 底色 + 按压，与全站文字型 hover 档（surface-2）同一语言 */
+  transition: background 0.15s, color 0.15s;
 }
-.card__op:hover {
-  text-decoration: underline;
+.card__op:not(:disabled):hover {
+  background: var(--cc-surface-2);
+}
+.card__op:not(:disabled):active {
+  background: var(--cc-surface-3, var(--cc-surface-2));
 }
 /* 忙碌态（正在暂停…）**不是禁用态**：它表示"已经开始做了、还没做完"，
-   所以不压淡、只去掉可点的手感和 hover 下划线。 */
+   所以不压淡、只去掉可点的手感。 */
 .card__op:disabled {
   cursor: default;
-}
-.card__op:disabled:hover {
-  text-decoration: none;
-}
-.card__op--go {
-  text-decoration: none;
 }
 /* 「暂停」用警示色（用户原话「暂停应该用黄色吧」）：主色的语义是"往前推进"，
    暂停是中断，同色会让这两个动作看起来是一回事。 */
 .card__op--go.is-warn {
   color: var(--cc-warning, #b7791f);
 }
-/* 次要动作：**一个字面按钮，靠右下角**（`margin-left:auto` 推到行尾）。
-   不套「···」—— 里面永远只有一项，多一层浮层只是多一次点击。
-   常态压得很淡（`--cc-text-4`），hover 才提亮；「删除」hover 变红（不可逆）。 */
-.card__act {
+/* 次要动作：**一个字面按钮**。不套「···」—— 里面永远只有一项，多一层浮层只是多一次点击。
+   常态压得很淡，hover 提亮 + 浅底；「删除」hover 变红（不可逆）。
+   ⚠️ 靠右由外层 .card__act-slot 管（margin-left:auto 挪到 slot 上，
+   这样「进行中禁用态」包 KbTooltip 也不破坏布局）；禁用态（进行中不能删）灰掉。 */
+.card__act-slot {
   margin-left: auto;
+}
+.card__act {
   border: none;
   background: transparent;
-  padding: 2px 0;
+  padding: var(--sp-4) var(--sp-8);
   border-radius: var(--radius-sm);
   font-size: 12px;
   /* `--cc-text-4` 太淡，看着像禁用（实测在浅底上几乎读不出来）⇒ 用辅助色那档 */
   color: var(--cc-text-3);
   cursor: pointer;
+  transition: background 0.15s, color 0.15s;
 }
-.card__act:hover {
+.card__act:not(:disabled):hover {
   color: var(--cc-text-2);
+  background: var(--cc-surface-2);
 }
-.card__act.is-danger:hover {
+.card__act:not(:disabled):active {
+  background: var(--cc-surface-3, var(--cc-surface-2));
+}
+.card__act.is-danger:not(:disabled):hover {
   color: var(--cc-danger);
+  background: var(--cc-danger-soft);
+}
+.card__act:disabled {
+  color: var(--cc-text-4);
+  cursor: not-allowed;
 }
 
 /* ---------- 细节区 ---------- */
@@ -1034,18 +1076,13 @@ const stepText = (s) => nodeStatus(s).text
   border-top: 1px solid var(--cc-border);
   max-height: min(52vh, 500px);
   overflow-y: auto;
+  /* 滚动条出现/消失不再挤压轨行（2026-11-15 用户：「点节点看右侧的缩进也在变」）——
+     gutter 常驻占位，内容宽度恒定 */
+  scrollbar-gutter: stable;
 }
-.detail__head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--sp-8);
-  margin: var(--sp-10) 0 var(--sp-6);
-}
+/* 节点说明（详情第一行，头部只剩它）：clamp 两行、hover title 看全文 */
 .detail__desc {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
+  margin: var(--sp-10) 0 var(--sp-6);
   overflow: hidden;
   color: var(--cc-text-2);
   font-size: 11px;
@@ -1053,12 +1090,6 @@ const stepText = (s) => nodeStatus(s).text
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
-}
-.detail__meta {
-  flex: 0 0 auto;
-  font-size: 11px;
-  color: var(--cc-text-4);
-  font-variant-numeric: tabular-nums;
 }
 .card__loading,
 .card__note {

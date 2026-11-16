@@ -1016,7 +1016,8 @@ async function openBatchOrganize(list = scopedTopics.value) {
   submitting.value = true
   try {
     await submitClassifyTask(list)
-    ElMessage.success(`已提交 AI 归类任务（${list.length} 条），可在「任务」里看进度`)
+    // ⚠️ 文案全站统一（2026-11-15 用户第 4 条）：所有后台任务入口只说这一句
+    ElMessage.success('已转到后台任务')
     // ⚠️ **走统一出口**（2026-11-12）：任务列表是另一份缓存（useGenTasks），
     // 原来这里调的是 `refreshGenTasks()` —— 它有"在途去重"，
     // 上一拍还没回来时会**复用那一拍**（那一拍是新任务建之前发的）⇒

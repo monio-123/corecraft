@@ -137,6 +137,17 @@ const PRESETS = [
     md: '正文里带一个普通链接：\n\n[MDN](https://developer.mozilla.org)\n\n带一个目录引用：\n\n见 [List](/app/learn?category=58)'
   },
   {
+    id: 'file',
+    name: '附件',
+    // **附件节点**（kbFileNode，2026-11-16）：指向 /api/files/ 的链接在解析时转成
+    // 原子节点（图标 + 文件名、光标进不去）。这个预设测三件事：
+    //   ① 三条不同扩展名（xlsx / md / pdf）各渲染成带图标的 chip；
+    //   ② 选中附件按 Delete 整块删（光标进不去文件名中间）；
+    //   ③ 往返自检后仍是 `[文件名](/api/files/…)` —— 正文格式不变，DB 零迁移。
+    //   ⚠️ 链接是假的（没有真文件），点 chip 下载会 404 —— 测的是渲染与往返，不是下载。
+    md: '带三个附件：\n\n[天源迪科-电渠资源台账.xlsx](/api/files/u/6/contents/abc123/天源迪科-电渠资源台账.xlsx)\n\n[说明文档.md](/api/files/u/6/contents/abc123/说明文档.md)\n\n[报告.pdf](/api/files/u/6/contents/abc123/报告.pdf)\n\n普通链接不受影响：[MDN](https://developer.mozilla.org)'
+  },
+  {
     id: 'table',
     name: '表格',
     md: '| 集合 | 有序 | 可重复 |\n| --- | --- | --- |\n| List | 是 | 是 |\n| Set | 否 | 否 |'

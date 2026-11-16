@@ -1277,7 +1277,11 @@ async function onTreeDialogDone() {
 onMounted(async () => {
   // **任务角标**：30 秒拉一次（抽屉打开时面板会切到 3 秒）。
   // 这一份同时给「任务」图标上的数字用，所以放在壳上，不放在抽屉里。
-  startGenTaskPolling(POLL_SLOW)
+  // ⚠️ 首拉延迟 1.5s（2026-11-16）：壳启动那一下已有 6~8 个并发请求，HTTP/1.1
+  // 六连接全占满，角标首拉会排到队尾、把列表/统计的第一拍顶后一位；角标只在
+  // 「待确认/失败」时才亮，晚一拍半无感知。30 秒内建任务走 genTaskCreated()
+  // 统一出口立刻刷，不依赖这一拍。
+  setTimeout(() => startGenTaskPolling(POLL_SLOW), 1500)
   // **首次点一级目录**要等 AppLearnView 的 45KB chunk 下完（冷缓存实测 1.86s）。
   // 浏览器空闲时先把这个 chunk 取回来（只下载、不渲染组件），路由真跳转时命中
   // 模块缓存 ⇒ 切换只剩渲染。⚠️ 不 await、也不放进 loadShell()：预取是顺手做的，
@@ -2009,6 +2013,16 @@ onBeforeUnmount(() => {
   flex-direction: column;
   overflow: hidden;
   padding-bottom: var(--sp-14);
+}
+/* 首页同款壳收滚（2026-11-15）：这一页本来就是「三排铺满一屏」的形态（编辑器自己
+   内滚，见 kb-editor.css 的 .quick .ProseMirror），壳不收滚的话 .home 高度永远跟着
+   内容涨 ⇒ flex 从不出现赤字 ⇒ 矮窗时下方的栏纹丝不动、录入区被压没
+   （用户：「输入框不能被挤压，下方的栏先被挤压然后才是输入框」）。
+   收滚之后赤字才存在，压缩顺序才轮得到 flex-shrink 说话。 */
+.app-content:has(.home) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 .app-content:has(.learn) {
   /* ⚠️ 2026-11-08 晚：这一页的留白**整个交给版心**（AppLearnView 的 .learn =

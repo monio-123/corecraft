@@ -9,15 +9,25 @@
          :key 不是可选的：defaultValueCtx 只在编辑器创建那一刻读一次，事后把 draft 置空
          不会回写 doc，不重建的话保存之后框里还留着原文案，像保存失败。 -->
     <section class="quick" :class="{ 'is-big': immersive.on }">
-      <MilkdownEditor :key="editorKey" v-model="draft" :show-toolbar="toolbar" @submit="save" />
-      <div class="quick__actions">
-        <!-- 左边两个都是"编辑器/页面"的开关（格式工具栏显不显、要不要进全屏），
-             右边是"记下来"这个主操作。space-between 要的是两个子元素，
-             所以左边得有个容器把它们圈住。 -->
-        <div class="quick__left">
-          <!-- 类型：默认就是「笔记」，不点就是零成本。放在动作行最左边——
-               它决定"这条记下来是什么"，比右边两个显示开关更像主信息。 -->
+      <MilkdownEditor :key="editorKey" ref="editorRef" v-model="draft" :show-toolbar="toolbar" @submit="save">
+        <!-- **顶栏右端集群**（2026-11-16 用户：「是顶栏的右上角啊」）：
+             文件动作在左、类型在最右，住在**编辑器顶栏（色带）的右端**。
+             ⚠️ 实情仍在编辑器里：点「导入」调 editorRef.pickImportFile()
+             （它弹系统文件选择器、读文件、插到光标处）。 -->
+        <template #toolbar-end>
+          <button class="filebtn" type="button" @click="pickImport">
+            <KbSvgIcon name="upload" />
+            导入
+          </button>
           <TopicTypeSelect v-model="draftType" />
+        </template>
+      </MilkdownEditor>
+      <div class="quick__actions">
+        <!-- 左边是"编辑器/页面"的开关（格式工具栏显不显、要不要进全屏），
+             右边是"记下来"这个主操作。space-between 要的是两个子元素，
+             所以左边得有个容器把它们圈住。
+             ⚠️ **类型选择器搬走了**（到顶栏右端集群，见上），这一行只剩开关。 -->
+        <div class="quick__left">
           <ViewToggles
             v-model:show-toolbar="toolbar"
             :full="immersive.on"
@@ -158,6 +168,17 @@ const draft = ref('')
 const editorKey = ref(0)
 const saving = ref(false)
 
+/**
+ * 录入框的编辑器实例（右上角「导入」按钮要调它）。
+ * ⚠️ 异步组件 + `:key="editorKey"`（换知识点时重建）⇒ ref 指向的是那个异步组件的
+ * 包装实例，方法靠 `defineExpose` 转发（MilkdownEditor.vue 里转给 Body）。
+ */
+const editorRef = ref(null)
+/** 「导入」：弹系统文件选择器（选 .md）——实情在编辑器里（读文件、解析、插到光标处） */
+function pickImport() {
+  editorRef.value?.pickImportFile()
+}
+
 // 结构索引（全集，不含正文）—— 首页只要**条数**和"今天新增了几条"，
 // 一条正文都不需要（正文那 90 万字符是列表接口慢的真正原因）。
 const topics = computed(() => getTopicIndex())
@@ -250,7 +271,17 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  min-height: 100%;
+  /* 壳已收滚（AppLayout 的 :has(.home)）⇒ 这里的高度被钉死为一屏：
+     flex:1 吃满内容区，矮窗出现赤字时**下方的栏先让位**（它们 shrink:1），
+     录入区有 .quick 上那条 220px 的底。内容再多也是编辑器内滚，页面不滚。
+     ⚠️ **width:100% 不能省**（2026-11-15 用户截图「何意味」）：壳收滚后
+     .app-content 是 flex 列，`margin: 0 auto` 的 auto 边距会**优先于 stretch**
+     把子项按内容收缩 ⇒ 整个工作面缩成 fit-content 的一条窄卡居中
+     （与 .detail #839 那个窄卡同一个坑，FEATURES §2.7 的注释早就写着）；
+     width:100% 给出确定宽度，auto 边距才回到"只管居中"的本职。 */
+  width: 100%;
+  flex: 1;
+  min-height: 0;
   /* 整页一条工作面（2026-11-09）：录入框 / 统计卡 / 复习面板三块同宽、右边缘对齐，
      宽度只由这一个 max-width 管。此前 .quick 单独收 1080，而 .home 被 AppLayout 的
      `:has(.home, .learn, .detail)` 那条解除上限（max-width:none）⇒ 统计卡/复习面板
@@ -303,7 +334,12 @@ onMounted(async () => {
    这里的 999 / 0 顶上 = 全部高度给录入框、尾巴 0 高，**默认即现状**。 */
 .quick {
   flex: var(--home-quick-grow, 999) 1 0;
-  min-height: 0;
+  /* 输入框的**高度下限**（2026-11-15 用户：「输入框不能被挤压，下方的栏先被挤压
+     然后才是输入框」）：矮窗时压缩顺序 = 统计卡/复习面板先（它们 flex-shrink:1），
+     录入区最后——原来它 basis 0 又不设底，矮窗直接塌成一行。 */
+  min-height: 220px;
+  /* 右上角集群（导入 + 类型）浮在卡片角上 ⇒ 需要定位上下文 */
+  position: relative;
   display: flex;
   flex-direction: column;
   /* 宽度不在这儿设：整页一条工作面由 .home 的 max-width 管（2026-11-09 收敛）。
@@ -409,13 +445,23 @@ onMounted(async () => {
   padding-top: var(--sp-10);
   border-top: 1px solid var(--cc-surface-2);
 }
+/* ⚠️ 右上角集群（导入 + 类型）现在住在**顶栏色带右端**（`toolbar-end` 插槽），
+   不再需要浮层定位（2026-11-16 用户：「是顶栏的右上角啊」）。 */
+.quick {
+  position: relative;
+}
 /* 概览。**不参与高度分配**（`flex: 0 0 auto` = 保持自己的高度）：
    用户明确要求"第二三行不要改变本身的框的大小"——它们被拉高时框内的字会偏上/偏下，
    数字和标签不在一条基线上。与其去修那个对齐，不如让它们根本不参与分配；
    录入区让出来的高度由 .home::after 那条尾巴接住（见上面那段）。
    ⚠️ **三列**（2026-11-03：「目录」那张卡删掉 ⇒ 四列变三列）。 */
 .stats {
-  flex: 0 0 auto;
+  /* 2026-11-15：0 0 auto ⇒ 矮窗时纹丝不动、录入区被压没。改成**先让位**
+     （用户定的压缩顺序：下方的栏先被挤压、然后才是输入框）。shrink 到内容以下
+     就裁掉（overflow:hidden），录入区有 220px 的底在 .quick 上。 */
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden;
   display: grid;
   /* 三列随工作面三等分。P0-4 要解决的"4K 上每张 730–1161px 宽的空招牌"由
      .home 的整页收口解决（1072 工作面 ⇒ 每张 ~346px，与当初想收的 360 同档），
@@ -508,9 +554,10 @@ onMounted(async () => {
    **间距 = 上下那套 gap**（20px，见 .home 的 gap）⇒ 同一行控件只准一种间距
    （横向 gap 与纵向 gap 同值，两种都是"相邻块之间"的距离）。 */
 .home__row {
-  /* 不参与高度分配（同 .stats）：这一行是固定高度的两块面板，
-     .home 的 flex 分配只给 .quick。 */
-  flex: 0 0 auto;
+  /* 同 .stats：矮窗时先于录入区让位（2026-11-15），shrink 到内容以下就裁掉 */
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;

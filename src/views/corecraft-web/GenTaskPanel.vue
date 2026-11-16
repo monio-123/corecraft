@@ -14,7 +14,13 @@
            类型原来是一排分段按钮 —— 类型一多就把抽屉顶满、「生成考试」被截成「生」，
            所以和状态统一成同一种 chip：两个并排、同档字号、同档内距。 -->
       <div class="tw__filter">
-        <el-dropdown trigger="click" popper-class="task-filter-popper" @command="onTypeFilter">
+        <el-dropdown
+          trigger="click"
+          popper-class="task-filter-popper"
+          :persistent="ddKeepMounted"
+          @visible-change="onDropdownShow"
+          @command="onTypeFilter"
+        >
           <button class="tw__sel">{{ typeFilterName }} ▾</button>
           <template #dropdown>
             <el-dropdown-menu>
@@ -28,7 +34,13 @@
             </el-dropdown-menu>
           </template>
         </el-dropdown>
-        <el-dropdown trigger="click" popper-class="task-filter-popper" @command="onStatusFilter">
+        <el-dropdown
+          trigger="click"
+          popper-class="task-filter-popper"
+          :persistent="ddKeepMounted"
+          @visible-change="onDropdownShow"
+          @command="onStatusFilter"
+        >
           <button class="tw__sel">{{ statusFilterName }} ▾</button>
           <template #dropdown>
             <el-dropdown-menu>
@@ -124,6 +136,7 @@
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { confirmAction } from '../../utils/confirm'
+import { useDropdownKeepMounted } from '../../utils/dropdown'
 import TaskCard from '../../components/corecraft-web/TaskCard.vue'
 import KbSkeleton from '../../components/corecraft-web/KbSkeleton.vue'
 import ClassifyAdoptDialog from './ClassifyAdoptDialog.vue'
@@ -137,6 +150,8 @@ import { bumpDataVersion, refreshTopicIndexes } from './useCorecraftWebStore'
 import { isActive, STATUS_FILTERS, taskType } from '../../utils/taskTypes'
 
 const emit = defineEmits(['openPlan', 'openAnswer'])
+// 两个筛选下拉共用的「首开保持挂载」（utils/dropdown.js）
+const { keepMounted: ddKeepMounted, onDropdownShow } = useDropdownKeepMounted()
 const visible = ref(false)
 const expanded = ref(null)
 /** taskId → steps（只为进行中 / 展开的任务填） */
@@ -655,6 +670,8 @@ defineExpose({
   /* 底部留白交给 footer（它有自己的 padding），否则分页器上下留白叠两遍 */
   padding: var(--sp-8) var(--sp-16) var(--sp-10);
   overflow-y: auto;
+  /* 滚动条出现/消失不再挤内容（与卡片 body 同一条：gutter 常驻） */
+  scrollbar-gutter: stable;
 }
 .taskdrawer .el-drawer__footer {
   padding: var(--sp-8) var(--sp-16);

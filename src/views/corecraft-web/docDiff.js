@@ -29,7 +29,10 @@
  * ⇒ 左右**逐行对齐** ⇒ 界面用 grid 两列排，行高自动取两边较大值 ⇒
  * **一个滚动容器就够，两边天然一起滚**（不需要两套滚动 + 同步逻辑）。
  */
-import { DOMSerializer, Fragment } from '@milkdown/prose/model'
+import { nodeToHtml, htmlOf } from '../../utils/kbDocHtml'
+
+// 对外仍从本文件取（useTopicAsk 在用）；实现只有一份（utils/kbDocHtml）。
+export { htmlOf }
 
 /**
  * 块的指纹：类型 + 标题层级 + 文本。
@@ -46,14 +49,10 @@ export function fingerprint(node) {
  *
  * 用 ProseMirror 官方的 `DOMSerializer`：**它和编辑器渲染用的是同一套 `toDOM`**，
  * 所以自定义节点（图片、字号 mark）和内置节点的标记完全一致。
+ *
+ * ⚠️ **实现搬到了 utils/kbDocHtml.js**：文档导出（PDF / Word）要的是同一套
+ * 序列化，两处各写一份早晚会漂（2026-11-16 导出那侧漏了块壳 ⇒ 打印出白纸）。
  */
-function nodeToHtml(node) {
-  const fragment = DOMSerializer.fromSchema(node.type.schema)
-    .serializeFragment(Fragment.from(node))
-  const box = document.createElement('div')
-  box.appendChild(fragment)
-  return box.innerHTML
-}
 
 /**
  * 一组顶层节点 → 块数组。
@@ -88,7 +87,7 @@ export function blocksOf(doc) {
  * doc → 整篇 HTML（不切块）。
  *
  * **和 `blocksOf` 是同一套序列化**（`DOMSerializer`）—— 只是不按块切开，
- * 给"整段渲染"用：问答抽屉里那条 AI 回答。
+ * 给"整段渲染"用：问答抽屉里那条 AI 回答、文档导出（PDF / Word）。
  *
  * ⚠️ **模型输出的是 markdown**。直接 `{{ answer }}` 打印出来就是一堆 `##`、`|`、
  * `**` 符号 —— 用户看到的是**源码**，不是回答。渲染成 HTML 之后才是"排好版的回答"。
@@ -96,13 +95,6 @@ export function blocksOf(doc) {
  * @param {object|null} doc ProseMirror doc
  * @returns {string}
  */
-export function htmlOf(doc) {
-  if (!doc) return ''
-  const fragment = DOMSerializer.fromSchema(doc.type.schema).serializeFragment(doc.content)
-  const box = document.createElement('div')
-  box.appendChild(fragment)
-  return box.innerHTML
-}
 
 /** DP 规模上限：超过就不做 LCS（退化成按序对位），免得长文卡住界面 */
 const MAX_LCS_CELLS = 1_000_000

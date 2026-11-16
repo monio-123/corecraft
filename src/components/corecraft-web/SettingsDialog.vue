@@ -50,6 +50,26 @@
             </button>
           </div>
 
+          <!-- 字体：正文/展示字体归配置不归主题（2026-11-15 三档收敛 D）。
+               默认「标准」（无衬线）；「衬线」= 素雅那套 Noto Serif SC。
+               两个名字用各自的真实字体渲染——名字即预览。 -->
+          <div class="prefs__cap" style="margin-top: var(--sp-12);">字体</div>
+          <div class="prefs__swatches">
+            <button
+              v-for="f in fontOptions"
+              :key="f.key"
+              type="button"
+              class="prefs__swatch"
+              :class="{ 'is-on': font === f.key }"
+              :aria-pressed="font === f.key"
+              @click="pickFont(f.key)"
+            >
+              <span class="prefs__peek prefs__peek-font" :style="{ fontFamily: f.preview }">文 Aa</span>
+              <span class="prefs__swatch-name">{{ f.name }}</span>
+              <span class="prefs__tick">✓</span>
+            </button>
+          </div>
+
           <!-- 组切换：下划线 tabs（导航形态 ≠ 风格卡的选择形态，两排不再打架）。
                ⚠️ 组名只在这条 tabs 里出现一次，正文不再重复标题。 -->
           <div v-if="shown.length > 1" class="prefs__tabs">
@@ -123,7 +143,7 @@
 import { ref, computed } from 'vue'
 import { Setting } from '@element-plus/icons-vue'
 import { getUiPrefs, prefGroups, prefTreeState, resetUiPrefs, saveUiPrefs } from '../../utils/uiPrefs'
-import { themeList, currentTheme, setTheme } from '../../utils/theme'
+import { themeList, currentTheme, setTheme, currentFont, setFont } from '../../utils/theme'
 import KbLoader from './KbLoader.vue'
 import AiSettingsPanel from '../../views/corecraft-web/AiSettingsPanel.vue'
 
@@ -149,6 +169,17 @@ const active = ref(props.groups[0])
 const theme = computed(() => currentTheme())
 function pickTheme(key) {
   setTheme(key)
+}
+
+/* 字体档（utils/theme.js）：同主题一条数据源（配置树生效值派生）。
+   preview = 各自的真实字体——名字即预览。 */
+const font = computed(() => currentFont())
+const fontOptions = [
+  { key: 'sans', name: '标准', preview: 'Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif' },
+  { key: 'serif', name: '衬线', preview: '"Noto Serif SC", Georgia, serif' }
+]
+function pickFont(key) {
+  setFont(key)
 }
 
 /** 配置树上要显示的那几组（树还没到的时候是空的，界面右区还没东西可画） */
@@ -412,5 +443,13 @@ async function resetCur() {
 .prefs__empty {
   font-size: var(--text-sm);
   color: var(--cc-text-3);
+}
+/* 字体档小卡：peek = 各自真实字体的「文 Aa」（名字即预览） */
+.prefs__peek-font {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-lg);
+  color: var(--cc-text-1);
 }
 </style>

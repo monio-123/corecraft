@@ -317,7 +317,9 @@ function hit(url) {
     }]
   }
   if (u.includes('/sys/user/me/profile')) {
-    return { id: 1, userName: 'mo', nickName: 'mo', avatar: null, roles: [] }
+    // 字段名照生产的形状（nickname/username 小写）——原来写成 camelCase，
+    // demo 里用户名一直是空的（头像兜底字恒为 'U' 也是它害的）
+    return { id: 1, username: 'mo', nickname: 'mo', avatar: null, roles: [] }
   }
   if (u.includes('/sys/user/me/permissions')) return { permissions: [] }
   if (u.includes('/kp/category/list')) return mockData.categories

@@ -114,9 +114,10 @@ html[data-theme="suya"] {
   --cc-shadow-1: 0 3px 14px rgb(72 60 34 / 7%);
   --cc-shadow-2: 0 2px 6px rgb(72 60 34 / 8%), 0 16px 40px rgb(72 60 34 / 12%);
   --cc-logo-gradient: linear-gradient(160deg, #35806f, #2a6b5c);
-  --font-body: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', Georgia, 'Times New Roman', SimSun, serif;
-  --font-display: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', 'Palatino Linotype', Palatino, 'Times New Roman', SimSun, serif;
-  --el-font-family: var(--font-body);
+  /* 字体不再跟主题（2026-11-15 三档收敛 D）：原来这里强制衬线 ⇒ 只有素雅是不同的
+     字体、其他主题字体全一样。现在正文/展示字体归 ui.font 配置（html[data-font]，
+     默认 sans；想要衬线去设置里选「衬线」）。display 小面积装饰（Space Grotesk /
+     Playfair）仍归主题。素雅的衬线 webfont 仍在 index.html 预载（选衬线档零等待）。 */
   --cc-btn-bg: linear-gradient(180deg, #35806f, #2a6b5c);
   --cc-btn-bd: rgba(20, 61, 53, 0.35);
   --cc-btn-fg: #ffffff;
@@ -548,4 +549,95 @@ body,
   [data-theme="yaoye"] .stat__num {
     animation: none !important;
   }
+}
+
+/* ================= 主题收敛与质感档（2026-11-15，方案「主题收敛与字体方案-1115」） =================
+ * 三件事都在这个尾部块里：
+ *   A. 管理后台固定本色（admin-nav-root 覆盖块）——后台是工作界面，不参与换装；
+ *      登录页的独立视觉在 Login.vue 自己写（它不跟主题）。
+ *   C. 各主题的质感档（沿曜夜星空的思路：静态纹理一层 + 至多两个「活」点）——
+ *      本色=极淡蓝图点阵（工程图纸感）/ 素雅=两团静止水墨晕 / 量子=电路流光（8s 一次）/
+ *      曜夜=星尘+双闪星（已是标杆，不动）。全部吃上面 prefers-reduced-motion 的统一关闸
+ *      （关动效不关状态）。
+ *   D. 字体解耦（html[data-font]）：正文/展示字体从主题解耦成配置——
+ *      data-font="sans"（默认，= 原「标准」栈）/ data-font="serif"（原素雅衬线栈）。
+ *      素雅主题块里的 --font-body 自动衬线已撤（见上面素雅块的改动）；display 小面积
+ *      装饰（Space Grotesk / Playfair）保留在主题里。ui.font 配置写 html 行内 data-font。
+ */
+
+/* ---- A. 管理后台固定本色 ----
+   覆盖的是四主题差异化最明显的三组：底色/纸面、字色、纹理与氛围。
+   没覆盖的（间距/圆角/加载层等）本来就四主题同值。 */
+.admin-nav-root {
+  --cc-side-bg: var(--cc-surface);
+}
+.admin-nav-root body,
+body:has(.admin-nav-root) {
+  /* body 的背景/纹理/氛围是主题差异的大头：后台一律回本色那套（base.css 的默认值） */
+  --cc-grain-image: none;
+  --cc-grain-opacity: 0;
+  --cc-grain-blend: normal;
+  --cc-ambience: none;
+  background: var(--cc-bg, #f5f7fa);
+}
+body:has(.admin-nav-root)::before,
+body:has(.admin-nav-root)::after {
+  /* 素雅的纸纹、曜夜的星尘与暗角、量子的漂移光晕——后台全关（含动画层） */
+  background: none !important;
+  animation: none !important;
+}
+
+/* ---- C-1. 本色：极淡蓝图点阵 ---- */
+html[data-theme="bense"] body::after {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='33' height='33'%3E%3Ccircle cx='1' cy='1' r='1' fill='%232b7fff' fill-opacity='0.05'/%3E%3C/svg%3E");
+}
+
+/* ---- C-2. 素雅：两团静止水墨晕（叠在纸纹 grain 上面，同为 body::after 的两层背景） ---- */
+html[data-theme="suya"] body::after {
+  background-image:
+    radial-gradient(420px 300px at 8% 4%, rgba(85, 80, 63, 0.05), transparent 70%),
+    radial-gradient(520px 360px at 96% 98%, rgba(85, 80, 63, 0.04), transparent 70%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.42 0 0 0 0 0.36 0 0 0 0 0.26 0 0 0 0.045 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ---- C-3. 量子：电路流光（1px 淡靛青光点沿网格线巡走，8s 一次） ----
+   与网格纹理同源：流光点沿一条 44px 网格线走（GPU transform，不重绘） */
+@keyframes circuit-run {
+  0% { transform: translateX(0); opacity: 0; }
+  6% { opacity: 1; }
+  94% { opacity: 1; }
+  100% { transform: translateX(calc(100vw + 80px)); opacity: 0; }
+}
+[data-theme="liangzi"] .app-shell::before {
+  content: '';
+  position: fixed;
+  left: -40px;
+  top: 22%;
+  width: 60px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(99, 91, 255, 0.5), transparent);
+  animation: circuit-run 8s linear infinite;
+  pointer-events: none;
+  z-index: 98;
+}
+[data-theme="liangzi"] .app-shell::after {
+  content: '';
+  position: fixed;
+  right: -40px;
+  bottom: 18%;
+  width: 60px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(99, 91, 255, 0.4), transparent);
+  animation: circuit-run 8s linear 4s infinite;
+  pointer-events: none;
+  z-index: 98;
+}
+
+/* ---- D. 字体解耦：data-font 覆盖正文与展示字体 ----
+   默认 sans = 原「标准」栈（本色 body 那份，含中文落回 PingFang/雅黑）；
+   serif = 素雅那套衬线。--el-font-family 跟着走（EP 组件不脱队）。 */
+html[data-font="serif"] {
+  --font-body: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', Georgia, 'Times New Roman', SimSun, serif;
+  --font-display: var(--font-body);
+  --el-font-family: var(--font-body);
 }

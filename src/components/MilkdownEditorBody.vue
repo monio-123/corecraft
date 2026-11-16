@@ -13,15 +13,39 @@
          show-after 压到 100ms —— 立即出，又不至于鼠标扫过一排时闪成一片。
          ⚠️ 按钮套 el-tooltip 必须外面再包一层 <span>：<button disabled> 不派发鼠标事件，
          直接套的话"插入链接（先选中文字）"这条**最该被看到的提示反而永远看不到**。 -->
+    <!-- 顶栏（色带）：**格式组靠左、右端是页面注入的集群**（文件动作 + 类型）。
+         ⚠️ **集群与顶栏同生共死**（2026-11-16 用户：「这两个是跟顶栏一起的 显示也是一起的」）：
+         页面把集群注入 `toolbar-end` 插槽 ⇒ 它住在**顶栏右端**（原来放在标题行右端，
+         被判"不是右上角"）；顶栏隐藏时它一起隐藏（简洁模式就是没有这一行）。 -->
     <div v-if="showToolbar" class="md-toolbar" @mousedown.prevent>
-      <KbTooltip v-for="b in MD_BUTTONS" :key="b.id" :content="b.tip" placement="bottom" :show-after="100">
-        <span class="md-btn-wrap">
-          <el-button text size="small" :class="b.cls" :aria-label="b.tip" :disabled="b.disabled" @click="b.run($event)">
-            <el-icon v-if="b.icon"><component :is="b.icon" /></el-icon>
-            <template v-else>{{ b.text }}</template>
-          </el-button>
-        </span>
-      </KbTooltip>
+      <!-- **分组**（2026-11-15/16）：四组格式（文字 / 块 / 链接 / 字号字体），组间一条细线；
+           组间分隔项是数组里的 { sep: true }（一个 v-for 渲染两种东西，别在模板里再分组）。
+           ⚠️ **图标全部自绘**（KbSvgIcon 那一族 1.7px 细线）：原来用的是 EP 老图标
+           （粗描边、方块感），而 meta 行是自绘的 ⇒ 同一屏两种画风。 -->
+      <template v-if="showToolbar">
+        <template v-for="b in MD_BUTTONS" :key="b.id">
+          <span v-if="b.sep" class="md-sep" />
+          <KbTooltip v-else :content="b.tip" placement="bottom" :show-after="100">
+            <span class="md-btn-wrap">
+              <el-button text size="small" :class="b.cls" :aria-label="b.tip" :disabled="b.disabled" @click="b.run($event)">
+                <KbSvgIcon v-if="b.icon" :name="b.icon" />
+                <template v-else>{{ b.text }}</template>
+              </el-button>
+            </span>
+          </KbTooltip>
+        </template>
+      </template>
+      <!-- 导入：input 藏在工具栏里，点按钮弹**系统文件选择器**（页面调 pickImportFile()）。 -->
+      <input
+        ref="importInput"
+        type="file"
+        accept=".md,.markdown,text/markdown,text/plain"
+        class="md-import-input"
+        @change="onImportFile"
+      />
+      <!-- 右端集群：弹性空档把它顶到最右（页面注入：文件动作 + 类型） -->
+      <span class="md-fill" />
+      <slot name="toolbar-end" />
     </div>
 
     <!-- 使用方塞进来的东西（现在是知识点详情页的标题）。位置：工具栏之下、正文之上。
@@ -132,6 +156,27 @@
         placeholder=""
         @change="onCategoryPicked"
       />
+    </div>
+
+    <!-- 工具菜单浮层（2026-11-15）：标题档位 / ··· 更多 / 导出 三种内容共用一张脸，
+         和字号字体浮层（format-pick）同一套机制——贴着按钮弹、点外面收、Esc 收。
+         soon 项（PDF / Word）不禁用不隐藏：入口常驻可感知，点了给一句官方说法。 -->
+    <div
+      v-if="toolMenu.visible"
+      ref="toolMenuEl"
+      class="editor-float tool-menu"
+      :style="{ left: toolMenu.x + 'px', top: toolMenu.y + 'px' }"
+      @mousedown.prevent
+      @click.stop
+    >
+      <button
+        v-for="it in toolMenuItems"
+        :key="it.key"
+        class="tool-menu__item"
+        @click="onToolMenuPick(it)"
+      >
+        {{ it.label }}<span v-if="it.soon" class="tool-menu__soon">暂不能使用</span>
+      </button>
     </div>
 
     <!-- 字号 / 字体档位浮层：点工具栏的 Aa / 字体按钮弹出来，选一档就套到选区上。
@@ -252,7 +297,7 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
-import { Link, Grid, List, Rank, FolderOpened, MagicStick, Brush } from '@element-plus/icons-vue'
+import { Link, Grid, List, Rank, FolderOpened } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { Milkdown, useEditor } from '@milkdown/vue'
 import { Editor, rootCtx, commandsCtx, defaultValueCtx, editorViewOptionsCtx, editorViewCtx, parserCtx } from '@milkdown/core'
@@ -270,6 +315,7 @@ import { exitCode, joinBackward, selectAll } from 'prosemirror-commands'
 import { copyText } from '../utils/clipboard'
 import { uploadFile, fileUrl } from '../api/file'
 import { imageNodePlugin, imageResizeView } from './kbImageNode'
+import { fileNodePlugin, fileNodeView } from './kbFileNode'
 import { mermaidPlugin } from './kbMermaid'
 import { $applyToVisualLines } from './kbLineBlocks'
 import { fontSchema, remarkFontSpan, remarkFontSpanStringify, setFontCommand, clearFormattingCommand, FONT_SIZES, FONT_FAMILIES } from './kbFontMark'
@@ -446,6 +492,22 @@ defineExpose({
   },
   /** markdown → ProseMirror doc（**不建视图**）。解析不了返回 null */
   docOf: parseDoc,
+  /**
+   * **打开导出菜单**（贴在给定按钮下面）——文件动作由页面自己画（要和「类型」并列
+   * 放在页面右上角），导出这件实情仍归编辑器（它有原文、它有菜单）。
+   *
+   * @param {HTMLElement} anchor 按钮元素
+   */
+  openExportMenu(anchor) {
+    openToolMenu('export', anchor)
+  },
+  /**
+   * **弹系统文件选择器**（导入 .md）——同上，导入的实情在编辑器里（读文件、解析、
+   * 插到光标处），页面只负责画那颗按钮。
+   */
+  pickImportFile() {
+    pickImport()
+  },
   /**
    * 一段范围里的**顶层块**（对比区用）。
    *
@@ -786,34 +848,46 @@ function submitLinkAsk() {
 const MD_BUTTONS = computed(() => {
   // 置灰的时候，提示要说清楚**为什么**点不动 —— 灰着一个没人解释的按钮，
   // 用户只会以为是坏了。所以提示跟着 hasSelection 走，不是写死的。
-  // 「（先选中文字）」这半句五个按钮都要，抄五遍就是五份会走散的说法。
+  // 「（先选中文字）」这半句好几处都要，抄几遍就是几份会走散的说法。
   const noSel = !hasSelection.value
   const needSel = (name) => (noSel ? `${name}（先选中文字）` : name)
-  return [
+  const sep = (id) => ({ id: `sep-${id}`, sep: true })
+  const list = [
+  // —— 组 1：文字格式（mark + 标题）——
   { id: 'strong', tip: '加粗 (Ctrl+B)', text: 'B', cls: 'md-btn-bold', run: () => runCmd('ToggleStrong') },
   { id: 'em', tip: '斜体 (Ctrl+I)', text: 'I', cls: 'md-btn-italic', run: () => runCmd('ToggleEmphasis') },
-  { id: 'h2', tip: '二级标题', text: 'H2', run: () => runCmd('ApplyToVisualLines', { name: 'heading', attrs: { level: 2 } }) },
-  { id: 'h3', tip: '三级标题', text: 'H3', run: () => runCmd('ApplyToVisualLines', { name: 'heading', attrs: { level: 3 } }) },
-  { id: 'ul', tip: '无序列表', icon: List, run: () => runCmd('ApplyToVisualLines', { name: 'bullet_list', mode: 'wrap' }) },
-  { id: 'ol', tip: '有序列表', icon: Rank, run: () => runCmd('ApplyToVisualLines', { name: 'ordered_list', mode: 'wrap' }) },
-  { id: 'code', tip: '代码块', text: '{ }', run: () => runCmd('ApplyToVisualLines', { name: 'code_block', attrs: { language: '' } }) },
+  // H2/H3 合并成一个「标题」下拉（2026-11-15）：两个按钮占两位、H4 没地方放；
+  // 下拉里 H2/H3/H4/正文 档位齐了。块级命令要选区（ApplyToVisualLines 空选区直接 false）。
+  { id: 'heading', tip: needSel('标题'), icon: 'heading', run: (e) => openToolMenu('heading', e.currentTarget) },
+  sep('block'),
+  // —— 组 2：块结构（图标全部自绘，2026-11-16：原来是 EP 老图标，与 meta 行两种画风）——
+  { id: 'ul', tip: '无序列表', icon: 'bullets', run: () => runCmd('ApplyToVisualLines', { name: 'bullet_list', mode: 'wrap' }) },
+  { id: 'ol', tip: '有序列表', icon: 'numbers', run: () => runCmd('ApplyToVisualLines', { name: 'ordered_list', mode: 'wrap' }) },
+  { id: 'code', tip: '代码块', icon: 'code-block', run: () => runCmd('ApplyToVisualLines', { name: 'code_block', attrs: { language: '' } }) },
+  { id: 'quote', tip: '引用块', icon: 'quote-block', run: () => runCmd('ApplyToVisualLines', { name: 'blockquote', mode: 'wrap' }) },
+  { id: 'hr', tip: '分割线', icon: 'divider', run: insertHr },
+  { id: 'clearformat', tip: needSel('清除格式'), icon: 'eraser', disabled: noSel, run: () => runCmd('ClearFormatting') },
+  { id: 'table', tip: '插入表格', icon: 'table', run: openTableDialog },
+  sep('link'),
+  // —— 组 3：链接 ——
+  // 两个都是"给选中的字挂一个跳转目标"，挨着放；隔开会让用户在整排里来回找。
   {
     id: 'link',
     tip: needSel('插入链接'),
-    icon: Link,
+    icon: 'link',
     disabled: noSel,
     run: insertLink
   },
-  // 紧挨着「插入链接」而不是排到 H2/H3 旁边：两个都是"给选中的字挂一个跳转目标"，
-  // 插在中间会让它们被 无序/有序/代码块 隔开，用户得在排粗体标题列表的那一排里找。
   {
     id: 'catlink',
     tip: needSel('设为目录链接'),
-    icon: FolderOpened,
+    icon: 'folder-link',
     // 没有目录树 = 一个都选不出来，按钮灰掉。不留"点了弹个空框"那条路。
     disabled: noSel || !props.categoryTree.length,
     run: insertCategoryLink
   },
+  sep('font'),
+  // —— 组 4：字号字体 ——
   {
     id: 'fontsize',
     tip: needSel('字号'),
@@ -827,19 +901,16 @@ const MD_BUTTONS = computed(() => {
   {
     id: 'fontfamily',
     tip: needSel('字体'),
-    icon: Brush,
+    icon: 'typeface',
     disabled: noSel,
     run: (e) => openFormatPick('family', e.currentTarget)
-  },
-  {
-    id: 'clearformat',
-    tip: needSel('清除格式'),
-    icon: MagicStick,
-    disabled: noSel,
-    run: () => runCmd('ClearFormatting')
-  },
-  { id: 'table', tip: '插入表格', icon: Grid, run: openTableDialog }
+  }
   ]
+  // ⚠️ **文件动作（导入/导出）不再由工具栏渲染**（2026-11-16）：它们要和「类型」
+  // 并列放在页面右上角（知识点编辑页 = 标题行右端；首页 = 卡片右上角）——
+  // 类型是页面级控件，文件动作也是页面级，工具栏不该夹在中间。
+  // ⇒ 页面自己画那两颗按钮，调编辑器的 `openExportMenu(btn)` / `pickImportFile()`。
+  return list
 })
 
 const LINK_BUTTONS = [
@@ -884,6 +955,7 @@ function onDocumentKeydown(e) {
   hideLinkInput()
   hideCatLink()
   hideFormatPick()
+  hideToolMenu()
   hideAskFloat()
 }
 
@@ -902,9 +974,10 @@ function onDocumentMouseUp() {
 // mousedown 在 click 之前，"点链接开工具条"和"点别处关工具条"才能共存于同一个监听。
 function onDocumentMouseDown(e) {
   // 点到浮层自己时不收，否则刚点"编辑链接"弹出的输入框会被自己的这次点击关掉
-  if (e.target.closest && e.target.closest('.link-pop, .link-input, .cat-link, .format-pick, .ask-float')) return
+  if (e.target.closest && e.target.closest('.link-pop, .link-input, .cat-link, .format-pick, .tool-menu, .ask-float')) return
   hideLinkBar()
   hideFormatPick()
+  hideToolMenu()
   // 选区浮层：点外面 = 放弃这次提问（没提交的东西不作数）
   hideAskFloat()
   // 目录气泡点外面 = **取消**，和 URL 气泡那条相反：那里提交的是"框里输到一半的东西"
@@ -937,6 +1010,97 @@ onBeforeUnmount(() => {
 
 function hideFloat(state) {
   if (state.value.visible) state.value = { ...state.value, visible: false }
+}
+
+/**
+ * 工具菜单浮层（2026-11-15）：标题档位 / ··· 更多 / 导出 三种内容共用一张脸。
+ * 和字号字体浮层（format-pick）同一套机制——贴着按钮弹、点外面收、Esc 收；
+ * 菜单本身 `@mousedown.prevent`，编辑器选区不会被夺走（块级命令靠它）。
+ */
+const toolMenu = ref({ visible: false, kind: 'heading', x: 0, y: 0 })
+
+function openToolMenu(kind, btn) {
+  if (!btn) return
+  const rect = btn.getBoundingClientRect()
+  toolMenu.value = { visible: true, kind, x: rect.left, y: rect.bottom + 6 }
+}
+
+function hideToolMenu() {
+  hideFloat(toolMenu)
+}
+
+/** 菜单项跟着浮层的 kind 走。2026-11-16 二稿：导出三项全真做，占位与「···」退役。 */
+const toolMenuItems = computed(() => {
+  if (toolMenu.value.kind === 'heading') {
+    return [
+      { key: 'h2', label: 'H2 标题' },
+      { key: 'h3', label: 'H3 标题' },
+      { key: 'h4', label: 'H4 标题' },
+      { key: 'p', label: '正文' }
+    ]
+  }
+  // 导出：md = 原文直出；PDF = 浏览器打印转存（矢量、mermaid 原样、零服务器）；
+  // Word = HTML-.doc（复用 docOf 序列化，WPS/Word 直开）。
+  return [
+    { key: 'md', label: 'Markdown' },
+    { key: 'pdf', label: 'PDF' },
+    { key: 'word', label: 'Word' }
+  ]
+})
+
+function onToolMenuPick(it) {
+  const kind = toolMenu.value.kind
+  hideToolMenu()
+  if (kind === 'heading') {
+    if (it.key === 'p') runCmd('ApplyToVisualLines', { name: 'paragraph' })
+    else runCmd('ApplyToVisualLines', { name: 'heading', attrs: { level: Number(it.key.slice(1)) } })
+    return
+  }
+  if (kind === 'export') {
+    if (it.key === 'md') {
+      // 正文跟着事件带给外层（它才知道文件名该叫什么），这里不自己落盘
+      emit('export-md', props.modelValue)
+    } else {
+      // PDF / Word：交给使用方（打印样式与 Word 包装需要页面级上下文）
+      emit('export-file', { format: it.key, markdown: props.modelValue })
+    }
+  }
+}
+
+/** 分割线：不走命令字符串（key 写错是静默 no-op，最难查）——直接按 schema 插节点。
+ *  ⚠️ milkdown preset-commonmark 里这个节点叫 **hr**（不是 prosemirror-markdown 的 horizontal_rule） */
+function insertHr() {
+  const view = getView()
+  const hrNode = view?.state.schema.nodes.hr
+  if (view && hrNode) {
+    view.dispatch(view.state.tr.replaceSelectionWith(hrNode.create()).scrollIntoView())
+  }
+}
+
+/** 导入的隐藏 input（模板工具栏里那颗）：点「导入」弹**系统文件选择器**。 */
+const importInput = ref(null)
+
+function pickImport() {
+  importInput.value?.click()
+}
+
+/**
+ * 选中 .md 之后：读文本 → **编辑器自己的解析器** → 插到光标处。
+ *
+ * <p>不整篇覆盖（replaceContent 是 AI 改写那条路）：导入是"往正在写的东西里
+ * 补一段"，已写的内容一个字都不能丢。`Slice(doc.content, 0, 0)` = 块级内容
+ * 以块的形式插进选区。
+ */
+async function onImportFile(e) {
+  const file = e.target.files?.[0]
+  // 清掉 value：同一个文件连导两次也要触发 change
+  e.target.value = ''
+  if (!file) return
+  const md = await file.text().catch(() => '')
+  const doc = md.trim() ? parseDoc(md) : null
+  const view = getView()
+  if (!doc || !view) return
+  view.dispatch(view.state.tr.replaceSelection(new Slice(doc.content, 0, 0)).scrollIntoView())
 }
 
 function hideLinkBar() {
@@ -1578,6 +1742,11 @@ const { get, loading } = useEditor((root) =>
     // 细节（尺寸为什么存在 title 里、为什么用 nodeView 而不是 CSS）见这个文件。
     .use(imageNodePlugin())
     .use(imageResizeView())
+    // 附件节点（2026-11-16）：正文里的「一个文件」是原子块（光标进不去、按 Delete 整块删），
+    // 节点自带按扩展名分的图标。markdown 往返不变（仍是 `[文件名](url)`），老正文自动变节点。
+    // ⚠️ 同样必须排在 commonmark 之后（$node 按 id 覆盖，后注册的赢）。
+    .use(fileNodePlugin())
+    .use(fileNodeView())
     // mermaid 代码块渲染成图。**纯视图层**：不改 schema、不改 markdown 解析与回写。
     .use(mermaidPlugin())
     // 通用交互能力：项目走"单独引入"模式没用 @milkdown/kit 聚合包，
@@ -1692,16 +1861,26 @@ function insertUploadedFile(view, ctx, file) {
       const url = fileUrl(res?.data?.path)
       if (!url) throw new Error('返回路径为空')
       const { schema } = view.state
-      // ⚠️ **第二个参数就是 marks，没有第三个**：NodeType.text(text, marks) 只收两个，
-      // 多传的那个会被静默丢弃。写成 `schema.text(name, null, link)` 的话链接标记从来没打上，
-      // 正文里就是一段纯黑文字 —— 上传其实成功了、卡片样式也配了，只是没有一个 <a> 可匹配。
-      const link = schema.marks.link.create({ href: url })
+      // ⚠️ **插附件节点，不再插一段链接文字**（2026-11-16）：
+      // 链接是文字 ⇒ 光标能停在文件名中间（点文件右侧的空白会被吸进文件名里），
+      // 节点是原子 ⇒ 进不去、选中即整体、Delete 整块删。markdown 里仍是 `[名](url)`。
+      const fileType = schema.nodes.kbFile
+      if (!fileType) {
+        // 节点没注册上（理论上不会）⇒ 退回老路插链接，别让文件传不上去
+        const link = schema.marks.link.create({ href: url })
+        view.dispatch(
+          view.state.tr.replaceSelection(
+            new Slice(Fragment.from([schema.nodes.paragraph.create(null, [
+              schema.text(name, link),
+              schema.text(' ')
+            ])]), 0, 0)
+          )
+        )
+        return
+      }
       view.dispatch(
-        view.state.tr.replaceSelection(
-          new Slice(Fragment.from([schema.nodes.paragraph.create(null, [
-            schema.text(name, link),
-            schema.text(' ')
-          ])]), 0, 0)
+        view.state.tr.replaceSelectionWith(
+          fileType.create({ href: url, name })
         )
       )
     })

@@ -1,22 +1,16 @@
 <template>
   <el-dialog
     :model-value="modelValue"
-    :title="mode === 'points' ? '写知识点' : '生成主题'"
+    :title="dialogTitle"
     width="var(--cc-dialog-w-lg)"
     :close-on-click-modal="false"
     @update:model-value="close"
   >
-    <!-- pack 模式三步：主题 → 规划 → 知识点（提交任务后弹窗关掉，没有"完成"页）。
-         **每一步的名字就是它产出的是什么**（目录 / 知识点）——
-         抽象词（「骨架」「正文」）在界面上没有对应物，用户得在脑子里翻译一遍。
-         **目录那步只落结构**（目录 + 知识点占位：title 有、content 空）；
-         写内容是**下一步**的事（那一步再选要不要标签 / 要不要知识点关联）。
-         points 模式只有一步：写知识点。 -->
-    <el-steps v-if="mode === 'pack'" :active="step" simple class="steps">
-      <el-step title="主题" />
-      <el-step title="规划" />
-      <el-step title="知识点" />
-    </el-steps>
+    <!-- ⚠️ **步骤指示条已删**（2026-11-15 用户）：生成搬后台后，「从第 1 步走到第 3 步」
+         的旅程不存在（第 1 步转后台即关、确认完第 3 步也后台跑）——指示一段不存在的
+         路程只会让人困惑「什么时候能点后面的」。标题跟着**入口的动作名**走
+         （ui-style §1：标题 = 动作名）：任务卡「确认」→ 确认目录；侧栏「生成主题」→
+         生成主题；目录「⋯ → 写知识点」→ 写知识点。 -->
 
     <!-- 第 1 步：来源 -->
     <section v-if="at.theme" class="pane">
@@ -107,14 +101,13 @@
         <p v-if="plan.tooLong.length" class="warn">{{ plan.tooLong.length }} 个目录名超过 {{ MAX_NAME }} 字</p>
         <p v-if="plan.tooMany" class="warn">一次最多创建 {{ MAX_NODES }} 个目录，这批有 {{ plan.tooMany }} 个</p>
         <p v-if="planIssue" class="warn">{{ planIssue }}</p>
-        <!-- **中性说明**（不是告警）：比如"这棵树来自后台任务"。
-             用 .warn 的红色会让人以为出了问题，而这只是交代来历。 -->
-        <p v-if="planNote" class="pane__hint">{{ planNote }}</p>
         <p v-if="plan.orphan.length" class="pane__hint">{{ plan.orphan.length }} 个知识点没有目录可挂</p>
 
         <!-- 建结构：逐条落库（目录 + 知识点占位），**不给取消**（写了一半会留脏数据）。
-             进度条放树外面：树此刻是只读淡出的，进度得看得见。 -->
-        <div v-if="building" class="prog">
+             进度条放树外面：树此刻是只读淡出的，进度得看得见。
+             ⚠️ **只画在本地建结构那一路**（planTask 为空）：后台任务交回来的树走服务端建，
+             弹窗只是等一拍——画进度就是「正在创建结构 0 / 0」的空转（2026-11-15 用户点名删）。 -->
+        <div v-if="building && !planTask" class="prog">
           <i :style="{ width: buildPercent }" />
           <span class="prog__text">正在创建结构 {{ buildProgress.done }} / {{ buildProgress.total }}</span>
         </div>
@@ -291,7 +284,7 @@ import {
   parseOutlineTree,
   markOutline,
   importPlan,
-  renderOutlineTree,
+
   allNodes,
   indexByParentName,
   walkTree,
@@ -326,6 +319,13 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'done'])
 
 const step = ref(0)
+
+/** 弹窗标题 = 入口的动作名（2026-11-15 用户定，取代「生成主题」一统到底）。 */
+const dialogTitle = computed(() => {
+  if (props.mode === 'points') return '写知识点'
+  if (props.planTask) return '确认目录'
+  return '生成主题'
+})
 const source = ref('ai')
 /**
  * 新版：每个知识点的「定位」（规划阶段产出，**只进材料、不落库**）。
@@ -371,8 +371,6 @@ const building = ref(false)
  * 而不是三秒后消失、留下半棵树让人自己猜为什么少了几个模块。
  */
 const planIssue = ref('')
-/** 中性说明（不是问题）：如"这棵树来自后台任务" */
-const planNote = ref('')
 /** 建结构的进度（逐条 createTopic）—— 树那一刻是只读淡出的，进度得另外显示 */
 const buildProgress = ref({ done: 0, total: 0 })
 const buildPercent = computed(() => {
@@ -481,7 +479,6 @@ watch(
     // 树的文本就是任务 result 里的 outline（树形符号），解析规则仍然只有一份。
     if (props.planTask && props.planOutline) {
       topic.value = props.planTask.title || ''
-      planNote.value = '这棵树来自后台任务，已经过校验 —— 可以删改后再建目录'
       applyOutline(props.planOutline, true)
     }
   }
@@ -520,7 +517,6 @@ function reset() {
   collapsed.value = new Set()
   intentMap.value = new Map()
   planIssue.value = ''
-  planNote.value = ''
   result.value = { dirs: 0, points: 0 }
   batch.value = null
 }
@@ -601,10 +597,16 @@ async function generateOutline() {
     const cats = getCategories()
     const parts = [`主题：${topic.value.trim()}`]
     // **补充说明**紧跟主题：它是"这一批要写什么"的整体限定
-    // （面向开发 / 面向考试 / 只要原理……），放在现有目录清单前面。
+    // （面向开发 / 面向考试 / 只要原理……），放在目录名单前面。
     if (extra.value.trim()) parts.push(`补充说明：${extra.value.trim()}`)
-    const existing = renderOutlineTree(cats)
-    if (existing) parts.push(`现有目录清单（缩进表示层级）：\n${existing}`)
+    // ⚠️ **只给一级目录名，不给子树**（2026-11-15 用户第 5 条实测铁证：全量目录树当材料，
+    // 主题「测试」被清单里最大的 JAVA 树带跑、生成的全是 Java 目录）。材料里 90% 是
+    // 现有树 ⇒ 对模型就是"照这个写"的强引导；而这份清单的本意只是**防重名**——
+    // 知道"已有哪些书"一层名单就够，子树结构对防重名零增益。
+    const topNames = (cats || []).filter((c) => Number(c.parentId || 0) === 0).map((c) => c.name)
+    if (topNames.length) {
+      parts.push(`已有的一级目录（避免与这些重复，新树自成一体）：\n${topNames.join('、')}`)
+    }
 
     await createGenTask({
       type: 'theme',
@@ -617,7 +619,8 @@ async function generateOutline() {
       }),
       steps: []
     })
-    ElMessage.success('已转到后台生成，可以在任务里看进度')
+    // ⚠️ 文案全站统一（2026-11-15 用户第 4 条）：所有后台任务入口只说这一句
+    ElMessage.success('已转到后台任务')
     // ⚠️ **走统一出口**（2026-11-12）：任务列表要**立刻**出现这张卡。
     // 以前这里发的是 `emit('openTasks')` —— 那个事件**没人监听**（AppLayout 只绑了 @done），
     // ⇒ 任务列表要刷新页面才看得到（用户原话「创建主题后任务列表不能马上看到任务」）。
@@ -900,7 +903,7 @@ async function confirmAndContinue() {
       mountParentId: 0,
       endpointId: pickEndpointId.value
     })
-    ElMessage.success('已确认：建目录、写正文都在后台进行，进度在「任务」里看')
+    ElMessage.success('已转到后台任务')
     emit('done')
     close()
   } catch (e) {
@@ -1075,7 +1078,7 @@ async function submitAsTask() {
         buildSummary: buildSum,
         endpointId: pickEndpointId.value
       })
-      ElMessage.success(`已提交（${steps.length} 条），可在「任务」里看进度`)
+      ElMessage.success('已转到后台任务')
     } else {
       await createGenTask({
         type: 'content',
@@ -1093,7 +1096,7 @@ async function submitAsTask() {
         }),
         steps
       })
-      ElMessage.success(`已提交任务（${steps.length} 条），可在「任务」里看进度`)
+      ElMessage.success('已转到后台任务')
     }
     // ⚠️ **任务列表立刻出现这张卡**（走统一出口，不靠父组件碰巧绑了 @done）。
     // `emit('done')` 那一路是给**目录树 / 知识点列表**刷新的（壳里那个回调管），
@@ -1116,34 +1119,7 @@ async function submitAsTask() {
    14 正文与控件（输入框 / 下拉 / 按钮 / tab）
    12 标签与说明（label / hint）
    以前是 13（label）+ 14（input）+ 12（small 下拉）混着来，同一屏三种大小、
-   控件高度还差 8px —— 就是"字忽大忽小"的来源。**控件一律 default 尺寸**。 */
-.steps {
-  margin-bottom: var(--sp-13);
-}
-/* 步骤条默认标题是 16px —— 比下面所有正文都大，一进弹窗最抢眼的就是它。
-   降到 14 跟正文同档，靠颜色（未做=浅、当前=主色）分状态，而不是靠字号。 */
-.steps :deep(.el-step__title) {
-  font-size: var(--text-md);
-  line-height: 24px;
-  color: var(--cc-text-3);
-}
-.steps :deep(.el-step__title.is-process) {
-  color: var(--cc-primary);
-  font-weight: 500;
-}
-.steps :deep(.el-step__icon.is-text) {
-  width: 20px;
-  height: 20px;
-  font-size: 11px;
-}
-.steps :deep(.el-step__head.is-process .el-step__icon) {
-  border-color: var(--cc-primary);
-  color: var(--cc-primary);
-}
-.steps :deep(.el-step__head.is-wait .el-step__icon) {
-  border-color: var(--cc-border-card);
-  color: var(--cc-text-4);
-}
+   控件高度还差 8px —— 就是"字忽大忽小"的来源。**控件一律 default 尺寸。 */
 .steps :deep(.el-step__arrow::before),
 .steps :deep(.el-step__arrow::after) {
   border-color: var(--cc-border-strong);

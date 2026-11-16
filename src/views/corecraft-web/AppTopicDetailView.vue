@@ -61,7 +61,21 @@
           @ready="onEditorReady"
           @outline="onOutline"
           @ask-ai="onAskAi"
+          @export-md="onExportMd"
+          @export-file="onExportFile"
         >
+          <!-- **顶栏右端集群**（2026-11-16 用户：「是顶栏的右上角啊」）：
+               文件动作在左、类型在最右。放在 `toolbar-end` 插槽里 ⇒ 它住在
+               **编辑器顶栏（色带）的右端**，不是标题行。
+               ⚠️ 实情仍在编辑器里：点「导出」调 editorRef.openExportMenu(按钮)
+               ⇒ 菜单由编辑器弹（它有原文），按钮位置由页面定。 -->
+          <template #toolbar-end>
+            <button class="filebtn" type="button" ref="exportBtn" @click="openExport">
+              <KbSvgIcon name="download" />
+              导出
+            </button>
+            <TopicTypeSelect v-model="editTypeId" class="title-type" @change="saveType" />
+          </template>
           <!-- 标题：无边框 input，点哪都能输，失焦即存。placeholder 是「请输入标题」
                不是「未命名」——标题本来就常是空的（createTopic 传 title: ''），
                所以这里不是"兜底占位"，而是一个**真的可以立刻点进去写**的标题位。
@@ -93,7 +107,6 @@
                 class="title"
                 @save="onTitleSave"
               />
-              <TopicTypeSelect v-model="editTypeId" class="title-type" @change="saveType" />
             </div>
             <!-- meta 行：左边 = 保存状态 · 更新时间 · 字数；
                  右边 = 图标一排（AI / 大纲 / 工具栏 / 全屏 / 删除）。
@@ -143,7 +156,9 @@
                   :title="toolbar ? '隐藏编辑工具栏' : '显示编辑工具栏'"
                   @click="toolbar = !toolbar"
                 >
-                  <KbSvgIcon name="text" />
+                  <!-- 工具栏开关（2026-11-16）：三条格式行 = 「点了会出一排格式工具」。
+                       原来是 gear（设置按钮的样子，认不出是格式栏）／T 形，两版都被否。 -->
+                  <KbSvgIcon name="format-lines" />
                 </button>
                 <button class="hact-btn" type="button" :title="immersive.on ? '退出全屏 · Esc' : '全屏阅读'" @click="immersive.toggle">
                   <KbSvgIcon name="fullscreen" />
@@ -440,7 +455,12 @@
             />
 
             <!-- 用哪个 API 调。存 localStorage（见 useAi），下拉里只列配全了的能用的 -->
-            <el-dropdown trigger="click" @command="useEndpoint">
+            <el-dropdown
+              trigger="click"
+              :persistent="ddKeepMounted"
+              @visible-change="onDropdownShow"
+              @command="useEndpoint"
+            >
               <span class="ask__model">
                 {{ currentEndpoint ? currentEndpoint.name : '选 API' }}
                 <i class="ask__caret" />
@@ -529,8 +549,11 @@ defineOptions({ name: 'AppTopicDetail' })
 import { ref, computed, onMounted, onBeforeUnmount, onActivated, onDeactivated, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { useDropdownKeepMounted } from '../../utils/dropdown'
 import { ArrowLeft, Close, DocumentAdd, DocumentChecked, Top, VideoPause } from '@element-plus/icons-vue'
 import MilkdownEditor from '../../components/MilkdownEditor.vue'
+import { exportPdf, exportWord } from '../../utils/exportDoc'
+import { htmlOf } from '../../utils/kbDocHtml'
 import KbSvgIcon from '../../components/corecraft-web/KbSvgIcon.vue'
 import KbLoading from '../../components/corecraft-web/KbLoading.vue'
 import KbSkeletonDoc from '../../components/corecraft-web/KbSkeletonDoc.vue'
@@ -558,6 +581,8 @@ import { adoptFieldOf } from './aiAdopt'
 import { hasBodyMark } from './aiEdit'
 import { copyText } from '../../utils/clipboard'
 import { toCategoryTree } from '../../utils/categoryTree'
+// AI 端点下拉的「首开保持挂载」（utils/dropdown.js）
+const { keepMounted: ddKeepMounted, onDropdownShow } = useDropdownKeepMounted()
 import { topicHref } from '../../utils/categoryNav'
 import { keywordFromRoute } from '../../utils/routeQuery'
 import {
@@ -870,6 +895,50 @@ function onEditorReady() {
   // 首次进详情页时编辑器还没建好，load() 里那次必然落空 ⇒ 高亮一句都不画，
   // 而界面上什么异常都看不出来（看着就是"搜索失灵了"）。
   locateBodySearch()
+}
+
+/**
+ * 导出 .md（工具栏「导出 → Markdown」）：正文由编辑器随事件带上，
+ * 这里只管**文件名**（它知道这条知识叫什么）和落盘。纯前端，零后端。
+ */
+function onExportMd(md) {
+  const blob = new Blob([md || ''], { type: 'text/markdown;charset=utf-8' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  // Windows 文件名禁用字符替换成下划线（标题里出现就存不下来）
+  a.download = `${(topic.value?.title || '知识').replace(/[\\/:*?"<>|]/g, '_')}.md`
+  a.click()
+  URL.revokeObjectURL(a.href)
+}
+
+/** 「导出」按钮：菜单由编辑器弹（它有原文），按钮位置由页面定 */
+const exportBtn = ref(null)
+function openExport() {
+  editorRef.value?.openExportMenu(exportBtn.value)
+}
+
+/**
+ * 导出 PDF / Word（工具栏「导出」菜单，2026-11-16 真实现）。
+ *
+ * HTML 由**编辑器自己的 DOMSerializer** 产出（htmlOf，与对比预览 / AI 回答同源——
+ * 自定义 nodeView 的渲染带着走，不重新解析）；PDF/Word 的包装在 utils/exportDoc.js。
+ * 这里只管**文件名**。
+ * ⚠️ **必须用 htmlOf(doc) 而不是 doc.innerHTML**：doc 是 ProseMirror 文档节点、
+ * 没有 innerHTML ⇒ 拿它会得到空串 ⇒ 打印出一张白纸（2026-11-16 实踩）。
+ */
+function onExportFile({ format }) {
+  const doc = editorRef.value?.docOf(editContent.value || '')
+  const html = htmlOf(doc)
+  if (!html) {
+    ElMessage.error('编辑器还没就绪，稍后再试')
+    return
+  }
+  const name = (topic.value?.title || '知识').replace(/[\\/:*?"<>|]/g, '_')
+  if (format === 'pdf') {
+    exportPdf(html, name)
+  } else if (format === 'word') {
+    exportWord(html, name)
+  }
 }
 onActivated(() => {
   // keep-alive 切回：DOM 脱插再插回，元素引用过期，重挂一次；阅读位置按老规矩归顶

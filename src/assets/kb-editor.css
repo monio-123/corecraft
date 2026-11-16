@@ -20,7 +20,15 @@
   align-items: center;
   gap: var(--sp-2);
   flex-wrap: wrap;
-  padding-bottom: var(--sp-6);
+  /* 满宽色带（2026-11-16 二稿，方案稿 editor-toolbar-full-20261116）：工具栏是
+     一条铺满框宽的色带（surface-2 底 + 上下边线），不再浮在内容上方——
+     负边距出血到框边（出血量 = 框自己的内距：详情 .content 与首页 .quick
+     左右都是 --sp-12、顶部都是 --kb-frame-pad-y，两页同值 ⇒ 通用成立），
+     色带自身再留同值内距，按钮与框边距离不变。 */
+  margin: calc(-1 * var(--kb-frame-pad-y, var(--sp-12))) calc(-1 * var(--sp-12)) var(--kb-frame-pad-y, var(--sp-11));
+  padding: var(--sp-2) var(--sp-12);
+  background: var(--cc-surface-2);
+  border-top: 1px solid var(--cc-border);
   border-bottom: 1px solid var(--cc-border);
   /* 工具条下沿到正文第一行的呼吸位 = **框自己的内边距**（--kb-frame-pad-y）。
      简洁模式（没有工具条）正文第一行离框顶的距离就是那个内边距；
@@ -52,6 +60,62 @@
    默认的 inline 会给按钮底下留一条基线空隙，把这一排的高度撑高几像素。 */
 .md-btn-wrap {
   display: inline-flex;
+}
+/* 格式钮里的图标 17px（设计稿 .ico = 17px；KbSvgIcon 是 1em 方图，抬它的 font-size 即放大，
+   按钮文字仍走 --text-sm 不受影响）。集群里的 filebtn 图标是另一档（15px，见 .filebtn svg）。 */
+.md-toolbar .md-btn-wrap svg {
+  font-size: 17px;
+}
+/* ---------- 工具栏分组 + 尾部动作区（2026-11-15，方案稿 ui-preview/editor-toolbar-20261115） ----------
+   四组格式 + 尾部「导入 导出 ···」，组间一条 1px 竖线；尾部着主色——
+   文件级动作和字符级格式视觉分层。溢出策略：低频项进「···」，主栏永不换行。 */
+.md-sep {
+  flex: none;
+  width: 1px;
+  height: 14px;
+  margin: 0 var(--sp-2);
+  background: var(--cc-border);
+}
+.md-toolbar .el-button.md-btn-tail {
+  color: var(--cc-primary);
+}
+.md-toolbar .el-button.md-btn-tail:hover {
+  background: var(--cc-primary-soft);
+  color: var(--cc-primary);
+}
+/* 导入的隐藏 input：只借它弹系统文件选择器，永远不显示 */
+.md-import-input {
+  display: none;
+}
+/* 工具菜单浮层（标题档位 / ··· / 导出）：与字号字体浮层（.format-pick）同一张脸 */
+.tool-menu {
+  z-index: 1000;
+  flex-direction: column;
+  align-items: stretch;
+  padding: var(--sp-2);
+  min-width: 128px;
+}
+.tool-menu__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-8);
+  padding: var(--sp-4) var(--sp-8);
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-size: var(--text-md);
+  color: var(--cc-text-1);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tool-menu__item:hover {
+  background: var(--cc-surface-2);
+}
+.tool-menu__soon {
+  font-size: var(--text-xs);
+  color: var(--cc-text-4);
 }
 /* ---------- 正文列左右留多少（折叠箭头那条左边距） ----------
    三个数必须是一套：左边距多宽、箭头多宽、箭头与标题之间留多少缝。
@@ -1091,12 +1155,14 @@
 }
 
 /* ---------- 附件 ----------
-   **判据只靠「它是 <a> 而不是 <img>」+ href 前缀**：
-   图片由 image 节点渲染成 `<img>`，所以任何指向 `/api/files/` 的**链接**必然是附件。
-   不需要查扩展名、不需要额外属性 —— 服务端在读取时已经按扩展名决定
-   Content-Type 和 inline/attachment，两边用的是同一套判据。
-   这也是**不做「文件类别」目录层**的另一个理由：卡片化完全靠渲染层兜。 */
-.milkdown-editor-body .ProseMirror a[href^="/api/files/"] {
+   两种形态，**同一张脸**：
+   ① `a[href^="/api/files/"]` —— 行内链接形态（手写的链接、正文里混排的链接）；
+   ② `.kb-file` —— **附件节点**（2026-11-16 起上传的、以及老正文解析出来的）：
+      原子块，光标进不去文件名中间、选中即整体、Delete 整块删，带按扩展名分的图标。
+   判据只靠「指向 `/api/files/`」：图片由 image 节点渲染成 `<img>`，所以任何指向
+   `/api/files/` 的**链接**必然是附件。不查扩展名、不需要额外属性。 */
+.milkdown-editor-body .ProseMirror a[href^="/api/files/"],
+.milkdown-editor-body .ProseMirror .kb-file {
   display: inline-flex;
   align-items: center;
   gap: var(--sp-6);
@@ -1111,22 +1177,45 @@
   border-radius: var(--radius-md);
   /* 文件名可能很长（本地文件重名的情况），不能把整行撑破 */
   word-break: break-all;
+  cursor: pointer;
 }
-/* 图标用 CSS 画一个"回形针"，不引图片资源 —— 编辑器里嵌一张图标等于又往
-   存储里塞一个对象，而它自己还得先能显示出来 */
+/* 图标：行内链接形态用 CSS 画一个"回形针"（不引图片资源 —— 编辑器里嵌一张图标
+   等于又往存储里塞一个对象，而它自己还得先能显示出来）；附件节点形态用节点自带的
+   SVG（按扩展名分家族，见 utils/fileIcons.js）。 */
 .milkdown-editor-body .ProseMirror a[href^="/api/files/"]::before {
   content: '📎';
   font-size: var(--text-base);
   line-height: 1;
 }
-.milkdown-editor-body .ProseMirror a[href^="/api/files/"]:hover {
+.milkdown-editor-body .ProseMirror .kb-file__ico {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.milkdown-editor-body .ProseMirror .kb-file__ico svg {
+  width: 16px;
+  height: 16px;
+}
+/* 文件名与图标之间不要再叠一次 gap（.kb-file 自己已经有 gap） */
+.milkdown-editor-body .ProseMirror .kb-file__name {
+  min-width: 0;
+}
+.milkdown-editor-body .ProseMirror a[href^="/api/files/"]:hover,
+.milkdown-editor-body .ProseMirror .kb-file:hover {
   color: var(--cc-primary);
   border-color: var(--cc-primary);
 }
 .md-btn-bold,
 .md-btn-italic {
-  /* 用 Times New Roman 让字母 B/I 跟中文按钮视觉上区分开，不再加字重/斜体（之前 font-weight:700 + font-style:italic 看起来像 demo 按钮而不是工具栏） */
-  font-family: 'Times New Roman', serif;
+  /* 设计稿 ui-preview/editor-topbar-v5：字面钮 B/I 是 Georgia 衬线（.b .t），
+     B 加粗、I 斜体（稿里就是 <b>/<i> 两个标签）。 */
+  font-family: Georgia, 'Times New Roman', serif;
+}
+.md-btn-bold {
+  font-weight: 700;
+}
+.md-btn-italic {
+  font-style: italic;
 }
 
 /* 插入表格 dialog：行/列两个数字输入紧凑展示 */
@@ -1367,10 +1456,10 @@
 .format-pick__item:hover {
   background: var(--cc-surface-2);
 }
-/* 「Aa」按钮用衬线体，跟 B / I 那一组（Times New Roman）同一张脸 */
+/* 「Aa」按钮：Georgia 13px（设计稿 v5 的 Aa span：Georgia,serif 13px），跟 B / I 同一张脸 */
 .md-btn-aa {
-  font-family: 'Times New Roman', serif;
-  font-size: var(--text-md);
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: var(--text-sm);
 }
 
 /* 表格渲染样式：prosemirror-tables 自带 CSS（@milkdown/prose/tables/style/tables.css）
@@ -1630,4 +1719,50 @@
   background: var(--cc-primary-soft);
   box-shadow: inset 0 -2px 0 var(--cc-primary);
   color: var(--cc-text-1);
+}
+
+/* ---------- 二稿补充（2026-11-16，方案稿 editor-toolbar-full-20261116） ---------- */
+/* 弹性空档：把尾部文件动作钉到右端（格式组靠左、动作靠右 = 语雀的满宽密度）。
+   只在声明了尾部动作时渲染。 */
+.md-fill {
+  flex: 1;
+}
+/* 尾部文件动作（导入/导出）：着主色软底——文件级动作与字符级格式视觉分层 */
+.md-toolbar .el-button.md-btn-tail {
+  color: var(--cc-primary);
+  background: var(--cc-primary-soft);
+}
+.md-toolbar .el-button.md-btn-tail:hover {
+  background: color-mix(in srgb, var(--cc-primary) 18%, transparent);
+  color: var(--cc-primary);
+}
+
+/* ---------- 文件动作按钮（导入/导出，2026-11-16） ----------
+   两页同一款：描边 chip + 图标 + 文字（之前一个文字按钮、一个纯下载图标，一眼像两个东西）。
+   图标同族镜像：导入=箭头入、导出=箭头出。 */
+.filebtn {
+  height: 28px;
+  padding: 0 11px 0 9px;
+  border: 1px solid var(--cc-border-card);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--cc-text-2);
+  font-size: var(--text-md);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+  cursor: pointer;
+  transition: border-color var(--t-fast, 140ms) var(--ease, ease),
+              color var(--t-fast, 140ms) var(--ease, ease),
+              background var(--t-fast, 140ms) var(--ease, ease);
+}
+.filebtn .kb-icon-btn,
+.filebtn svg {
+  width: 15px;
+  height: 15px;
+}
+.filebtn:hover {
+  border-color: var(--cc-primary);
+  color: var(--cc-primary);
+  background: var(--cc-primary-soft);
 }

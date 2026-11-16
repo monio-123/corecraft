@@ -1,5 +1,8 @@
 <template>
-  <div class="app-container">
+  <!-- 管理后台壳：**固定本色**（2026-11-15 主题收敛，见 themes.css 尾部的覆盖块）。
+       admin-nav-root 挂在 html 的最近后代上，那条覆盖块把主题 token 拉回本色值
+       ——后台是工作界面，不参与换装（登录页同理：独立视觉，不跟主题）。 -->
+  <div class="app-container admin-nav-root">
     <!-- 顶栏 -->
     <header class="header">
       <RouterLink to="/" class="brand">

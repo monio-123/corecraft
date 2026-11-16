@@ -61,4 +61,4 @@ export const editorProps = {
  * `v-model:show-toolbar` —— 看着是双向绑定，实际是单向，哪天在编辑器内部改它
  * 父层那份不会动、且不报错。
  */
-export const editorEmits = ['update:modelValue', 'submit', 'ready', 'outline', 'ask-ai']
+export const editorEmits = ['update:modelValue', 'submit', 'ready', 'outline', 'ask-ai', 'export-md', 'export-file']

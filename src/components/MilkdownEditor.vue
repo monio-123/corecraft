@@ -31,9 +31,15 @@
       @ready="emit('ready')"
       @outline="emit('outline', $event)"
       @ask-ai="emit('ask-ai', $event)"
+      @export-md="emit('export-md', $event)"
+      @export-file="emit('export-file', $event)"
       >
         <template #before-content>
           <slot name="before-content" />
+        </template>
+        <!-- 顶栏右端集群（文件动作 + 类型）：页面注入，住在**顶栏右端** -->
+        <template #toolbar-end>
+          <slot name="toolbar-end" />
         </template>
       </MilkdownEditorBody>
     </MilkdownProvider>
@@ -64,6 +70,10 @@ defineExpose({
   switchContent: (md) => bodyRef.value?.switchContent(md) ?? false,
   /** markdown → ProseMirror doc（对比区复用编辑器的解析器，保证渲染与正文一致）。解析不了返回 null */
   docOf: (md) => bodyRef.value?.docOf(md) ?? null,
+  /** 打开导出菜单（贴在页面那颗按钮下面）——文件动作由页面画，实情在编辑器里 */
+  openExportMenu: (anchor) => bodyRef.value?.openExportMenu(anchor) ?? false,
+  /** 弹系统文件选择器（导入 .md） */
+  pickImportFile: () => bodyRef.value?.pickImportFile() ?? false,
   /** 一段范围里的顶层块（AI 写入前的对比区用） */
   blocksInRange: (from, to) => bodyRef.value?.blocksInRange(from, to) ?? [],
   /** 在某段块之后写入新内容（markdown）。返回有没有写进去 */

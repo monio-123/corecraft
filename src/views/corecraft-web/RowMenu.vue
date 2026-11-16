@@ -24,7 +24,7 @@
   <el-dropdown
     trigger="click"
     :persistent="keepMounted"
-    @visible-change="(v) => { if (v) keepMounted = true }"
+    @visible-change="onDropdownShow"
     @command="(cmd) => emit('command', cmd)"
   >
     <!-- prevent.stop 必须写在这里：调用方那一行本身通常也是可点的（RouterLink / button），
@@ -72,9 +72,9 @@
  * 外观、旋转、prevent.stop 这些一字不差。各写一份的话，改一次样式要改两个文件，
  * 而且早晚会写成不一样的两份。
  */
-import { ref } from 'vue'
 import { MoreFilled } from '@element-plus/icons-vue'
 import KbSvgIcon from '../../components/corecraft-web/KbSvgIcon.vue'
+import { useDropdownKeepMounted } from '../../utils/dropdown'
 
 const props = defineProps({
   title: { type: String, default: '操作' },
@@ -90,8 +90,8 @@ const props = defineProps({
 })
 const emit = defineEmits(['command'])
 
-/** 首次打开后保持挂载（见模板顶部 persistent 注释）：false→true 只翻一次，不回退。 */
-const keepMounted = ref(false)
+/** 首开保持挂载（见模板顶部 persistent 注释）：收敛在 utils/dropdown.js，全站下拉共用 */
+const { keepMounted, onDropdownShow } = useDropdownKeepMounted()
 </script>
 
 <style scoped>

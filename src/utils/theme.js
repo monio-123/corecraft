@@ -121,6 +121,7 @@ export function setTheme(v) {
  */
 export function initTheme() {
   watchEffect(() => applyTheme(currentTheme()))
+  watchEffect(() => applyFont(currentFont()))
 }
 
 /**
@@ -131,4 +132,29 @@ export function migrateThemeToConfig() {
   if (getUiPref(KEY) != null) return
   const legacy = readLegacy()
   if (legacy) setUiPref(KEY, legacy)
+}
+
+/* ================= 字体档（2026-11-15，三档收敛 D） =================
+ * 正文/展示字体从主题解耦成配置（html[data-font]）：默认 sans（无衬线，
+ * 原本色 body 栈 = 用户说的「耀夜的标准字体」）；serif = 原素雅衬线栈。
+ * 素雅主题块里的自动衬线已撤——切素雅想要衬线来这里选。
+ * 与主题同一条通道（配置树 + getUiPref 同源），入口在设置弹窗「界面」组。 */
+const FONT_KEY = 'ui.font'
+const FONT_VALID = ['sans', 'serif']
+const FONT_DEFAULT = 'sans'
+
+export function currentFont() {
+  const v = getUiPref(FONT_KEY)
+  return FONT_VALID.includes(v) ? v : FONT_DEFAULT
+}
+
+function applyFont(v) {
+  if (v !== FONT_DEFAULT) document.documentElement.dataset.font = v
+  else delete document.documentElement.dataset.font
+}
+
+export function setFont(v) {
+  if (!FONT_VALID.includes(v)) return
+  applyFont(v)
+  setUiPref(FONT_KEY, v)
 }
