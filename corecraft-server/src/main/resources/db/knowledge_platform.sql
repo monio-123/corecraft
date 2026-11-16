@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS `kp_topic` (
   `is_delete` TINYINT NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`),
   KEY `idx_user_id` (`user_id`),
+  KEY `idx_user_delete` (`user_id`, `is_delete`),
   KEY `idx_parent_topic` (`parent_topic_id`),
   KEY `idx_category_id` (`category_id`),
   KEY `idx_create_time` (`create_time`),

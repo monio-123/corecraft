@@ -1,0 +1,18 @@
+-- ============================================================
+-- 2026-11-16 复合索引：kp_topic (user_id, is_delete)
+--
+-- 为什么：
+--   所有点位查询（selectIndex / selectPageProjection / countPageProjection /
+--   MP 实体查询）都带 `user_id = ? AND is_delete = 0`，原单列 idx_user_id
+--   盖不住组合过滤。2026-11-16 清掉 2428 条软删行后（见
+--   db/_archive/2026-11-16_purge_soft_deleted_topics.sql）数据库本身很快
+--   （索引查询 37ms），这个索引是**随数据增长的卫生项**：软删行重新积累后
+--   它让扫描跳过死行，而不是等"又变慢了"再补。
+--
+-- 执行时机：一次性 DDL，已在线上库执行（2026-11-16）。重放新库时
+--   knowledge_platform.sql 的 CREATE TABLE 已含同一条 KEY，无需重跑本文件。
+--
+-- 自检：SHOW INDEX FROM corecraft.kp_topic WHERE Key_name='idx_user_delete';
+-- 回滚：ALTER TABLE corecraft.kp_topic DROP INDEX idx_user_delete;
+-- ============================================================
+ALTER TABLE corecraft.kp_topic ADD INDEX idx_user_delete (user_id, is_delete);

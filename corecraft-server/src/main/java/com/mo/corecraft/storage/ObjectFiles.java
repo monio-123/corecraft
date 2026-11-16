@@ -71,14 +71,63 @@ public final class ObjectFiles {
     }
 
     /**
-     * 对象键：{@code u/<userId>/<scope>/<uuid><ext>}。
+     * 对象键：{@code u/<userId>/<scope>/<uuid>/<原文件名>}。
      *
      * <p>返回相对路径而不是完整 URL —— 正文里存的是它，前端拼 {@code /api/files/}。
      * 换存储实现（本地盘 → S3）时正文一个字都不用改。
+     *
+     * <p>⚠️ **2026-11-16 键形状变了：uuid 升成一层目录，末段放原文件名**
+     * （原来是 {@code u/<userId>/<scope>/<uuid><ext>}，原名只取扩展名、本体丢弃）。
+     * 原因：**下载文件名取的是路径末段**（{@code FileController.contentDisposition}），
+     * 原名不落在键里 ⇒ 用户下载到的是 {@code f9ace1ea….xlsx} 这种 UUID；
+     * 界面里看到的名字只是 markdown 的**链接文字**，服务端拿不到。
+     * ⇒ 键里带上原名，文件自己携带名字：直链复制给别人也是对的名字。
+     *
+     * <p>⚠️ **老文件不受影响**：它们的末段就是 uuid，读取时照旧（下载名仍是 uuid）。
+     * 要给老文件改名得从 markdown 链接文字回填 + 迁移对象，暂不做。
+     *
+     * <p>⚠️ **uuid 仍然是唯一的不可猜部分**：末段是原名（用户自己看得见的），
+     * 但路径的**随机段**没变 ⇒ {@code /files/**} 免鉴权的安全边界不变
+     * （猜不到 uuid 就拿不到文件）。
      */
     public static String keyOf(Long userId, String scope, String originalFilename) {
-        String suffix = suffixOf(originalFilename);
-        return "u/" + userId + "/" + scope + "/" + UUID.randomUUID().toString().replace("-", "") + suffix;
+        return "u/" + userId + "/" + scope + "/" + UUID.randomUUID().toString().replace("-", "")
+                + "/" + safeNameOf(originalFilename);
+    }
+
+    /**
+     * 原文件名 → **可放进 URL 路径的一段**。
+     *
+     * <p>要挡掉的字符：
+     * <ul>
+     *   <li>{@code / \ : * ? " < > |} —— 路径分隔符与 URL 保留字符，
+     *       留着会破坏路径（{@code ?} 变查询串）</li>
+     *   <li>{@code #} —— 会变成 URL 片段，后半截丢失，文件直接 404</li>
+     *   <li>{@code %} —— 会跟后面两位十六进制一起被当成转义序列</li>
+     *   <li>控制字符（含换行）</li>
+     *   <li>{@code .} {@code ..} 单独成段 —— 那会被当成父目录</li>
+     * </ul>
+     * 其余（中文、空格、括号…）原样保留 —— 中文由浏览器自动 percent-encode、
+     * 容器解码后原样回来。
+     *
+     * <p>限长 120 字符（超长截断 + 保留扩展名）—— 路径长度有上限，
+     * 且文件名太长在各处都不好看。
+     */
+    static String safeNameOf(String originalFilename) {
+        String name = originalFilename == null ? "" : originalFilename.trim();
+        name = name.replaceAll("[\\\\/:*?\"<>|#%\\p{Cntrl}]", "_");
+        if (name.isEmpty() || name.equals(".") || name.equals("..")) {
+            return "file";
+        }
+        if (name.length() > 120) {
+            // 超长：留扩展名，截主干（扩展名丢了浏览器就认不出类型）
+            int dot = name.lastIndexOf('.');
+            String stem = dot > 0 ? name.substring(0, dot) : name;
+            String suffix = dot > 0 ? name.substring(dot) : "";
+            int keep = Math.max(1, 120 - suffix.length());
+            name = stem.substring(0, Math.min(stem.length(), keep)) + suffix;
+        }
+        return name;
     }
 
     /** 取小写扩展名（不含点），没有就返回空串 */
@@ -86,21 +135,5 @@ public final class ObjectFiles {
         String name = path.substring(path.lastIndexOf('/') + 1);
         int dot = name.lastIndexOf('.');
         return dot < 0 ? "" : name.substring(dot + 1).toLowerCase(Locale.ROOT);
-    }
-
-    /**
-     * 扩展名从**原始文件名**上取，不用 {@code getContentType()} 反查 ——
-     * 两者对不上时（把 .png 改名成 .jpg 再传），浏览器给的 type 才是不可信的。
-     *
-     * <p>取不到就留空：没有扩展名的对象照样存得进去，只是浏览器不内联渲染。
-     */
-    private static String suffixOf(String originalFilename) {
-        int dot = originalFilename.lastIndexOf('.');
-        if (dot < 0 || dot == originalFilename.length() - 1) {
-            return "";
-        }
-        String suffix = originalFilename.substring(dot);
-        // 只留字母数字和点，`..` / `/` 这类不许进来
-        return suffix.matches("\\.[A-Za-z0-9]{1,10}") ? suffix.toLowerCase(Locale.ROOT) : "";
     }
 }

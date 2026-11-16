@@ -1,0 +1,18 @@
+-- ============================================================
+-- 2026-11-16 物理清理软删知识点（一次性迁移，已执行）
+--
+-- 为什么：
+--   软删行积累到 2428 条（在线 1948 的 125%），所有按 is_delete=0 过滤的
+--   扫描都在陪跑死行。系统**没有恢复路径**（全库 grep 无 restore/undelete），
+--   删除时关联已物理删（kp_topic_tag / kp_topic_relation），掌握度证据与
+--   学习投影对软删行引用为 0（2026-11-16 实测），考试题目是卷内快照不挂
+--   topic_id ⇒ 物理删无副作用。
+--
+-- 备份：清理前 2428 行已导出可回放 SQL：
+--   brove 工作区 _backup/2026-11-16_perf-plan/kp_topic-soft-deleted-backup-20261116.sql
+--   （INSERT IGNORE 防撞，USE corecraft；恢复时整文件执行）
+--
+-- 执行时机：仅本次迁移。已在线上库执行（2026-11-16，Affected 2428）。
+-- 自检：SELECT COUNT(*) FROM corecraft.kp_topic WHERE is_delete=1;  → 0
+-- ============================================================
+DELETE FROM corecraft.kp_topic WHERE is_delete = 1;

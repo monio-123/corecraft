@@ -124,9 +124,14 @@ public class FileController {
     /**
      * 内联还是下载。
      *
-     * <p>inline 给文件名会被浏览器当标题弹出来（UUID 一串随机字符），
-     * 而 attachment 的文件名是 UUID 更没意义 —— 所以两边都只带
-     * {@code filename*}，让浏览器至少知道这是什么类型的东西。
+     * <p>**文件名 = 路径末段**（2026-11-16 起末段是原文件名，见 {@code ObjectFiles.keyOf}）：
+     * 用户下载到的是「天源迪科-电渠资源台账.xlsx」，不再是 {@code f9ace1ea….xlsx}。
+     * 老文件的末段本来就是 uuid ⇒ 行为不变（下载名仍是 uuid，无回归）。
+     *
+     * <p>⚠️ **只用 {@code filename*}**（RFC 5987 的 percent-encoded 形式）：文件名是
+     * 用户传的，里面可能有引号 / 分号 / 换行 —— 裸写进 header 会被解析成另一个
+     * header（响应拆分）。percent-encode 之后没有这些字符；Chrome / Edge /
+     * Firefox / Safari 都认（按 UTF-8 还原成中文名）。
      */
     private String contentDisposition(String path, boolean inline) {
         String name = path.substring(path.lastIndexOf('/') + 1);
