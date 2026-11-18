@@ -11,20 +11,22 @@
          和卡片摘要、删除确认框是同一份。 -->
     <p class="ms__now">{{ subject }}</p>
 
-    <!-- 三态选择：**参与 / 不参与 / 跟随类型默认**。
+    <!-- 三态选择：**参与 / 不参与 / 跟随默认**。
          ⚠️ **第三档不是"多余的选项"**：「参与不参与」是二元的，但"这条自己说了算"
-         和"这条跟着它所属的类型走"是两回事 —— 用户可能先关掉某一条，
-         之后又把类型默认值改了，希望这条跟着变回去。没有第三档就回不去了。
-         后端判据只有一处（MasteryScope：单条 > 类型 > 兜底），这里只是把选择发过去。 -->
+         和"这条跟着默认走"是两回事 —— 用户可能先关掉某一条，
+         之后又想让它跟着回来。没有第三档就回不去了。
+         ⚠️ **默认的口径变了**（2026-11-16 D10 类型退役）：原来默认是"跟随类型"
+         （学习默认参与、笔记默认不参与），现在默认是"**有没有被检验过**"——
+         被考过就参与，没被考过就不参与（后端判据只有一处 MasteryScope）。 -->
     <el-radio-group v-model="choice" class="ms__choices">
       <el-radio value="on">参与掌握度</el-radio>
       <el-radio value="off">不参与掌握度</el-radio>
-      <el-radio value="inherit">跟随类型默认（{{ typeDefaultText }}）</el-radio>
+      <el-radio value="inherit">跟随默认</el-radio>
     </el-radio-group>
 
     <p class="hint">
       「不参与」= 这条不统计掌握度、不显示档位、不计入目录的掌握度分布。<br />
-      「跟随类型默认」= 取消这一条的单独设置，跟随它所属类型（学习默认参与、笔记默认不参与）。
+      「跟随默认」= 取消这一条的单独设置：被检验过（有证据）就参与，没被检验过就不参与。
     </p>
 
     <template #footer>
@@ -51,7 +53,7 @@
  */
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { setTopicMasteryEnabled, excerptOf, getTopicTypeLabel } from './useCorecraftWebStore'
+import { setTopicMasteryEnabled, excerptOf } from './useCorecraftWebStore'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -70,13 +72,6 @@ const subject = computed(() => {
   return t.title || excerptOf(t.content, 24) || '这一条'
 })
 
-/** 类型默认值那一档的人话说明（学习/笔记） */
-const typeDefaultText = computed(() => {
-  const t = props.topic
-  if (!t) return '未配置'
-  const label = getTopicTypeLabel(t.typeId)
-  return label ? `${label}类型` : '未配置'
-})
 
 /**
  * 当前档位：'on' / 'off' / 'inherit'。

@@ -73,14 +73,6 @@
             <el-table-column prop="sort" label="排序" width="80" />
             <el-table-column prop="cssClass" label="样式标记" min-width="110" show-overflow-tooltip />
             <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip />
-            <!-- 「参与掌握度」只在知识点类型这套字典上有意义（其它字典项没这个概念） -->
-            <el-table-column v-if="isTopicTypeDict" label="掌握度" width="90">
-              <template #default="{ row }">
-                <el-tag size="small" :type="row.masteryEnabled ? 'success' : 'info'">
-                  {{ row.masteryEnabled ? '参与' : '不参与' }}
-                </el-tag>
-              </template>
-            </el-table-column>
             <el-table-column label="状态" width="90">
               <template #default="{ row }">
                 <el-tag size="small" :type="row.enabled ? 'success' : 'info'">
@@ -150,17 +142,6 @@
         <el-form-item label="备注">
           <el-input v-model="itemForm.remark" type="textarea" :rows="3" />
         </el-form-item>
-        <!-- 「参与掌握度」只对知识点类型这一套字典有意义（其它字典项没这个概念），
-             所以按字典类型编码决定显不显示，而不是给所有字典项都摆一个看不懂的开关。
-             类型层只有「参与 / 不参与」两种有效状态（未配置与不参与行为一致），
-             所以用开关而不是三态选择器。 -->
-        <el-form-item v-if="isTopicTypeDict" label="参与掌握度">
-          <el-switch v-model="itemForm.masteryEnabled" active-text="参与" inactive-text="不参与" />
-          <div class="hint">
-            该类型下的知识点默认是否参与掌握度统计（学习默认参与、笔记默认不参与）。<br />
-            单条知识点可以在卡片菜单里单独覆盖这一条。
-          </div>
-        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="itemDialogVisible = false">取消</el-button>
@@ -213,12 +194,8 @@ const itemForm = reactive({
   sort: 0,
   enabled: true,
   cssClass: '',
-  remark: '',
-  masteryEnabled: false
+  remark: ''
 })
-
-/** 只有知识点类型这一套字典有「参与掌握度」的概念 */
-const isTopicTypeDict = computed(() => currentType.value?.code === 'kp_topic_type')
 
 const filteredDictTypes = computed(() => {
   const text = keyword.value.trim().toLowerCase()
@@ -341,8 +318,6 @@ const openItemDialog = (item) => {
   itemForm.enabled = item?.enabled ?? true
   itemForm.cssClass = item?.cssClass ?? ''
   itemForm.remark = item?.remark ?? ''
-  // 类型层：null（未配置）与 false（明确不参与）行为一致 ⇒ 统一落成 false
-  itemForm.masteryEnabled = item?.masteryEnabled === true
   itemDialogVisible.value = true
 }
 
@@ -364,9 +339,7 @@ const saveItem = async () => {
       sort: itemForm.sort,
       enabled: itemForm.enabled,
       cssClass: itemForm.cssClass,
-      remark: itemForm.remark,
-      // 只在知识点类型这套字典上带这个字段：其它字典项传了也是白传
-      ...(isTopicTypeDict.value ? { masteryEnabled: itemForm.masteryEnabled } : {})
+      remark: itemForm.remark
     }
     if (itemForm.id) {
       await updateDictItem({ id: itemForm.id, ...payload })

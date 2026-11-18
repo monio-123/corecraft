@@ -84,7 +84,7 @@ export function useQuiz({ topicIds, titleOf, topicUpdatedAt, onBeforeStart } = {
     return (
       genTasks.value.find((t) => {
         if (t.type !== 'quiz') return false
-        if (!['queued', 'running', 'canceling', 'awaiting'].includes(t.status)) return false
+        if (!(['queued', 'running', 'canceling'].includes(t.status) || (t.status === 'succeeded' && !t.confirmedAt))) return false
         let p = {}
         try {
           p = JSON.parse(t.params || '{}')

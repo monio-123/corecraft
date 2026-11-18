@@ -16,53 +16,6 @@
          - **展开全部 / 收起全部 / 过滤**：三个"一次定位"用的工具。
 
          ⇒ 树里**不再画根行**（书名已经在标题行里，再画一遍就是两行标题）。 -->
-    <header v-if="rootCat" class="ct__head">
-    <!-- ⚠️ 2026-11-08 复刻 + 演进：标题行 = meta 行（左）+ 分段式「目录树 | 卡片」（右）。
-         ⚠️ **书名大标题删了**（用户：「下面也要顺便下掉」）——书名由**顶栏**面包屑承担
-         （AppLayout 顶栏的 CategoryCrumbs 跟上下文走），内容区不重复。 -->
-      <div class="ct__head-main">
-        <!-- ⚠️ **书名大标题删了**（2026-11-08 用户：「下面也要顺便下掉」）——
-             书名已经在**顶栏**（AppLayout 的面包屑跟上下文走），这里再放一遍就是两遍。
-             meta 行升为标题行的第一行；书名的搜索命中定位靠 meta 行上的 data-cat-id。 -->
-        <div
-          class="ct__meta"
-          :data-cat-id="rootCat.id"
-          :data-cat-name="rootCat.name"
-        >
-          <!-- ⚠️ **统计文字整行撤了**（2026-11-13 用户：「左上角显示的多少个知识点
-               多少节点目录全部删除掉 保留一个三个点按钮就行」）⇒ 这行现在只剩
-               **这本书唯一的操作入口**「⋯」，位置仍在左上角。
-               ⚠️ `data-cat-id` 挂在 `.ct__meta` 上不能删：① 搜索命中要能跳到书名；
-               ② 拖拽时它是「落到这本书根下」的唯一落点（树里不画根行）。
-               ⚠️ **这一颗是横排 ⋯**，树身行尾那些统一竖排 ⋮ —— 同一处按位置分叉，
-               见样式表末尾那条 deep 规则。菜单仍是同一份 `CategoryRowMenu`、常显。 -->
-          <CategoryRowMenu
-            class="ct__head-menu"
-            btn-class="ct-dots"
-            :category="rootCat"
-            @add="emit('add', $event)"
-            @rename="emit('rename', $event)"
-            @points="emit('points', $event)"
-          />
-          <!-- ⚠️ 章视图模式已删（2026-11-14 用户：「去掉这个能力 跟其它三级目录一样的逻辑
-               点击就是直接进卡片就行了」）：这里不再有章名入口 / 退出 ∧。
-               点章名与点节名同一条路（onPick → emit('pick') 进卡片视图），
-               章的展开/收起只走行尾 chevron。 -->
-        </div>
-      </div>
-      <div class="ct__head-side">
-        <!-- 外层经插槽放进来的行内工具（卡片模式：筛选弹层 + 考试），排在分段切换左边 -->
-        <slot name="tools" />
-        <!-- 分段式「目录树 | 卡片」（老稿 .view-toggle）。
-             ⚠️ **就地切换**（2026-11-08 用户：「切换不影响这一层的展示 把下方方框内的内容
-             替换就行 不然感觉太割裂了」）—— 标题行原样留着，只换下面的内容盒子；
-             不再 emit('pick') 跳去 ？category= 的卡片页。 -->
-        <nav class="ct__views" aria-label="视图切换">
-          <button type="button" class="ct__view" :class="{ 'is-on': mode === 'tree' }" @click="emit('mode-change', 'tree')">目录树</button>
-          <button type="button" class="ct__view" :class="{ 'is-on': mode === 'cards' }" @click="emit('mode-change', 'cards')">卡片</button>
-        </nav>
-      </div>
-    </header>
 
     <!-- 行是 store 摊平好的**前序**列表：父节点后面紧跟自己的子树，
          所以「收起一个目录」= 把它那一整段剔掉，祖先收起 = 整棵子树不画。
@@ -87,44 +40,16 @@
          撤的只是那个浮条容器，不是"命中这件事本身"。 -->
     <!-- ⚠️ 2026-11-08 按老 demo（book-bak.html）重排：**章 = 一张圆角卡片**。
          卡片头 = 序号徽章 + 章名 + chevron（常驻、随开合旋转）+「⋯」+ 条数药丸；
-         卡片身 = 节行（序号拆出来用主题色小字）+ 知识点行（圆点叶子 + 「未写正文」pill）。
+         卡片身 = 子目录行（序号拆出来用主题色小字）。
          原来的「点状引线」排版（2026-11-04 #749 那版书籍目录）被这一版取代 ——
          老稿里没有引线：名字吃满剩余宽度，条数贴行尾。
          分组方式：`rows` 是**前序**列表（父节点后紧跟自己的子树）⇒ 按 depth===1 的
          目录行切块，一块 = 一张卡片；被收起的章 rest 为空 ⇒ 卡片只剩头。 -->
-    <!-- ⚠️ **「本书知识点」独立块整块撤了**（2026-11-13 用户：「不管一个还是多个
-         都不展示圈出来的那个东西，跟普通的挂在二级目录下的知识点一样展示；
-         如果有目录，就把它们放在所有目录的最下面」）。
-         ⇒ 一级目录直挂的知识点现在画在**所有章卡片之后**（见本模板末尾 `ct__trailing`），
-         行形态与树里知识点叶子**完全同构**，不再有独立区块、不再按条数换形态、
-         也不再有「打开某章 ⇒ 整块不画」这条独立显隐条件。
-         ⚠️ 旧结构是「树身之外另起一块」＋ 独立显隐条件、单条/多条两套形态，
-         与树身状态天然容易脱节；用户报的「一本没有下级目录的书
-         直属知识点整片不显示」就出在这一块。现在它只是树身末尾的普通行，只受
-         `rootTopics.length` 约束 ⇒ 有没有下级目录都一样渲染。 -->
-    <template v-for="g in chapterGroups" :key="g.head ? 'c' + g.head.c.id : 't' + g.rest[0].t.id">
-      <!-- 兜底：根下直挂的散行（已全部移进本模板末尾的 `ct__trailing`，理论上不会走到这里）。 -->
-      <div
-        v-if="!g.head"
-        class="ct__node ct__node--topic"
-        :class="{
-          'is-cursor': isCursor('topic', g.rest[0].t.id),
-          'is-hl': isHl('topic', g.rest[0].t.id)
-        }"
-        :style="rowStyle(g.rest[0])"
-        :data-topic-id="g.rest[0].t.id"
-        :data-topic-title="g.rest[0].t.title"
-        @click="onPickTopic(g.rest[0].t)"
-      >
-        <span class="ct__dot" aria-hidden="true" :style="dotStyle(g.rest[0].t.id)" />
-        <span class="ct__name"><span class="ct__text"><template v-for="(p, i) in parts(g.rest[0].t.title)" :key="i"><mark v-if="p.hit" class="ct__hl">{{ p.text }}</mark><template v-else>{{ p.text }}</template></template></span></span>
-        <span v-if="!g.rest[0].t.hasContent" class="ct__skel">未写正文</span>
-        <span v-if="topicLevelOf(g.rest[0].t.id)" class="ct__mbar" :title="mbarTitle(g.rest[0].t.id)"><i :style="{ width: levelProgress(topicLevelOf(g.rest[0].t.id).level) + '%', background: mbarColor(g.rest[0].t.id) }" /></span>
-      </div>
+    <!-- 树身只画目录行（2026-11-16 D7）：知识点行、直属知识点尾块都搬去了卡片视图。 -->
+    <template v-for="g in chapterGroups" :key="'c' + g.head.c.id">
       <!-- ⚠️ 章视图模式已删（2026-11-14）：章头行**永远画**（原来"打开某章 ⇒ 章头不画、
            节上移"的 is-entered 整套撤掉），章就是普通目录。 -->
       <section
-        v-else
         class="ct__card"
         :class="{ 'is-open': !isCollapsed(g.head.c.id) }"
       >
@@ -134,7 +59,8 @@
             'is-drop': dnd.over === g.head.c.id && dnd.overOk,
             'is-bad': dnd.live && dnd.over === g.head.c.id && !dnd.overOk,
             'is-cursor': isCursor('cat', g.head.c.id),
-            'is-hl': isHl('cat', g.head.c.id)
+            'is-hl': isHl('cat', g.head.c.id),
+            'is-cur': currentId === g.head.c.id
           }"
           :style="rowStyle(g.head)"
           :data-cat-id="g.head.c.id"
@@ -154,21 +80,6 @@
           <MasteryBar :row="getCategoryMastery(g.head.c.id)" />
           <span class="ct__count" :title="countTitle(g.head.c.id)">{{ counts[g.head.c.id] || 0 }}</span>
           <span class="ct__tools">
-            <!-- 章 = 老稿的常驻 chevron（随开合旋转），点击就是原来的展开/收起。
-                 （章身的卡片形态配一颗常驻箭头才像"一扇门"；更深的层级维持
-                 悬停出「展开 / 收起」文字不变。） -->
-            <button
-              v-if="branchy.has(g.head.c.id)"
-              type="button"
-              class="ct__chev"
-              :class="{ 'is-open': !isCollapsed(g.head.c.id) }"
-              :aria-label="chevLabel(g.head.c)"
-              :title="chevLabel(g.head.c)"
-              :aria-expanded="!isCollapsed(g.head.c.id)"
-              @click.stop.prevent="toggleOne(g.head.c.id)"
-              @pointerdown.stop
-              @dragstart.prevent.stop
-            ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6" /></svg></button>
             <CategoryRowMenu
               class="ct__menu"
               btn-class="ct-dots"
@@ -190,7 +101,8 @@
                 'is-drop': dnd.over === r.c.id && dnd.overOk,
                 'is-bad': dnd.live && dnd.over === r.c.id && !dnd.overOk,
                 'is-cursor': isCursor('cat', r.c.id),
-                'is-hl': isHl('cat', r.c.id)
+                'is-hl': isHl('cat', r.c.id),
+                'is-cur': currentId === r.c.id
               }"
               :style="rowStyle(r)"
               :data-cat-id="r.c.id"
@@ -208,18 +120,6 @@
               <MasteryBar :row="getCategoryMastery(r.c.id)" />
               <span class="ct__count" :title="countTitle(r.c.id)">{{ counts[r.c.id] || 0 }}</span>
               <span class="ct__tools">
-                <button
-                  v-if="branchy.has(r.c.id)"
-                  type="button"
-                  class="ct__chev"
-                  :class="{ 'is-open': !isCollapsed(r.c.id) }"
-                  :aria-label="chevLabel(r.c)"
-                  :title="chevLabel(r.c)"
-                  :aria-expanded="!isCollapsed(r.c.id)"
-                  @click.stop.prevent="toggleOne(r.c.id)"
-                  @pointerdown.stop
-                  @dragstart.prevent.stop
-                ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6" /></svg></button>
                 <CategoryRowMenu
                   class="ct__menu"
                   btn-class="ct-dots"
@@ -252,29 +152,6 @@
         </div>
       </section>
     </template>
-
-    <!-- **一级目录直挂的知识点**：放在**所有目录卡片之后**，行形态 = 树里普通知识点叶子
-         （圆点 + 名字 + 「未写正文」），命中 / 游标 / 返回定位 / 点击全套照旧。
-         ⚠️ 不按条数换形态、不带小标题 ⇒ 任何状态下都在。 -->
-    <div v-if="rootTopics.length" class="ct__trailing">
-      <div
-        v-for="r in rootTopics"
-        :key="r.t.id"
-        class="ct__node ct__node--topic"
-        :class="{
-          'is-cursor': isCursor('topic', r.t.id),
-          'is-hl': isHl('topic', r.t.id)
-        }"
-        :data-topic-id="r.t.id"
-        :data-topic-title="r.t.title"
-        @click="onPickTopic(r.t)"
-      >
-        <span class="ct__dot" aria-hidden="true" :style="dotStyle(r.t.id)" />
-        <span class="ct__name"><span class="ct__text"><template v-for="(p, i) in parts(r.t.title)" :key="i"><mark v-if="p.hit" class="ct__hl">{{ p.text }}</mark><template v-else>{{ p.text }}</template></template></span></span>
-        <span v-if="!r.t.hasContent" class="ct__skel">未写正文</span>
-        <span v-if="topicLevelOf(r.t.id)" class="ct__mbar" :title="mbarTitle(r.t.id)"><i :style="{ width: levelProgress(topicLevelOf(r.t.id).level) + '%', background: mbarColor(r.t.id) }" /></span>
-      </div>
-    </div>
     </div>
 
     <!-- **卡片模式的内容盒子**（2026-11-08 用户：「把下方方框内的内容替换就行」+
@@ -308,6 +185,7 @@ import { useRoute } from 'vue-router'
 import CategoryRowMenu from './CategoryRowMenu.vue'
 import MasteryBar from './MasteryBar.vue'
 import { levelColor, levelProgress } from './masteryLevels'
+import { isMasteryShown } from '../../utils/uiPrefs'
 import { useCategoryDrag, consumeDragGesture } from './useCategoryDrag'
 import {
   branchyIds, visibleRows, ancestorIds, namedHitIds, highlightParts, matchesKeyword,
@@ -316,8 +194,8 @@ import {
 import { matchNameFromRoute } from '../../utils/searchMode'
 import { keywordFromRoute } from '../../utils/routeQuery'
 import {
-  flattenCategoryTree, getFullCategoryCountMap, getCategoryMastery, getTopicLevel,
-  ensureTopicLevelsLoaded,
+  flattenCategoryTree, getFullCategoryCountMap, getCategoryMastery, getFullTopicIndex,
+  getTopicLevel, ensureTopicLevelsLoaded,
   treeSearchHits, treeSearchJump
 } from './useCorecraftWebStore'
 import { dnd } from './useCategoryDnd'
@@ -352,16 +230,22 @@ const props = defineProps({
    * <p>它管两件事：① **返回时定位到刚才那一行**（`active` 变 true 那一刻做）；
    * ② **不在眼前就不定位**（后台数据刷新时别把定位提前消费掉）。
    */
-  active: { type: Boolean, default: true }
+  active: { type: Boolean, default: true },
+  /**
+   * **当前目录**（2026-11-16 D7）：面包屑当前截 = 树里高亮的那一行 = 卡片内容源。
+   * 点行设当前（emit('pick')），外层把它写进地址再传回来。
+   * null = 还没选（用书根）。
+   */
+  current: { type: Number, default: null }
 })
 
 // 2026-10-07 展开改成"点 › 打开、点遮罩关闭"之后，`enter` / `close` 事件就不再有人发、
 // 也没人接了，一并去掉。现在这棵树对外面只说四句话：选中一行（pick）、
 // 有人要新增子目录（add）、有人要改名（rename）、有人要在这个目录下写知识点（points）。
-const emit = defineEmits(['pick', 'pickTopic', 'add', 'rename', 'points', 'mode-change'])
+const emit = defineEmits(['pick', 'pickTopic', 'add', 'rename', 'points'])
 
 const allRows = computed(() =>
-  flattenCategoryTree(props.items, { withTopics: true })
+  flattenCategoryTree(props.items)
 )
 
 /**
@@ -423,23 +307,9 @@ const rootCat = computed(() => {
   return first ? first.c : null
 })
 
-/**
- * **直接挂在这本书上的知识点**（一级目录直挂，depth===1 的那些行）。
- *
- * <p>⚠️ **按位置认，不看标题**：直挂在这本书上的知识点就是这本书的"直属"内容，
- * 它叫什么名字（带不带"总览"两个字）都不影响这个判定。
- *
- * <p>⚠️ **它们不画在前序行里**（前序会把它们排在章之前，而用户要它们排在
- * **所有目录之后**）⇒ 走 {@link rootTopicIds} 从 `rows` 里滤掉，
- * 由模板末尾的 `ct__trailing` 用**与树里知识点叶子完全同构**的行统一安置。
- *
- * <p>⚠️ **一条 / 多条同一种形态**（2026-11-13）：不再按条数换安置、不再有小标题、
- * 不再有自己那套显隐条件。
- */
-const rootTopics = computed(() => allRows.value.filter((x) => x.kind === 'topic' && x.depth === 1))
+/** 当前目录（没选 = 书根）。树里高亮它，卡片视图显示它的直属。 */
+const currentId = computed(() => props.current ?? rootCat.value?.id ?? null)
 
-/** 根下直挂知识点的 id 集合 —— 前序行里**一条都不画**（统一由 `ct__trailing` 展示）。 */
-const rootTopicIds = computed(() => new Set(rootTopics.value.map((r) => r.t.id)))
 
 /**
  * **当前搜索词**（空 = 没在搜）。
@@ -485,7 +355,7 @@ const namedHits = computed(() => namedHitIds(bookCats.value, searchKw.value))
  *
  * <p>两件事：
  * - 浏览模式**不画根行**（书名在顶部标题行里）；
- * - **一级目录直挂的知识点不在这里画**（统一挪到所有章卡片之后，见 `ct__trailing`）。
+ * - **知识点行不在这里画**（2026-11-16 D7：树只画目录行，内容归卡片）。
  *
  * ⚠️ **搜索时也不过滤**（2026-11-05 用户：「目录树的搜索展示完整
  * 不要把目录树和数据做任何过滤了」＋「既然加了命中栏 那么展示的树就要是完整的啊
@@ -496,9 +366,6 @@ const namedHits = computed(() => namedHitIds(bookCats.value, searchKw.value))
 const rows = computed(() => {
   const list = allRows.value.filter((r) => {
     if (r.kind === 'cat' && r.depth === 0) return false
-    // ⚠️ **根下直挂的知识点全部移走**（不管几条）：统一挪到所有章卡片之后。
-    // 原来这里只滤掉"第一条" ⇒ 剩下的画在树上，成了一屏两个"总览"。
-    if (r.kind === 'topic' && rootTopicIds.value.has(r.t.id)) return false
     return true
   })
   return visibleRows(list, collapsed.value)
@@ -563,17 +430,14 @@ const chapterGroups = computed(() => {
       groups.push(cur)
     } else if (cur) {
       cur.rest.push(r)
-    } else {
-      groups.push({ head: null, rest: [r] })
     }
   }
   return groups
 })
 
 /**
- * 单个目录的展开 / 收起 —— **纯展开**（2026-11-08 用户报 bug：「展开第一层 然后第一层就
- * 跑到上面那个多少个知识点然后三个点后面去了」——展开手势误触了"打开"那套（章行收进
- * meta 行）⇒ 两者拆开：**展开（chevron）只管开合；"打开"（点章名）才进章视图**）。
+ * 单个目录的展开 / 收起（行点 = 设当前 + 开合，2026-11-16 D7 之后 chevron 没了，
+ * 开合整个落在行上）。
  */
 function toggleOne(id) {
   userTouched.value = true
@@ -582,24 +446,8 @@ function toggleOne(id) {
 
 const isCollapsed = (id) => collapsed.value.has(id)
 
-/** 展开键的 aria-label / title 共用一份文案（章行、节行两处 × 两个属性，不各写一遍）。 */
-function chevLabel(c) {
-  return (isCollapsed(c.id) ? '展开 ' : '收起 ') + c.name
-}
-
-// ==================== 「打开」的那一章 ⇒ 标题行的章名入口（2026-11-08 用户） ====================
-//
-// ⚠️ **「打开」= 点章名**；**「展开」= chevron 纯开合**（2026-11-08 用户报 bug 拆开的）：
-// 展开曾误触"章名收进 meta 行 + 章行隐藏"，用户原话「展开目录树种的第一层 然后第一层
-// 就跑到上面那个多少个知识点然后三个点后面去了」。
-
-// ⚠️ 章视图模式已删（2026-11-14 用户）：openedChapterId / openChapter / exitChapter /
-// openedChapterCat / openedChapterLabel 整套撤掉 —— 章就是普通目录，点名字进卡片，
-// 展开/收起走 chevron（见模板头部与 onPick 的注释）。
-
 // 缩进（2026-11-08 代码级复刻 book-bak.html）：章行不缩进（卡片头的 padding 14/18 自己给）；
-// 节行左内边距 **24px**（老稿 .tsec-row），知识点 **52px**（老稿 .ttopic）；
-// 老稿只有一层节 ⇒ 更深的层级按每层 +20px 顺延（24 → 44 → 64；52 → 72 → 92）。
+// 节行左内边距 **24px**（老稿 .tsec-row）；更深层级按每层 +20px 顺延（24 → 44 → 64）。
 const CAT_INDENT = 24
 const TOPIC_INDENT = 52
 const STEP = 20
@@ -612,7 +460,7 @@ const STEP = 20
 function rowStyle(r) {
   // ⚠️ 章行**不返回 inline padding**（返回空对象）——章行的 14px/18px 在样式表里给；
   // 这里要是返回 paddingLeft: 0，内联样式会盖掉样式表的 padding-left（diff 实测踩过）。
-  if (r.depth <= 1) return {}
+    if (r.depth <= 1) return {}
   if (r.kind === 'cat') return { paddingLeft: CAT_INDENT + (r.depth - 2) * STEP + 'px' }
   const d = Math.max(0, r.depth - 2)
   return { paddingLeft: TOPIC_INDENT + d * STEP + 'px' }
@@ -674,55 +522,30 @@ const { onPointerDown } = useCategoryDrag((e) => {
 })
 
 /**
- * 点一个目录。
- *
- * <p>⚠️ **只有点在"名字"上才算进入**（用户 2026-11-04：「我想点击某一级的收缩展开
- * 就不小心点进去了」）⇒ 判据是**事件落在名字上**，不是落在行上。
- *
- * <p>为什么不用"点箭头时阻止冒泡"就够了：箭头的热区只有 28px，用户的指针
- * **稍微偏一点**就落到名字上（名字紧挨着箭头右侧）⇒ 照样跳进卡片页。
- * 改成"名字才是入口"之后，箭头那一整片（含它与名字之间的空隙）都是**死区**：
- * 点歪了什么都不发生，绝不会跳走。**这是修根因，不是堵一个洞。**
+ * 点一行目录（2026-11-17 调整）：有下级（含知识点行）时 **点一次展开，再点一次收起**；
+ * 看卡片统一走行尾 `⋯ → 查看卡片`；真·空目录（无下级）直接切去卡片区。
  */
 function onPick(e, c) {
-  // 拖过了就不算"点"（拖完浏览器照样发 click ⇒ 不挡的话会顺手跳进这个目录）。
-  // ⚠️ **一次性消费**（consumeDragGesture）：只拦拖完补发的那一下，之后的点击照常。
-  //    原来这里是"只读不清" ⇒ 拖过一次之后标记一直黏着 ⇒ **点知识点被静默吞掉**
-  //    （2026-11-10 用户：「有概率点击知识点没反应 要刷一下就正常了」）。
   if (consumeDragGesture()) return
-  if (!isNameHit(e)) return
-  // 记住是哪一行 ⇒ 返回时把树恢复到"刚才那一行"（见 restoreSpot）
+  if (e.target.closest('.ct__tools')) return
   lastSpot.value = { kind: 'cat', id: c.id }
-  // 点目录名 = 进它的卡片视图 —— **章与更深的目录同一条路**（2026-11-14 用户：
-  // 章视图模式整个删掉；"打开"和"展开"的拆分随之消失，展开只走行尾 chevron）。
-  emit('pick', c)
+  if (branchy.value.has(c.id)) {
+    toggleOne(c.id)
+    emit('pick', c, 'tree')
+  } else {
+    emit('pick', c, 'cards')
+  }
 }
 
 /**
- * 这次点击是不是落在**目录名**上。
- *
- * <p>用 `closest('.ct__name')` 判：名字里再嵌什么标签都算命中（点名字中间的空白也算）。
- *
- * <p>⚠️ **知识点行不走这个判据**：知识点行整行就是它的名字（没有别的可点目标），
- * 点哪都是点它 ⇒ 单独判会把"点知识点"整条路堵死。
- */
-function isNameHit(e) {
-  const el = e.target
-  return !!(el && el.closest && el.closest('.ct__name'))
-}
-
-/**
- * 点知识点叶子 ⇒ 进它的详情页。
+ * 点知识点行 ⇒ 进它的**详情页**（树里的知识点是"看见"，读它去详情）。
  */
 function onPickTopic(t) {
-  // 拖过了就不算"点"（拖着目录挪走，落下松手不该跳进详情）。
-  // ⚠️ **一次性消费**：见 {@link onPick} 那段——原来"只读不清"会让这个标记一直黏着，
-  //    于是拖过一次之后**点任何知识点都没反应，刷新才恢复**（2026-11-10 实测复现）。
   if (consumeDragGesture()) return
-  // 记住是哪一条 ⇒ 返回时把树恢复到"刚才那一行"（见下面的 restoreSpot）
   lastSpot.value = { kind: 'topic', id: t.id }
   emit('pickTopic', t)
 }
+
 
 // ==================== 返回时回到刚才那一行 ====================
 
@@ -801,6 +624,32 @@ async function focusSpot(spot) {
 
 // ==================== 命中：标字 + 浮条 ====================
 
+// ==================== 知识点行的掌握度（圆点染色 + 右侧进度条） ====================
+// 数据源 = store 的 topicLevelsMap（GET /kp/learning/levels，行数=考过的知识点数）。
+// **没有评估的知识点行保持原样**（不染色不画条，用户口径）。
+
+/** 档位（{level, mastery}）；没评估或偏好隐藏 = null */
+function topicLevelOf(id) {
+  return isMasteryShown() ? getTopicLevel(id) : null
+}
+
+/** 圆点染色：色 = masteryLevels 的 levelColor（与卡片档位签同一份色源） */
+function dotStyle(id) {
+  const lv = topicLevelOf(id)
+  return lv ? { background: levelColor(lv.level) } : null
+}
+
+function mbarTitle(id) {
+  const lv = topicLevelOf(id)
+  return lv ? `${lv.level} · 掌握度 ${Math.round(lv.mastery || 0)}%` : ''
+}
+
+/** 条的填充色 = 档位色（与圆点同一份色源；主色档的条也就不再与圆点色打架） */
+function mbarColor(id) {
+  const lv = topicLevelOf(id)
+  return lv ? levelColor(lv.level) : null
+}
+
 /**
  * **一行文字切成"命中的字"和"其余的字"**。
  *
@@ -862,7 +711,7 @@ const hitIndex = computed(() => {
   const c = hitCursor.value
   if (!c) return 0
   const i = hitRows.value.findIndex(
-    (r) => r.kind === c.kind && (r.kind === 'cat' ? r.c.id === c.id : r.t.id === c.id)
+    (r) => r.kind !== 'topic' && r.c.id === c.id
   )
   return i < 0 ? 0 : i + 1
 })
@@ -977,7 +826,7 @@ watch([searchKw, allRows], () => {
   restoreSpot()
 })
 
-/** 把那一行滚到眼前。 */
+/** 把那一行滚到眼前（树里只有目录行 ⇒ 认 data-cat-id）。 */
 function scrollToRow(spot) {
   const attr = spot.kind === 'cat' ? 'data-cat-id' : 'data-topic-id'
   const el = rootEl.value?.querySelector(`[${attr}="${spot.id}"]`)
@@ -987,44 +836,26 @@ function scrollToRow(spot) {
 // 数据是异步来的（结构索引），回来时可能还没到 ⇒ 行数一变就再试一次。
 watch(allRows, () => { restoreSpot() })
 
+// **单条档位先拉一份**（树行的圆点/进度条数据源；loadOnce 有缓存与在途去重，重复调无害）。
+onMounted(() => { ensureTopicLevelsLoaded() })
+
 // **这一屏重新回到眼前**（从详情页返回）⇒ 回到刚才那一行。
 // ⚠️ **触发点只有一个**：外层（页面）把 `active` 传下来。
 // 树自己不用 `onActivated` —— **后代组件的 activated 钩子在不同 Vue 版本里
 // 触发行为不一致**，页面级才知道"我回来了"（页面被 keep-alive 缓存着，切走不销毁）。
-// 顺带 ensure 一次单条档位（loadOnce 有缓存与在途去重，重复调无害）。
 watch(() => props.active, (v) => {
   if (v) {
     ensureTopicLevelsLoaded()
     restoreSpot()
   }
 })
-onMounted(() => { ensureTopicLevelsLoaded() })
+
 
 // ==================== 知识点行的掌握度（圆点染色 + 右侧进度条） ====================
-// 数据源 = store 的 topicLevelsMap（GET /kp/learning/levels，行数=考过的知识点数）。
+// 单条档位的数据源已随树里知识点行一起退场（2026-11-16 D7）——卡片上的档位签走列表字段。
 // **没有评估的知识点行保持原样**（不染色不画条，用户口径）。
 
 /** 档位（{level, mastery}）；没评估 = null */
-function topicLevelOf(id) {
-  return getTopicLevel(id)
-}
-
-/** 圆点染色：色 = masteryLevels 的 levelColor（与卡片档位签同一份色源） */
-function dotStyle(id) {
-  const lv = getTopicLevel(id)
-  return lv ? { background: levelColor(lv.level) } : null
-}
-
-function mbarTitle(id) {
-  const lv = getTopicLevel(id)
-  return lv ? `${lv.level} · 掌握度 ${Math.round(lv.mastery || 0)}%` : ''
-}
-
-/** 条的填充色 = 档位色（与圆点同一份色源；主色档的条也就不再与圆点色打架） */
-function mbarColor(id) {
-  const lv = getTopicLevel(id)
-  return lv ? levelColor(lv.level) : null
-}
 </script>
 
 <style scoped>
@@ -1116,16 +947,11 @@ function mbarColor(id) {
  * 树里单独一个箭头反而像"这行点不了"。
  * ⚠️ **拖起来的那一刻才给 grabbing**：`body.dnd-active` 是在位移过了阈值之后才挂上的
  * ⇒ 平时是手型，**真拖起来了**才变抓手（跟系统拖文件一致）。 */
-.ct--nav .ct__node {
-  cursor: pointer;
-}
 body.dnd-active .ct--nav .ct__node {
   cursor: grabbing;
 }
 .ct__node:hover {
-  /* #f4f8ff → --cc-primary-soft（同一件事：浅蓝底） */
-  background: var(--cc-primary-soft);
-  /* 行尾工具（条数、「⋯」）显形。跟侧边栏目录行同一套做法。 */
+  /* 行尾工具（条数、「⋯」）显形。跟侧边栏目录行同一套做法（背景色由下面 .ct--nav .ct__node:hover 定）。 */
   --row-tools: 1;
 }
 /* 键盘也要能看见：opacity 0 的东西照样能被 Tab 选中，
@@ -1223,6 +1049,14 @@ body.dnd-active .ct--nav .ct__node {
    整棵树在那一刻抖一下（用户正在看的就是那一行，抖一下最难受）。 */
 .ct__node.is-hl {
   background: var(--cc-primary-soft);
+}
+/* **当前目录**（面包屑当前截 = 卡片内容源，2026-11-16 D7）：点行设当前。
+   常显不淡出（它是状态，不是一次性闪现）；名字染主色。 */
+.ct--nav .ct__node.is-cur {
+  background: var(--cc-primary-soft);
+}
+.ct--nav .ct__node.is-cur .ct__name {
+  color: var(--cc-primary);
 }
 /* 触屏没有 hover ⇒ 常显（不然那些数字/按钮永远看不见）。
    跟 TopicCard 的「⋯」按钮同一口径（那边用 @media (hover: hover) 反着写，
@@ -1341,20 +1175,9 @@ body.dnd-active .ct--nav .ct__node {
   /* 老稿 .tsec-row / .ttopic 的圆角是 8px（--radius-sm 是 6，差一档肉眼可见）。 */
   border-radius: 0;
 }
-.ct__card-body .ct__node,
-.ct__trailing .ct__node {
+.ct__card-body .ct__node {
   border-radius: 8px;
 }
-/* ============ 直属知识点（2026-11-13）：普通叶子行，排在所有目录之后 ============
- *
- * ⚠️ 独立区块（「本书知识点」小标题 / 书本图标 / 浅底卡片）整套撤了。
- *    现在这些行和挂在节下面的知识点**同一套 DOM、同一套 CSS** ⇒ 命中 / 游标 /
- *    hover / 返回定位全走 `.ct__node` 那几条规则，这里只补一处容器间距。
- */
-.ct__trailing {
-  margin-top: var(--sp-4);
-}
-
 /* 章行 = 卡片头（老稿 .tch-row：padding 14px 18px，gap 12px；rowStyle 对 depth1 返回 0）。 */
 .ct--nav .ct__node--chapter {
   padding: 14px 18px;
@@ -1399,21 +1222,6 @@ body.dnd-active .ct--nav .ct__node {
   color: var(--cc-primary);
   background: var(--cc-primary-soft);
 }
-/* **常驻 chevron 的图标本体**：按钮规格与行尾 ⋮ 统一在样式表末尾
-   「行尾两颗图标按钮」那一节（2026-11-13 收敛），这里只管图形与开合旋转。
-   ⚠️ **旋转只转 svg，不转按钮**：按钮现在带常态浅底与 hover 底色，整个按钮转 180°
-   会把底色、圆角、焦点框一起拖着转；转图标才是「这扇门朝哪开」那件事。 */
-.ct__chev svg {
-  width: 16px;
-  height: 16px;
-  display: block;
-  transition: transform 0.25s var(--ease, ease);
-}
-/* 开合状态画在**图标**身上（章行、深层行、标题行退出键同一套）。 */
-.ct__chev.is-open svg {
-  transform: rotate(180deg);
-}
-/* **节行**（老稿 .tsec-row：padding 11px 18px 11px 24px + 左侧折线 ::before）。 */
 .ct--nav .ct__card-body .ct__node--cat {
   padding-top: 11px;
   padding-bottom: 11px;
@@ -1454,8 +1262,7 @@ body.dnd-active .ct--nav .ct__node {
   color: var(--cc-text-2);
 }
 /* **知识点行**（老稿 .ttopic：padding 9px 18px 9px 52px、下距 2px；缩进由 rowStyle 给）。 */
-.ct--nav .ct__card-body .ct__node--topic,
-.ct--nav .ct__trailing .ct__node--topic {
+.ct--nav .ct__card-body .ct__node--topic {
   padding-top: 9px;
   padding-bottom: 9px;
   margin-bottom: 2px;
@@ -1487,8 +1294,7 @@ body.dnd-active .ct--nav .ct__node {
   /* 填充色 = 档位色（行内 style 绑 mbarColor），这里只留形状兜底 */
 }
 /* 知识点名（老稿 .ttopic__name：14px、text）。 */
-.ct__card-body .ct__node--topic > .ct__name,
-.ct__trailing .ct__node--topic > .ct__name {
+.ct__card-body .ct__node--topic > .ct__name {
   font-size: 14px;
 }
 /* **「未写正文」pill**（老稿 .ttopic__skel：10.5px、muted、line 边框圆角药丸）。
@@ -1538,98 +1344,6 @@ body.dnd-active .ct--nav .ct__node {
  * 右块 = 分段式「目录树 | 卡片」（.view-toggle）+ 展开全部 / 收起全部。
  * align-items: flex-end —— 右侧切换贴着 meta 行的基线（老稿就是这么排的）。
  */
-.ct__head {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  /* **窄屏时整块换行，不压字**。 */
-  flex-wrap: wrap;
-  gap: 24px;
-  /* sticky 保留（滚下去时书名行不能从命中浮条下面穿过；老稿是静态稿没有这条需求）。 */
-  position: sticky;
-  top: 0;
-  z-index: 6;
-  background: var(--cc-bg);
-  /* ⚠️ 顶部 padding 归零：标题离顶栏的那 34px 由版心（.learn 的 padding-top）给，
-     这里再给一份就是两倍（老稿 .tree-head 自身无 padding）。 */
-  padding: 0 0 6px;
-  margin-bottom: 22px;                     /* .tree-head 的 margin-bottom */
-}
-/* 卡片模式：标题行下面是外层的筛选条（间隔由父级 flex gap 出），
-   自己的 22px 再叠一份就是 46px ⇒ 归零。 */
-.ct--cards .ct__head {
-  margin-bottom: 0;
-}
-.ct__head-main {
-  min-width: 0;
-}
-/* ⚠️ **书名大标题（.ct__title）删了**（2026-11-08 用户：「下面也要顺便下掉」）——
-   书名在**顶栏**（AppLayout 面包屑跟上下文走），内容区不再重复一遍。
-   meta 行升为标题行第一行（margin-top 归零）。 */
-/* meta 行（老稿 .tree-head .meta：13px、muted；b = accent-text 500）。 */
-.ct__meta {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-8);
-  font-size: 13px;
-  color: var(--cc-text-3);                 /* --muted */
-  white-space: nowrap;
-}
-/* **左上角唯一的操作入口「⋯」**（2026-11-13：统计文字整行删除后只剩它）。
-   ⚠️ **常显**（藏起来就等于没有）；只留 flex-shrink，不设 margin-left:auto
-      ⇒ 它待在左上角，不与右侧的视图切换挤到一起。 */
-.ct__head-menu {
-  flex-shrink: 0;
-}
-/* 右块：分段切换 + 展开工具。 */
-.ct__head-side {
-  display: flex;
-  align-items: center;
-  /* ⚠️ **一行只准一种间距**：这里装的是「筛选题工具条 + 目录树/卡片分段开关」，
-     工具条内部（.tf）的按钮间距是 --sp-4 = 4px。原来这里写 12px ⇒
-     「筛选 → 考试」4px、「考试 → 目录树」12px ⇒ 同一行两种距离，
-     分段开关看着像"另起一组"（用户 2026-11-11：「这个目录树跟左边的间隔也不对」）。
-     分组靠内容语义（分段开关本身就长得不一样），**不靠额外空隙**。 */
-  gap: var(--sp-4);
-  margin-left: auto;
-}
-/* 分段式「目录树 | 卡片」：**与工具条其他 chip 同尺寸同风格**（2026-11-09 用户：
-   「目录树、卡片的风格和大小还是不一样啊 显然比旁边的两个按钮要大一圈」——
-   原外壳是 28px 内容 + 3px 内距 + 边框 ⇒ 总高 36px，比 28px 的「筛选/考试」大一圈。
-   现在外壳本身就是一颗 **28px 描边 chip**（与 .tf__trigger 同款：同底 / 同描边 / 同圆角），
-   两个小段嵌在里面；accent 只给 is-on（激活态规则同 #786「描边 chip = 常态」）。 */
-.ct__views {
-  display: flex;
-  align-items: stretch;
-  gap: 2px;
-  height: 28px;
-  background: var(--cc-surface);
-  border: 1px solid var(--cc-border-strong);
-  border-radius: 7px;
-  padding: 2px;
-}
-.ct__view {
-  display: flex;
-  align-items: center;
-  padding: 0 12px;
-  border: none;
-  border-radius: 5px;
-  background: none;
-  font-family: var(--font-body);
-  font-size: var(--text-sm);
-  color: var(--cc-text-3);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: color var(--t-fast, 140ms) var(--ease, ease), background var(--t-fast, 140ms) var(--ease, ease);
-}
-.ct__view:hover {
-  color: var(--cc-text-1);
-}
-.ct__view.is-on {
-  background: var(--cc-primary-soft);
-  color: var(--cc-primary);
-  font-weight: 500;
-}
 /* ============ 卡片模式的内容盒（2026-11-08） ============
  *
  * 里面是**外层的卡片视图块**（AppLearnView 经插槽放进来的：筛选条 + 分页网格），
@@ -1653,7 +1367,6 @@ body.dnd-active .ct--nav .ct__node {
  *    color 盖掉半边，两颗又会不一样。
  * ⚠️ **显隐不是风格**：⋮ 仍由 --row-tools 控制 hover 才显形（一屏几十行降噪），
  *    chevron 是唯一的展开出口 ⇒ 常显。 */
-.ct--nav .ct__chev,
 .ct--nav :deep(.row-menu__btn.ct-dots) {
   width: var(--ctl-sm, 28px);
   height: var(--ctl-sm, 28px);
@@ -1673,23 +1386,14 @@ body.dnd-active .ct--nav .ct__node {
               color var(--t-fast, 140ms) var(--ease, ease),
               opacity 0.15s ease;
 }
-.ct--nav .ct__chev:hover,
-.ct--nav .ct__chev:focus-visible,
 .ct--nav :deep(.row-menu__btn.ct-dots:hover),
 .ct--nav :deep(.row-menu__btn.ct-dots:focus-visible) {
   color: var(--cc-primary);
   background: var(--cc-primary-soft);
 }
-.ct--nav .ct__chev:focus-visible,
 .ct--nav :deep(.row-menu__btn.ct-dots:focus-visible) {
   outline: 2px solid var(--cc-primary);
   outline-offset: 1px;
-}
-/* ⚠️ **只有左上角那一颗保持横排 ⋯**（2026-11-13 用户：「保留一个横着的三个点按钮
-   在左上角就行」）⇒ 把 RowMenu 默认的 90° 转回来，仅此一处例外。
-   ⚠️ 选择器带 `.ct__head-menu` 才不会波及树身行。 */
-.ct--nav :deep(.ct__head-menu .row-menu__icon) {
-  transform: none;
 }
 /* ⚠️ **这里原来有 `.ct__filter`**（树标题行里那个「过滤知识点...」输入框的样式）——
    2026-11-05 晚那个框删了（并进顶栏那个公共搜索）⇒ 样式一起删，别留一条没人用的规则。 */

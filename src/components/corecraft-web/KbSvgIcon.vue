@@ -74,6 +74,8 @@ const ICONS = {
   // 下箭头（↑↓ 跳转那一对里的第二个，2026-11-10 补）：
   // 与 arrow-up **严格镜像**（同一个 24 视框、同样的 1.7px 圆帽线）⇒ 成对出现时对称。
   'arrow-down': '<path d="M12 5v14"/><path d="M5.5 12.5L12 19l6.5-6.5"/>',
+  // 停止生成：圆角实心方块（流式问答中止按钮）
+  stop: '<rect x="6.5" y="6.5" width="11" height="11" rx="2.2" fill="currentColor" stroke="none"/>',
 
   /* ---------- 编辑器工具栏族（2026-11-16 重画） ----------
      原来这一排用的是 Element Plus 图标（粗描边、方块感），而 meta 行那一排是自绘的
@@ -107,7 +109,17 @@ const ICONS = {
   // 导出：箭头出 + 底线
   download: '<path d="M12 3v11"/><path d="M7.5 9.5L12 14l4.5-4.5"/><path d="M4 17.5h16"/>',
   // 导入：箭头入 + 底线（与 download 同一族镜像）
-  upload: '<path d="M12 3v12"/><path d="M7.5 10.5L12 15l4.5-4.5"/><path d="M4 17.5h16"/>'
+  upload: '<path d="M12 3v12"/><path d="M7.5 10.5L12 15l4.5-4.5"/><path d="M4 17.5h16"/>',
+  // 连通性测试：脉搏折线
+  pulse: '<path d="M3 12h4l2.5-6 5 12 2.5-6h4"/>',
+  // 暂停 / 恢复 / 重试（任务卡轻量生命周期图标）
+  pause: '<path d="M9 6v12M15 6v12"/>',
+  play: '<path d="M7 5.5l11 6.5-11 6.5z"/>',
+  refresh: '<path d="M20 11a8 8 0 0 0-14.6-4.6L4 8"/><path d="M4 4v4h4"/><path d="M4 13a8 8 0 0 0 14.6 4.6L20 16"/><path d="M20 20v-4h-4"/>',
+  // 用户菜单（编辑个人信息 / 修改密码 / 退出登录）
+  user: '<circle cx="12" cy="8.5" r="3.5"/><path d="M5 19.5a7 7 0 0 1 14 0"/>',
+  lock: '<rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>',
+  logout: '<path d="M10 4.5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h4"/><path d="M15 8.5l4 3.5-4 3.5"/><path d="M19 12H9.5"/>'
 }
 
 const body = computed(() => ICONS[props.name] || '')

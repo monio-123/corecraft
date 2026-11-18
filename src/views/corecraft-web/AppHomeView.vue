@@ -19,7 +19,6 @@
             <KbSvgIcon name="upload" />
             导入
           </button>
-          <TopicTypeSelect v-model="draftType" />
         </template>
       </MilkdownEditor>
       <div class="quick__actions">
@@ -36,9 +35,13 @@
             @toggle-full="immersive.toggle"
           />
         </div>
-        <el-button class="save-btn" type="primary" size="small" :loading="saving" :disabled="!draft.trim()" @click="save">
-          记下来
-        </el-button>
+        <KbTooltip content="Ctrl + Enter" placement="top">
+          <span>
+            <el-button class="save-btn" type="primary" size="small" :loading="saving" :disabled="!draft.trim()" @click="save">
+              记下来
+            </el-button>
+          </span>
+        </KbTooltip>
       </div>
     </section>
 
@@ -54,8 +57,9 @@
          |---|---|---|---|
          | 知识点 | `/app/learn` | **不限** | 全部 |
          | 今日新增 | `/app/learn?range=today` | **今天** | 全部 |
-         | 待归类 | `/app/learn?category=UNCATEGORIZED` | **不限** | 只看待归类那批 |
-         「待归类」是**首页唯一的入口**（列表页那个药丸已经删掉，见 AppLearnView）。 -->
+         | 笔记 | `/app/learn?category=<笔记目录>` | **不限** | 只看笔记目录那批 |
+         「笔记」是**首页唯一的入口**（列表页那个药丸已经删掉，见 AppLearnView）。
+         ⚠️ 原来的「待归类」卡换成了「笔记」卡（2026-11-16 D3）：随手记有了家。 -->
     <section class="stats">
       <RouterLink
         v-for="c in statCards"
@@ -84,57 +88,41 @@
          也让「首页刚好铺满一屏」这个前提（AppLayout 那条 `.app-content:has(.home)`
          注释里写着）继续成立。 -->
     <section class="home__row">
-      <!-- 今日待复习：**只留入口**（2026-10-22 撤旧自测题时留下的）。
-           复习内容、抽题规则、每日复习的单题流都随旧那套一起撤了（题和记录都没了），
-           这个入口现在指向**知识点列表** —— 新的考试在那儿选范围（`/exam?ids=…`）。
-           等新的复习能力做出来，再把它改成直达。
-           ⚠️ §4.7(d)：标题原来叫「今日待复习」，但这一格里**没有任何数量/日期**
-           （`.panel__extra` 是空的，面板里只有一条「开始复习」链接）⇒ "今日"这个词
-           让用户每次都以为会有一个数拿不出来。
-           ⇒ 标题压成「复习」（不承诺一个拿不出的数）。等复习能力做出来再把数补进
-           `.panel__extra`（kb.css 已给它留了位）。 -->
-      <section class="panel">
-        <div class="panel__head">
-          <span class="panel__title">复习</span>
-        </div>
-        <RouterLink class="panel-link" :to="{ path: '/app/learn' }">
-          <KbSvgIcon class="panel-link__icon" name="clock" />
-          <span>开始复习</span>
-        </RouterLink>
-      </section>
-
-      <!-- 考试记录：历史卷子的出口（设计 §8.3）——分数、题数、时间在这一页翻，
-           回看/重做进的是考试页（新标签）。掌握度的证据就是从这些考试里来的，
-           这个入口让用户能顺着"我考过什么"看到掌握度的来路。 -->
-      <section class="panel">
-        <div class="panel__head">
-          <span class="panel__title">考试记录</span>
-        </div>
-        <RouterLink class="panel-link" :to="{ path: '/app/exams' }">
-          <KbSvgIcon class="panel-link__icon" name="note" />
-          <span>查看考试记录</span>
-        </RouterLink>
-      </section>
+      <RouterLink class="panel panel-entry" :to="{ path: '/app/learn' }">
+        <span class="panel-entry__main">
+          <KbSvgIcon class="panel-entry__icon" name="clock" />
+          <span class="panel-entry__title">复习</span>
+        </span>
+        <span class="panel-entry__sub">开始复习</span>
+      </RouterLink>
+      <RouterLink class="panel panel-entry" :to="{ path: '/app/exams' }">
+        <span class="panel-entry__main">
+          <KbSvgIcon class="panel-entry__icon" name="note" />
+          <span class="panel-entry__title">考试记录</span>
+        </span>
+        <span class="panel-entry__sub">查看记录</span>
+      </RouterLink>
     </section>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, defineAsyncComponent, h } from 'vue'
+import { ref, computed, watch, onMounted, defineAsyncComponent, h } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import KbSvgIcon from '../../components/corecraft-web/KbSvgIcon.vue'
+import KbTooltip from '../../components/corecraft-web/KbTooltip.vue'
 import ViewToggles from '../../components/corecraft-web/ViewToggles.vue'
 import { loadShellData } from './useShellData'
 import { useImmersive } from './useImmersive'
 import { keywordFromRoute } from '../../utils/routeQuery'
 import { rangeBounds, withinRange } from '../../utils/timeRange'
-import TopicTypeSelect from './TopicTypeSelect.vue'
 import {
   getTopicIndex,
-  getUncategorizedCount, createTopic,
-  UNCATEGORIZED
+  getNotesCount, getNotesCategory, getUncategorizedCount, UNCATEGORIZED, createTopic
 } from './useCorecraftWebStore'
+import { resolveEndpoint } from './useAi'
+import { createGenTask } from '../../api/genTask'
 
 // 首页这块录入框是**首屏唯一用到编辑器**的地方，而编辑器连着 Milkdown /
 // ProseMirror / remark 一整套 505KB（gzip 157KB）。原来是静态 import ⇒ 它挂在
@@ -159,10 +147,24 @@ const immersive = useImmersive()
 // 按钮和状态得是同一份。传下去用 :show-toolbar（**单向**：编辑器自己不持有这个状态，
 // 开关按钮也不在编辑器里）。
 const toolbar = ref(false)
-// 录入时选的类型。存 null = 用默认档（字典里排第一的那条）
-const draftType = ref(null)
 
-const draft = ref('')
+const DRAFT_KEY = 'cc-home-draft'
+function readDraft() {
+  try { return localStorage.getItem(DRAFT_KEY) || '' } catch (e) { return '' }
+}
+function writeDraft(val) {
+  try {
+    if (val && val.trim()) localStorage.setItem(DRAFT_KEY, val)
+    else localStorage.removeItem(DRAFT_KEY)
+  } catch (e) { /* 隐私模式等存不了只影响暂存 */ }
+}
+
+const draft = ref(readDraft())
+let draftTimer = null
+watch(draft, (val) => {
+  clearTimeout(draftTimer)
+  draftTimer = setTimeout(() => writeDraft(val), 300)
+})
 // 强制重建编辑器来清空输入框：defaultValueCtx 只在创建那一刻读一次 defaultValue，
 // 事后把 draft 置空不会回写 doc。重建顺带把 undo 历史也清了，本来也该清。
 const editorKey = ref(0)
@@ -183,6 +185,9 @@ function pickImport() {
 // 一条正文都不需要（正文那 90 万字符是列表接口慢的真正原因）。
 const topics = computed(() => getTopicIndex())
 const topicCount = computed(() => topics.value.length)
+// 「笔记」目录（随手记的家）与它里面的条数（首页那张卡）
+const notesCategory = computed(() => getNotesCategory())
+const notesCount = computed(() => getNotesCount())
 const uncategorizedCount = computed(() => getUncategorizedCount())
 
 // 今日新增。**口径与列表页的「今天」完全同一份**（utils/timeRange.js）：
@@ -213,6 +218,14 @@ const todayCount = computed(() => {
 const statCards = computed(() => [
   { label: '知识点', num: topicCount.value, to: { path: '/app/learn' }, busy: false },
   {
+    label: '笔记',
+    num: notesCount.value,
+    to: notesCategory.value
+      ? { path: '/app/learn', query: { category: notesCategory.value.id } }
+      : { path: '/app/learn' },
+    busy: false
+  },
+  {
     label: '待归类',
     num: uncategorizedCount.value,
     to: { path: '/app/learn', query: { category: UNCATEGORIZED } },
@@ -233,12 +246,46 @@ async function save() {
   if (!content || saving.value) return
   saving.value = true
   try {
-    await createTopic({ title: '', content, tags: [], typeId: draftType.value })
+    // ⚠️ **不传目录 ⇒ 后端落「笔记」目录**（2026-11-16 D3）：随手记要有家。
+    //    不传类型 ⇒ 类型轴已退役（内容不再按出生地分档）。
+    const createdId = await createTopic({ title: '', content, tags: [] })
     draft.value = ''
+    writeDraft('')
     editorKey.value++
     ElMessage.success('已保存')
+    // ⚠️ **命名任务**：给刚记的这条起个标题（2026-11-16 D5）。
+    //    判据 = **端点就绪**（不是开关——开关已退役）：没配好就不跑，
+    //    标题留空（和现在的行为一样），用户随时可以自己写。
+    //    ⚠️ **失败不提示**：命名失败只意味着"标题还空着"，不是错误
+    //    （内容已经存好了）——提示一句只会让人以为没存上。
+    if (createdId) submitNamingTask(createdId)
   } finally {
     saving.value = false
+  }
+}
+
+/**
+ * 提交「命名」任务（后台任务型，type = `name`）。
+ *
+ * <p>⚠️ **单节点、成功即写回、无待确认**（唯一的自动写回场景）——
+ * 所以**任务卡就是这次自动改动的唯一留痕**。
+ *
+ * <p>⚠️ **端点没配好就不提交**：提交了也是注定失败（后端建任务时就验端点），
+ * 与其让用户看见一张失败的任务卡，不如压根不建——标题留空而已。
+ */
+async function submitNamingTask(topicId) {
+  const endpoint = resolveEndpoint()
+  if (!endpoint) return
+  try {
+    await createGenTask({
+      type: 'name',
+      title: '命名',
+      // 端点 id 必须在参数快照里（后端建任务时验它、跑的时候用它）
+      params: { endpointId: endpoint.id },
+      steps: [{ topicId }],
+    })
+  } catch (e) {
+    // 提交失败也不打扰用户：内容已经存好了，标题空着而已
   }
 }
 
@@ -270,74 +317,18 @@ onMounted(async () => {
 .home {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  /* 壳已收滚（AppLayout 的 :has(.home)）⇒ 这里的高度被钉死为一屏：
-     flex:1 吃满内容区，矮窗出现赤字时**下方的栏先让位**（它们 shrink:1），
-     录入区有 .quick 上那条 220px 的底。内容再多也是编辑器内滚，页面不滚。
-     ⚠️ **width:100% 不能省**（2026-11-15 用户截图「何意味」）：壳收滚后
-     .app-content 是 flex 列，`margin: 0 auto` 的 auto 边距会**优先于 stretch**
-     把子项按内容收缩 ⇒ 整个工作面缩成 fit-content 的一条窄卡居中
-     （与 .detail #839 那个窄卡同一个坑，FEATURES §2.7 的注释早就写着）；
-     width:100% 给出确定宽度，auto 边距才回到"只管居中"的本职。 */
+  gap: clamp(12px, 2vh, 20px);
   width: 100%;
-  flex: 1;
-  min-height: 0;
-  /* 整页一条工作面（2026-11-09）：录入框 / 统计卡 / 复习面板三块同宽、右边缘对齐，
-     宽度只由这一个 max-width 管。此前 .quick 单独收 1080，而 .home 被 AppLayout 的
-     `:has(.home, .learn, .detail)` 那条解除上限（max-width:none）⇒ 统计卡/复习面板
-     随 .home 铺满全宽、录入框卡在 1080 ⇒ 视口一宽右边缘就错开
-     （实测 1500 差 60px / 1920 差 480px / 2560 差 1120px，窗口最大化即用户报的
-     "全屏下输入框右侧一大片空白"）。
-     1160 = 工作面 1072 + 左右内距 88，就是 A2 拍板的 1080 那条线。
-
-     ⚠️ **2026-11-11 改：居中**（推翻 2026-11-06 A2 的「左对齐不居中」）。
-     A2 那条的理由是「居中封顶会让两侧对称空白一路增长」——**但左对齐的代价更大**：
-     左侧永远贴着侧栏（实测 0px），右侧空白随窗口线性涨（1920 → 496px / 2560 → 1136px）
-     ⇒ **左右留白比例必然随缩放变化**（实测 1440 时 0.36 : 1、1920 时 11.3 : 1、2560 时 25.8 : 1），
-     正是用户报的「左右边比例在不同缩放程度不一样，全屏下右边空一大片」。
-     居中之后左右留白**恒等** ⇒ 缩放时同比变化、比例恒定。
-     ⇒ **对称空白不是缺陷，是版心居中的正常结果**；真正难看的是「一边贴边、一边空一半」。
-     与列表页 .learn（也是居中，1920 时 x=508 / 左右各 252）口径一致 —— 两页同属一个壳，
-     规则必须一样，不能各写一份。 */
+  flex: 1 0 auto;
+  min-height: 100%;
   max-width: 1160px;
   margin: 0 auto;
-  /* 左右内距走 --home-pad-x（偏好面板「首页 → 左右」）。
-     ⚠️ **这个变量原来零消费者**（面板里那个滑块拖了没反应，AppLayout 的注释还写着
-     「左右留白交给偏好面板（--home-pad-x）」—— 注释在撒谎，规则实际不存在）。
-     2026-11-11 把它接上：**滑块终于活了**，且默认 44 = 原写死值 ⇒ 视觉零变化。
-     ⚠️ **左右必须相等**，否则版心就不再居中（外边距不对称时居中偏移）⇒ 这条只给一个值，
-     不分左右。 */
-  padding: 34px var(--home-pad-x, 44px) 34px;
+  padding: clamp(16px, 3vh, 34px) clamp(20px, 3vw, 44px);
 }
-/* 底部的「弹性尾巴」：`.home::after` 是一个**零内容**的 flex 项，专门吃录入区让出来的
-   那段高度（--home-tail-grow）。它不是装饰，是这个滑块能用的前提。
-
-   **为什么非有它不可**：flex-grow 只能在"参与分配的元素之间"分。录入区调小时，
-   如果下面两排也跟着长，省下的高度就被它们分走；可下面两排一旦按用户要求
-   **固定自身高度**（不再 grow），就等于退出了分配 —— 剩下唯一还在 grow 的录入区会
-   **恒定地拿走全部剩余高度**，滑块立刻变成一根废的。尾巴没有内容、没有 min-content
-   地板，比例才永远绑得住。
-
-   这不是推理，是量出来的（634 宽窄视口，量 ProseMirror 的 rect，不是目测卡片边框）：
-   **100% → 232px、65% → 232px、40% → 119px**。65% 以上纹丝不动，**不是比例算错**，
-   是"没有可分配的对手方"——下面两排早已卡在各自内容高度的地板上，录入区没东西可抢。
-
-   `margin-top` 抵掉一个 gap：尾巴排在 .panel 之后，gap 会算它一份。默认档 tail=0
-   时它必须不占位，否则底部凭空多出一条 --home-gap 的空白，"以当前为默认"就不成立。 */
-.home::after {
-  content: '';
-  flex: var(--home-tail-grow, 0) 1 0;
-  margin-top: calc(-1 * var(--home-gap, var(--sp-14)));
-}
-/* 录入框占可分配高度的几成：--home-quick-grow / --home-tail-grow 由 uiPrefs.js 写进
-   <html> 行内（百分比 → 一对 flex-grow 比值，见那边 quickGrow）。没存过偏好时两个都不写，
-   这里的 999 / 0 顶上 = 全部高度给录入框、尾巴 0 高，**默认即现状**。 */
+/* 录入框始终占主导：不 shrink 到塌掉，下方统计栏与入口行在矮屏先收紧成紧凑条 */
 .quick {
-  flex: var(--home-quick-grow, 999) 1 0;
-  /* 输入框的**高度下限**（2026-11-15 用户：「输入框不能被挤压，下方的栏先被挤压
-     然后才是输入框」）：矮窗时压缩顺序 = 统计卡/复习面板先（它们 flex-shrink:1），
-     录入区最后——原来它 basis 0 又不设底，矮窗直接塌成一行。 */
-  min-height: 220px;
+  flex: 1 0 clamp(280px, 46vh, 420px);
+  min-height: 260px;
   /* 右上角集群（导入 + 类型）浮在卡片角上 ⇒ 需要定位上下文 */
   position: relative;
   display: flex;
@@ -359,17 +350,8 @@ onMounted(async () => {
   padding: var(--kb-frame-pad-y) var(--sp-12) var(--sp-10);
   /* 聚焦装裱线需要定位上下文（::before 贴顶边） */
   position: relative;
-  /* 量子签名：录入卡走靛→青渐变描边（token 层只管颜色，这层是页面的形状签名） */
   transition: border-color 0.15s, box-shadow 0.15s, background var(--t-slow, 300ms);
 }
-[data-theme="liangzi"] .quick {
-  border-color: transparent;
-  background:
-    linear-gradient(var(--cc-surface), var(--cc-surface)) padding-box,
-    linear-gradient(135deg, rgba(129, 140, 248, 0.55), rgba(45, 212, 191, 0.28) 60%, rgba(129, 140, 248, 0.4)) border-box;
-}
-[data-theme="liangzi"] .quick:hover,
-[data-theme="liangzi"] .quick:focus-within { border-color: transparent; }
 /* 素雅签名：录入区内极淡点阵（写作纸感） */
 [data-theme="suya"] .quick {
   background-image: radial-gradient(circle, rgba(51, 46, 34, 0.09) 1px, transparent 1.5px);
@@ -456,17 +438,9 @@ onMounted(async () => {
    录入区让出来的高度由 .home::after 那条尾巴接住（见上面那段）。
    ⚠️ **三列**（2026-11-03：「目录」那张卡删掉 ⇒ 四列变三列）。 */
 .stats {
-  /* 2026-11-15：0 0 auto ⇒ 矮窗时纹丝不动、录入区被压没。改成**先让位**
-     （用户定的压缩顺序：下方的栏先被挤压、然后才是输入框）。shrink 到内容以下
-     就裁掉（overflow:hidden），录入区有 220px 的底在 .quick 上。 */
-  flex: 0 1 auto;
-  min-height: 0;
-  overflow: hidden;
+  flex: none;
   display: grid;
-  /* 三列随工作面三等分。P0-4 要解决的"4K 上每张 730–1161px 宽的空招牌"由
-     .home 的整页收口解决（1072 工作面 ⇒ 每张 ~346px，与当初想收的 360 同档），
-     这里不需要再各自封顶。 */
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
 }
 .stat {
@@ -499,7 +473,7 @@ onMounted(async () => {
   font-family: var(--font-display);
   transition: color var(--t-fast, 140ms) var(--ease, ease);
 }
-/* 待归类 > 0：琥珀是「这是待办」的信息色（--cc-warning 随主题） */
+/* 笔记 > 0：琥珀是「这里有东西」的信息色（--cc-warning 随主题） */
 .stat__num.is-busy { color: var(--cc-warning); }
 .stat--link:hover .stat__num:not(.is-busy) { color: var(--cc-primary); }
 .stat__label {
@@ -554,100 +528,101 @@ onMounted(async () => {
    **间距 = 上下那套 gap**（20px，见 .home 的 gap）⇒ 同一行控件只准一种间距
    （横向 gap 与纵向 gap 同值，两种都是"相邻块之间"的距离）。 */
 .home__row {
-  /* 同 .stats：矮窗时先于录入区让位（2026-11-15），shrink 到内容以下就裁掉 */
-  flex: 0 1 auto;
-  min-height: 0;
-  overflow: hidden;
+  flex: none;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
 }
-/* 两块面板在这行里**不参与高度分配**（理由同 .stats：用户明确要求"第二三行不要改变
-   本身的框的大小"）⇒ 高度由内容定，录入框让出来的高度由 .home::after 那条尾巴接住。 */
 .home__row > .panel {
   min-width: 0;
 }
-/* 窄屏：两块并排会把每块压到读着挤的宽度（链接文字 + 图标一行放不下就换行）。
-   900px 以下**退回上下两行** —— 那一档录入框本来就没多少高度，让出的一行还给用户。 */
-@media (max-width: 900px) {
+
+/* 单行横向入口卡（复用 .panel 主题签名皮肤） */
+.panel-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-10);
+  padding: 14px 18px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.18s var(--ease, ease);
+}
+.panel-entry__main {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-8);
+  min-width: 0;
+}
+.panel-entry__icon {
+  font-size: var(--text-xl);
+  color: var(--cc-text-3);
+  transition: color var(--t-fast, 140ms) var(--ease, ease);
+}
+.panel-entry__title {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--cc-text-1);
+}
+.panel-entry__sub {
+  font-size: var(--text-sm);
+  color: var(--cc-text-3);
+  white-space: nowrap;
+  transition: color var(--t-fast, 140ms) var(--ease, ease);
+}
+.panel-entry:hover {
+  border-color: var(--cc-primary-border);
+  box-shadow: var(--cc-shadow-1);
+}
+.panel-entry:hover .panel-entry__icon,
+.panel-entry:hover .panel-entry__sub {
+  color: var(--cc-primary);
+}
+.panel-entry:hover .panel-entry__icon {
+  animation: clock-tick 0.5s var(--ease, ease);
+}
+
+/* 视口偏矮或窄分屏：下方统计栏与入口行主动收成单行紧凑条，优先保住输入栏高度 */
+@media (max-height: 780px), (max-width: 900px) {
+  .stats {
+    gap: 10px;
+  }
+  .stat {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: var(--radius-md);
+  }
+  .stat__label {
+    order: -1;
+    margin-top: 0;
+    font-size: var(--text-sm);
+  }
+  .stat__num,
+  [data-theme="suya"] .stat__num {
+    font-size: 20px;
+    margin-top: 0;
+  }
   .home__row {
-    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .panel-entry {
+    padding: 10px 14px;
   }
 }
 
-/* 面板里的入口行（复习 / 考试记录两个面板共用一条样式）。
-   ⚠️ **名字原来叫 `.review-empty`**（2026-11-06 两个类合并成一个时留下的）——
-   考试记录面板一来它就不再只属于"复习"，名字跟着中性化（重复 2 处即收敛：
-   两个面板同一行样式，名字却只说其中一个 = 下一个改样式的人找不到它）。
-   ⚠️ **text-decoration 不能删**：<a> 确实需要（全局 reset 不清它，AppLayout:840-841 有同样说明）。 */
-.panel-link {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-10);
-  padding: var(--sp-11) var(--sp-14) var(--sp-13);
-  font-size: var(--text-base);
-  color: var(--cc-text-3);
-  width: 100%;
-  text-align: left;
-  text-decoration: none;
-  cursor: pointer;
+@media (max-width: 900px) {
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
-.panel-link__icon {
-  font-size: var(--text-2xl);
-}
-.panel-link:hover {
-  color: var(--cc-primary);
-}
-/* 图标拨一下再回位 —— 小彩蛋级微交互（keyframes 在 themes.css，名字 clock-tick 是
-   当初给复习面板的时钟指针做的；现在两个面板的图标都吃它，就是一个通用的 hover 小动效） */
-.panel-link:hover .panel-link__icon { animation: clock-tick 0.5s var(--ease, ease); }
-/* 量子签名：统计卡与复习面板走渐变描边。2026-11-14 升级为**流动描边**——
-   锥形渐变的角度被 @property --qspin（themes.css 注册）驱动，7s 缓转一圈；
-   不支持 @property 的浏览器动画不跑，静态 conic 照常渲染（不劣化）。 */
-[data-theme="liangzi"] .stat,
-[data-theme="liangzi"] .panel {
-  border-color: transparent;
-  position: relative; /* HUD 角标 ::after 的定位上下文 */
-  background:
-    linear-gradient(var(--cc-surface), var(--cc-surface)) padding-box,
-    conic-gradient(from var(--qspin), rgba(129, 140, 248, 0.6), rgba(45, 212, 191, 0.25), rgba(129, 140, 248, 0.15), rgba(129, 140, 248, 0.6)) border-box;
-  animation: liangzi-spin 7s linear infinite;
-}
-@keyframes liangzi-spin { to { --qspin: 360deg; } }
-[data-theme="liangzi"] .stat--link:hover,
-[data-theme="liangzi"] .panel:hover { border-color: transparent; }
-[data-theme="liangzi"] .stat--link:hover {
-  box-shadow: 0 0 0 1px rgba(129, 140, 248, 0.35), 0 8px 30px rgba(99, 91, 232, 0.2);
-}
-/* HUD 角标（2026-11-14 提案④）：hover 时四角浮出示波器式定位角——
-   8 段 L 形用一张 ::after 的 8 层背景画（不用加 DOM）；::after 与素雅墨晕（themes.css）互斥不冲突。 */
-[data-theme="liangzi"] .stat::after {
-  content: '';
-  position: absolute;
-  inset: 5px;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.2s var(--ease, ease);
-  background:
-    linear-gradient(var(--cc-primary), var(--cc-primary)) top left / 10px 1.5px,
-    linear-gradient(var(--cc-primary), var(--cc-primary)) top left / 1.5px 10px,
-    linear-gradient(var(--cc-primary), var(--cc-primary)) top right / 10px 1.5px,
-    linear-gradient(var(--cc-primary), var(--cc-primary)) top right / 1.5px 10px,
-    linear-gradient(var(--cc-primary), var(--cc-primary)) bottom left / 10px 1.5px,
-    linear-gradient(var(--cc-primary), var(--cc-primary)) bottom left / 1.5px 10px,
-    linear-gradient(var(--cc-primary), var(--cc-primary)) bottom right / 10px 1.5px,
-    linear-gradient(var(--cc-primary), var(--cc-primary)) bottom right / 1.5px 10px;
-  background-repeat: no-repeat;
-}
-[data-theme="liangzi"] .stat--link:hover::after { opacity: 0.75; }
-/* 量子数字微光（稿 theme-bak L652）2026-11-14 升级为呼吸：缓慢明灭（reduced-motion 回落到静态值） */
-[data-theme="liangzi"] .stat__num {
-  text-shadow: 0 0 12px rgba(129, 140, 248, 0.3);
-  animation: liangzi-num-glow 3.2s ease-in-out infinite;
-}
-@keyframes liangzi-num-glow {
-  0%, 100% { text-shadow: 0 0 10px rgba(129, 140, 248, 0.22); }
-  50% { text-shadow: 0 0 16px rgba(129, 140, 248, 0.42); }
+
+@media (max-width: 540px) {
+  .home__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* 曜夜首页签名（稿 theme-bak L626-640，2026-11-13 上线）：金→暗渐变描边 + hover 外发光 + 数字微光。
@@ -688,22 +663,9 @@ onMounted(async () => {
  * transition 已在 .stat--link 基段（transform 0.18s）；素雅同时有 themes.css 的墨晕，两者叠加。 */
 [data-theme="bense"] .stat--link:hover,
 [data-theme="suya"] .stat--link:hover {
-  transform: translateY(-1px);
+  transform: translateY(-1.5px);
 }
 [data-theme="bense"] .stat--link:hover {
-  box-shadow: 0 3px 14px rgb(31 35 41 / 8%);
-}
-/* 量子按钮扫光（2026-11-14 提案⑤）：hover 时高光沿按钮平移一次（background-position，只动合成层） */
-[data-theme="liangzi"] .quick__actions :deep(.save-btn) {
-  background: linear-gradient(110deg, #655cf5 0%, #4f46e5 38%, #818cf8 50%, #4f46e5 62%, #4f46e5 100%);
-  background-size: 220% 100%;
-  background-position: 0% 0;
-  transition: background-position 0.6s var(--ease, ease);
-}
-[data-theme="liangzi"] .quick__actions :deep(.save-btn:not(.is-disabled):hover) {
-  background: linear-gradient(110deg, #655cf5 0%, #4f46e5 38%, #818cf8 50%, #4f46e5 62%, #4f46e5 100%);
-  background-size: 220% 100%;
-  background-position: 100% 0;
-  filter: none;
+  box-shadow: 0 4px 16px rgba(43, 127, 255, 0.1), 0 2px 6px rgba(31, 35, 41, 0.06);
 }
 </style>

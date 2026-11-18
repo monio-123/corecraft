@@ -50,169 +50,168 @@ const mockGenTasks = [
   {
     id: 6001,
     type: 'theme',
-    title: '生成主题：计算机网络',
+    title: 'Rust 所有权机制',
     status: 'running',
-    doneCount: 7,
+    doneCount: 4,
     total: 12,
     failedCount: 0,
-    stage: 'write',
-    nodeKey: 'body',
-    startTime: '2026-11-12 09:10:00',
-    createTime: '2026-11-12 09:10:00',
+    stage: 'build',
+    nodeKey: 'build',
+    startTime: '2026-11-17 09:10:00',
+    createTime: '2026-11-17 09:10:00',
     nodes: [
       {
         key: 'outline',
-        name: '生成目录',
+        name: '规划目录',
         status: 'ok',
-        done: 1,
-        total: 1,
+        done: 4,
+        total: 4,
+        elapsedMs: 38000,
         groups: [{ key: 'skeleton', name: '骨架', done: 1, total: 1, running: 0, failed: 0 }]
       },
-      { key: 'confirm', name: '确认', status: 'ok', done: 0, total: 0, groups: [] },
+      { key: 'confirm', name: '核对目录', status: 'ok', done: 0, total: 0, elapsedMs: 1000, groups: [] },
+      {
+        key: 'build',
+        name: '建目录',
+        status: 'ok',
+        done: 2,
+        total: 2,
+        elapsedMs: 2400,
+        groups: [{ key: 'build', name: '建目录', done: 2, total: 2, running: 0, failed: 0 }]
+      },
       {
         key: 'body',
-        name: '生成正文',
+        name: '写正文',
         status: 'running',
-        done: 6,
-        total: 12,
-        groups: [{ key: 'write', name: '写正文', done: 6, total: 12, running: 1, failed: 0 }]
+        done: 2,
+        total: 10,
+        elapsedMs: 12000,
+        groups: [{ key: 'write', name: '写正文', done: 2, total: 10, running: 1, failed: 0 }]
       }
     ]
   },
   {
     id: 6002,
-    type: 'classify',
-    title: '待归类知识点归类',
+    type: 'theme',
+    title: '深度学习基础',
     status: 'awaiting',
-    doneCount: 18,
-    total: 18,
+    doneCount: 5,
+    total: 5,
     failedCount: 0,
-    nodeKey: 'adopt',
-    createTime: '2026-11-12 11:30:00',
+    nodeKey: 'confirm',
+    createTime: '2026-11-17 11:30:00',
     nodes: [
       {
-        key: 'classify',
-        name: '归类',
+        key: 'outline',
+        name: '规划目录',
         status: 'ok',
-        done: 18,
-        total: 18,
-        groups: [{ key: 'classify', name: '归类', done: 18, total: 18, running: 0, failed: 0 }]
+        done: 5,
+        total: 5,
+        elapsedMs: 45000,
+        groups: [{ key: 'skeleton', name: '骨架', done: 1, total: 1, running: 0, failed: 0 }]
       },
-      // ⚠️ 节点 key 必须是 **adopt**（后端约定的那个）：GenTaskPanel 的 onConfirm
-      // 靠 nodeKey === 'adopt' 判定"开采纳框"，写成别的就点不出采纳弹窗。
-      // 人工节点**没有 groups** ⇒ TaskCard 按 `isManualNode` 只显示产物摘要那一行。
       {
-        key: 'adopt',
-        name: '确认',
+        key: 'confirm',
+        name: '核对目录',
         status: 'awaiting',
         done: 0,
         total: 0,
-        summary: '18 条待采纳',
+        summary: '5 模块 · 64 点',
         groups: []
-      }
+      },
+      { key: 'build', name: '建目录', status: 'pending', done: 0, total: 0, groups: [] },
+      { key: 'body', name: '写正文', status: 'pending', done: 0, total: 0, groups: [] }
     ]
   },
   {
-    // ⚠️ **已暂停**（2026-11-12）：验证「暂停后按钮变成恢复」「暂停了就能删除」
-    // 以及**暂停态的配色/动效**（琥珀、节点不呼吸）。
-    // status 必须写 `canceled`（后端沿用这个字面量，界面上叫「已暂停」）；
-    // 节点的 `paused` 是后端新下发的状态，**不能是 running** ——
-    // 写 running 就会一直呼吸，看着像还在跑（这正是线上被用户抓到的那个 bug）。
     id: 6004,
     type: 'content',
-    title: '知识 · 12 条',
+    title: '编译原理 · LR 语法分析',
     status: 'canceled',
-    doneCount: 7,
+    doneCount: 6,
     total: 12,
     failedCount: 0,
     stage: '',
     nodeKey: 'body',
-    startTime: '2026-11-12 08:20:00',
-    finishTime: '2026-11-12 08:41:23',
-    createTime: '2026-11-12 08:20:00',
+    startTime: '2026-11-17 08:20:00',
+    finishTime: '2026-11-17 08:41:23',
+    createTime: '2026-11-17 08:20:00',
     nodes: [
       {
         key: 'body',
-        name: '生成正文',
+        name: '写正文',
         status: 'paused',
-        done: 7,
+        done: 6,
         total: 12,
-        groups: [
-          { key: 'build', name: '建结构', done: 1, total: 1, running: 0, failed: 0 },
-          { key: 'write', name: '写正文', done: 6, total: 11, running: 0, failed: 0 }
-        ]
-      }
-    ]
-  },
-  {
-    // 「正在暂停」：执行器还在写当前这一条（不能掐断，会落半截正文）。
-    // 卡片上该看到的是：琥珀的「正在暂停」+ 忙碌态按钮「正在暂停…」+「当前这条写完就停」。
-    id: 6005,
-    type: 'content',
-    title: '知识 · 8 条',
-    status: 'canceling',
-    doneCount: 3,
-    total: 8,
-    failedCount: 0,
-    stage: 'write',
-    nodeKey: 'body',
-    startTime: '2026-11-12 09:05:00',
-    createTime: '2026-11-12 09:05:00',
-    nodes: [
-      {
-        key: 'body',
-        name: '生成正文',
-        status: 'running',
-        done: 3,
-        total: 8,
-        groups: [{ key: 'write', name: '写正文', done: 3, total: 8, running: 1, failed: 0 }]
+        elapsedMs: 28000,
+        groups: [{ key: 'write', name: '写正文', done: 6, total: 12, running: 0, failed: 0 }]
       }
     ]
   },
   {
     id: 6003,
-    type: 'exam',
-    title: '生成考试：数据链路层',
-    status: 'failed',
-    doneCount: 10,
-    total: 10,
-    failedCount: 3,
-    nodeKey: 'exam',
-    createTime: '2026-11-11 20:05:00',
-    error: '3 条失败：知识点ID不能为空',
+    type: 'content',
+    title: '分布式事务 · 两阶段提交',
+    status: 'succeeded',
+    doneCount: 8,
+    total: 8,
+    failedCount: 2,
+    nodeKey: 'body',
+    createTime: '2026-11-17 20:05:00',
+    error: '2 条失败：模型超时',
     nodes: [
       {
-        key: 'exam',
-        name: '出题',
+        key: 'body',
+        name: '写正文',
         status: 'failed',
-        done: 7,
-        total: 10,
-        groups: [{ key: 'exam', name: '出题', done: 7, total: 10, running: 0, failed: 3 }]
+        desc: '为每条知识点生成详细讲解与示例',
+        done: 6,
+        total: 8,
+        elapsedMs: 19000,
+        groups: [{ key: 'write', name: '写正文', done: 6, total: 8, running: 0, failed: 2 }]
+      }
+    ]
+  },
+  {
+    id: 6006,
+    type: 'quiz',
+    title: '随堂测验 · 红黑树插入平衡',
+    status: 'succeeded',
+    doneCount: 1,
+    total: 1,
+    failedCount: 0,
+    nodeKey: 'quiz',
+    confirmedAt: '2026-11-17 20:10:06',
+    createTime: '2026-11-17 20:10:00',
+    nodes: [
+      {
+        key: 'quiz',
+        name: '出题',
+        status: 'ok',
+        done: 1,
+        total: 1,
+        elapsedMs: 6000,
+        groups: [{ key: 'quiz', name: '出题', done: 1, total: 1, running: 0, failed: 0 }]
       }
     ]
   }
 ]
 
 /**
- * 配置树的假数据（2026-11-13）。
- *
- * <p>设置弹窗（SettingsDialog）读 `GET /sys/config/node/list` 拿"有哪些项、属于哪一组"，
- * 此前没 mock ⇒ 面板打开是空的，**加载中 / 加载失败两个状态都看不到**。
- *
- * <p>这里只给界面偏好（ui 命名空间）的四组 + 叶子项，
- * 叶子 configKey 必须与 utils/uiPrefs.js 的 PREF_SPECS 对得上
- * （对不上的键会被 toItem 过滤掉 ⇒ 那一行不显示）。
+ * 配置树的假数据（2026-11-17 随待办-1115 第8点同步精简）。
  */
 const mockConfigNodes = [
-  { id: 1, parentId: 0, configKey: 'ui', code: 'ui', name: '界面偏好' },
-  { id: 11, parentId: 1, configKey: 'ui.side', code: 'side', name: '侧边栏' },
-  { id: 12, parentId: 1, configKey: 'ui.home', code: 'home', name: '首页' },
-  { id: 13, parentId: 1, configKey: 'ui.learn', code: 'learn', name: '知识点' },
-  { id: 14, parentId: 1, configKey: 'ui.detail', code: 'detail', name: '详情' },
-  { id: 111, parentId: 11, configKey: 'ui.side.sideWidth', code: 'sideWidth', name: '侧边栏宽度' },
-  { id: 121, parentId: 12, configKey: 'ui.home.homePadX', code: 'homePadX', name: '首页左右内距' },
-  { id: 131, parentId: 13, configKey: 'ui.learn.learnGridGap', code: 'learnGridGap', name: '卡片间距' },
-  { id: 141, parentId: 14, configKey: 'ui.detail.editorFs', code: 'editorFs', name: '正文字号' }
+  { id: 1, parentId: 0, configKey: 'ui', code: 'ui', name: '知识库系统界面配置' },
+  { id: 8, parentId: 1, configKey: 'ui.side', code: 'side', name: '侧边栏' },
+  { id: 72, parentId: 1, configKey: 'ui.browse', code: 'browse', name: '浏览与布局' },
+  { id: 5, parentId: 1, configKey: 'ui.detail', code: 'detail', name: '详情' },
+  { id: 38, parentId: 8, configKey: 'ui.side.sideWidth', code: 'sideWidth', name: '宽度' },
+  { id: 75, parentId: 72, configKey: 'ui.browse.showMastery', code: 'showMastery', name: '掌握度指示' },
+  { id: 28, parentId: 5, configKey: 'ui.detail.editorFs', code: 'editorFs', name: '正文字号' },
+  { id: 21, parentId: 5, configKey: 'ui.detail.detailAskW', code: 'detailAskW', name: '问答宽' },
+  { id: 58, parentId: 5, configKey: 'ui.detail.lineHeight', code: 'lineHeight', name: '行高' },
+  { id: 59, parentId: 5, configKey: 'ui.detail.paraGap', code: 'paraGap', name: '段间距' },
+  { id: 74, parentId: 5, configKey: 'ui.detail.codeWrap', code: 'codeWrap', name: '代码折行' }
 ]
 
 /**
@@ -224,7 +223,7 @@ const mockConfigNodes = [
  * <p>端点形态对着 `AiEndpoint`：id / name / vendor / protocol / baseUrl /
  * model / apiKey / custom / ready。三条正好覆盖三种脸：当前选中 / 普通 / 未配全。
  */
-const mockAiConfig = { enabled: true, currentEndpointId: 3001 }
+const mockAiConfig = { currentEndpointId: 3001 }
 const mockAiEndpoints = [
   { id: 3001, name: 'DeepSeek', vendor: 'deepseek', protocol: 'openai', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', apiKey: 'sk-demo', custom: '', ready: true },
   { id: 3002, name: '小米 MiMo', vendor: 'xiaomi', protocol: 'openai', baseUrl: 'https://api.xiaomi.com', model: 'mimo-v2.5', apiKey: 'sk-demo', custom: '', ready: true },
@@ -304,7 +303,9 @@ function mockQuizItems() {
   ]
 }
 
-function hit(url) {
+const mockProfile = { id: 1, username: 'mo', avatar: null, email: '', mobile: '', roles: [] }
+
+function hit(url, method, reqBody) {
   const u = String(url || '')
   if (u.includes('/sys/user/me/menu-tree')) {
     return [{
@@ -317,9 +318,19 @@ function hit(url) {
     }]
   }
   if (u.includes('/sys/user/me/profile')) {
-    // 字段名照生产的形状（nickname/username 小写）——原来写成 camelCase，
-    // demo 里用户名一直是空的（头像兜底字恒为 'U' 也是它害的）
-    return { id: 1, username: 'mo', nickname: 'mo', avatar: null, roles: [] }
+    if (method === 'PUT' && reqBody) {
+      try {
+        var patch = typeof reqBody === 'string' ? JSON.parse(reqBody) : reqBody
+        if (patch && typeof patch === 'object') {
+          if (patch.username != null) mockProfile.username = String(patch.username).trim() || mockProfile.username
+          if (patch.avatar !== undefined) mockProfile.avatar = patch.avatar
+          if (patch.email !== undefined) mockProfile.email = patch.email
+          if (patch.mobile !== undefined) mockProfile.mobile = patch.mobile
+        }
+      } catch (e) {}
+      return null
+    }
+    return Object.assign({}, mockProfile)
   }
   if (u.includes('/sys/user/me/permissions')) return { permissions: [] }
   if (u.includes('/kp/category/list')) return mockData.categories
@@ -334,11 +345,9 @@ function hit(url) {
     var scope = q('scope') || 'both'
     var ids = q('categoryIds')
     var uncategorized = q('uncategorized') === 'true'
-    var typeId = q('typeId')
     var list = mockData.topics.filter(function (t) {
       if (ids && ids.split(',').indexOf(String(t.categoryId)) < 0) return false
       if (uncategorized && t.categoryId != null) return false
-      if (typeId && String(t.typeId) !== typeId) return false
       if (kw) {
         var inTitle = t.title.indexOf(kw) >= 0
         var inContent = (t.content || '').indexOf(kw) >= 0
@@ -346,6 +355,18 @@ function hit(url) {
       }
       return true
     })
+    var sort = q('sort')
+    if (sort === 'asc') {
+      var order = ids ? ids.split(',') : []
+      list = list.slice().sort(function (a, b) {
+        if (order.length) {
+          var ia = order.indexOf(String(a.categoryId))
+          var ib = order.indexOf(String(b.categoryId))
+          if (ia !== ib) return ia - ib
+        }
+        return a.id - b.id
+      })
+    }
     var page = Number(q('page')) || 1
     var size = Number(q('size')) || 20
     return { records: list.slice((page - 1) * size, page * size), total: list.length }
@@ -404,13 +425,36 @@ function hit(url) {
       })
     }
   }
+const mockGenTaskSteps = {
+  6001: [
+    { id: 1, phase: 'skeleton', phaseSeq: 1, title: '生成 Rust 所有权目录骨架', status: 'ok', durationMs: 38000 },
+    { id: 2, phase: 'build', phaseSeq: 1, title: '导入目录', status: 'ok', durationMs: 1200 },
+    { id: 3, phase: 'build', phaseSeq: 2, title: '创建知识占位', status: 'ok', durationMs: 1200 },
+    { id: 4, phase: 'write', phaseSeq: 1, title: '所有权与借用规则', status: 'ok', durationMs: 6000 },
+    { id: 5, phase: 'write', phaseSeq: 2, title: '生命周期标注与省略', status: 'running', durationMs: 6000 }
+  ],
+  6003: [
+    { id: 11, phase: 'write', phaseSeq: 1, title: '两阶段提交协议流程', status: 'ok', durationMs: 3200 },
+    { id: 12, phase: 'write', phaseSeq: 2, title: '协调者单点故障分析', status: 'failed', error: '模型请求超时（30s）' },
+    { id: 13, phase: 'write', phaseSeq: 3, title: '三阶段提交与超时机制', status: 'failed', error: '模型请求超时（30s）' }
+  ]
+}
+
+  if (/\/kp\/gen-task\/clear-finished(\?|$)/.test(u)) {
+    for (var ci = mockGenTasks.length - 1; ci >= 0; ci--) {
+      if (mockGenTasks[ci].status === 'succeeded' && !mockGenTasks[ci].failedCount) {
+        mockGenTasks.splice(ci, 1)
+      }
+    }
+    return 1
+  }
   if (/\/kp\/gen-task\/list(\?|$)/.test(u)) {
     return { records: mockGenTasks, total: mockGenTasks.length }
   }
   var taskDetail = u.match(/\/kp\/gen-task\/(\d+)$/)
   if (taskDetail) {
     var g = mockGenTasks.find(function (t) { return String(t.id) === taskDetail[1] })
-    return g || null
+    return g ? Object.assign({}, g, { steps: g.steps || mockGenTaskSteps[g.id] || [] }) : null
   }
   if (/\/kp\/exam\/papers(\?|$)/.test(u)) {
     // 考试记录列表（摘要）。筛选口径照前端 buildParams：kind / categoryIds / 时间区间 / 分页。
@@ -450,13 +494,14 @@ export function installDemoApi() {
   const rawOpen = XMLHttpRequest.prototype.open
   const rawSend = XMLHttpRequest.prototype.send
   XMLHttpRequest.prototype.open = function (method, url) {
+    this.__demoMethod = String(method || 'GET').toUpperCase()
     this.__demoUrl = String(url || '')
     return rawOpen.apply(this, arguments)
   }
-  XMLHttpRequest.prototype.send = function () {
+  XMLHttpRequest.prototype.send = function (reqBody) {
     const url = this.__demoUrl || ''
     if (!url.includes('/api/')) return rawSend.apply(this, arguments)
-    const data = hit(url)
+    const data = hit(url, this.__demoMethod || 'GET', reqBody)
     const body = JSON.stringify({ code: 200, message: 'ok', data })
     Object.defineProperty(this, 'readyState', { value: 4 })
     Object.defineProperty(this, 'status', { value: 200 })

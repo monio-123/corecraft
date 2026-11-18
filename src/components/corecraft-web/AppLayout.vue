@@ -110,17 +110,17 @@
             <!-- 侧边栏角标：掌握度迷你进度条（设计 §8.3「轻量掌握度进度」）+ 条数。
                  掌握度数字不进窄侧栏（悬浮 title 补已学/评估覆盖）；无数据=空轨道。 -->
             <MasteryBar :row="getCategoryMastery(c.id)" />
-            <span class="app-cats__count">{{ categoryCounts[c.id] || 0 }}</span>
-            <!--
-              这一行**只有名字和条数**（2026-11-03）：
-              - 「⋯」（新增子目录 / 写知识点 / 重命名 / 删除）→ 挪到目录页里那一行，
-                **规则一句话：在哪儿看着它，就在哪儿操作它**。侧边栏是纯导航。
-              - 「›」（就地展开子树）→ 删：展开子树这件事目录页做得更好
-                （宽栏、分层、知识点能点），侧边栏这 264px 撑不开层级。
-              - 「树 ⇄ 卡片」切换钮 → **2026-11-08 删**（用户：「可以把侧边栏一级目录的
-                那个切换图标也给去了」）—— 切换收进树视图标题行的分段式
-                「目录树 | 卡片」（就地换内容盒子），侧边栏回归纯导航。
-            -->
+            <span class="app-cats__tail" @click.prevent.stop @pointerdown.stop>
+              <span class="app-cats__count">{{ categoryCounts[c.id] || 0 }}</span>
+              <CategoryRowMenu
+                class="app-cats__menu"
+                btn-class="app-cats__dots"
+                :category="c"
+                @add="openSideAdd"
+                @rename="openSideRename"
+                @points="openSidePoints"
+              />
+            </span>
           </RouterLink>
         </div>
         <!-- ⚠️ **「没有目录」这句话只在真的加载完之后才成立**。
@@ -193,7 +193,7 @@
              （"界面直接显示、AI 单独弹窗"被判割裂，2026-11-13 收口）。
              ⚠️ **齿轮就是弹窗自己的触发器**：曾经试过齿轮套 el-dropdown、面板用
              虚拟触发器挂它上面 —— 同一元素两个触发器，点一下两个都响应。 -->
-        <SettingsDialog :groups="['side', 'home', 'learn', 'detail']" />
+        <SettingsDialog />
       </div>
     </aside>
 
@@ -356,16 +356,22 @@
          知识点能直接点；侧边栏 264px 展开出来是两百多行的一根长条。
          ⇒ 侧边栏那列退回**纯导航**（书名 + 条数）。 -->
 
-    <!-- 「给目录起个名」：**只剩新建一级目录**这一种用法（新建子级 / 改名都跟着目录页走了）。
-         ⚠️ 其它参数全用组件自己的默认值（mode=create / parentId=ROOT_CATEGORY /
-         initialName='' / initialId=null）—— 那几个值在这里是常量，写出来就是第二份。 -->
-    <CategoryNameDialog v-model="nameDialog.visible" />
+    <CategoryNameDialog
+      v-model="nameDialog.visible"
+      :mode="nameDialog.mode"
+      :parent-id="nameDialog.parentId"
+      :parent-label="nameDialog.parentLabel"
+      :initial-name="nameDialog.initialName"
+      :initial-id="nameDialog.initialId"
+    />
 
     <!-- 生成主题：主题 → 规划 → 提交后台逐条写正文。
          `plan-task` / `plan-outline`：任务中心「继续编辑」把一棵已经生成好的树交回来，
          弹窗直接跳到第 2 步（不再重新调模型）。 -->
     <CategoryTreeDialog
       v-model="treeDialog.visible"
+      :mode="treeDialog.mode"
+      :category="treeDialog.category"
       :plan-task="treeDialog.planTask"
       :plan-outline="treeDialog.planOutline"
       @done="onTreeDialogDone"
@@ -377,7 +383,7 @@
     <DeleteCategoryDialog />
 
     <!-- 任务面板：生成搬到服务端之后，进度 / 停止 / 继续都在这儿 -->
-    <GenTaskPanel ref="taskPanel" @open-plan="openPlanTask" @open-answer="openAnswerTask" />
+    <GenTaskPanel ref="taskPanel" @open-plan="openPlanTask" />
   </div>
 </template>
 
@@ -401,6 +407,7 @@ import CategoryNameDialog from '../../views/corecraft-web/CategoryNameDialog.vue
 import MasteryBar from '../../views/corecraft-web/MasteryBar.vue'
 import CategoryCrumbs from '../../views/corecraft-web/CategoryCrumbs.vue'
 import CategoryTreeDialog from '../../views/corecraft-web/CategoryTreeDialog.vue'
+import CategoryRowMenu from '../../views/corecraft-web/CategoryRowMenu.vue'
 import { attentionTaskCount, startGenTaskPolling, POLL_SLOW } from '../../views/corecraft-web/useGenTasks'
 import GenTaskPanel from '../../views/corecraft-web/GenTaskPanel.vue'
 import DeleteCategoryDialog from '../../views/corecraft-web/DeleteCategoryDialog.vue'
@@ -416,7 +423,7 @@ import {
   ensureCategoryMasteryLoaded, getCategoryMastery,
   openTopicCategoryId, bodySearchKeyword, bodySearchHits, bodySearchJump,
   treeSearchHits, treeSearchJump,
-  refreshTopicIndexes, bumpDataVersion
+  refreshTopicIndexes, bumpDataVersion, NOTES_CATEGORY_NAME
 } from '../../views/corecraft-web/useCorecraftWebStore'
 import { dnd } from '../../views/corecraft-web/useCategoryDnd'
 import { visibleRootCategoriesOf } from '../../utils/categoryTree'
@@ -458,7 +465,7 @@ function toggleSide() {
  * <p>（2026-11-10 起只有一条链路：先出规划 → 建结构 → 提交服务端任务写正文。
  * 老的"前端本地循环"那条已整条删除。）
  */
-const treeDialog = reactive({ visible: false, planTask: null, planOutline: '' })
+const treeDialog = reactive({ visible: false, mode: 'pack', category: null, planTask: null, planOutline: '' })
 
 /** 任务面板（生成搬到服务端之后的进度入口） */
 const taskPanel = ref(null)
@@ -489,7 +496,14 @@ const { onPointerDown: onCatPointerDown } = useCategoryDrag((e) => {
 
 // 「给目录起个名」弹窗。**这里只剩新建一级目录**（新建子级 / 改名都跟着目录页走了）
 // ⇒ 其余参数全用组件自己的默认值，不在这儿再抄一份。
-const nameDialog = reactive({ visible: false })
+const nameDialog = reactive({
+  visible: false,
+  mode: 'create',
+  parentId: ROOT_CATEGORY,
+  parentLabel: '',
+  initialName: '',
+  initialId: null
+})
 
 // 侧边栏只渲染一级（parentId = 0）。层级在**目录页**里看。
 const rootCategories = computed(() => getChildCategories(ROOT_CATEGORY))
@@ -624,14 +638,17 @@ function bookLink(c) {
  * 命中的**深层目录不往这儿塞** —— 它在**右边的树**里显示（见 CategoryTree 的过滤）。
  * 侧边栏是导航，一层就够；层级在目录页里看。
  */
-const visibleCats = computed(() =>
-  visibleRootCategoriesOf(
+const visibleCats = computed(() => {
+  const list = visibleRootCategoriesOf(
     route,
     rootCategories.value,
     getCategories(),
     categoryCounts.value
   )
-)
+  // **「笔记」置顶**（2026-11-16 D3）：随手记的家排在目录列表最前（普通身份、无特殊标记）。
+  // 只调顺序不动 filter ——「哪些书可见」的判据仍是上一行那一份（同源不漂）。
+  return [...list].sort((a, b) => (b.name === NOTES_CATEGORY_NAME) - (a.name === NOTES_CATEGORY_NAME))
+})
 
 /**
  * **「全部目录」那一项要不要画**：**搜索态 + 正文档档**。
@@ -938,16 +955,23 @@ function watchTopBarWidth() {
  * 的是 `tree` 那本）；**详情页 push** 到那一级的卡片视图（返回键能回到这条知识）。
  */
 function pickCrumb(id) {
-  if (route.name === 'AppLearn') {
-    router.replace({
-      path: route.path,
-      query: { ...route.query, tree: undefined, category: id }
+  const hasChildren = getChildCategories(id).length > 0
+  if (hasChildren) {
+    const chain = getCategoryPath(id)
+    const rootId = chain.length ? chain[0].id : id
+    router.push({
+      path: '/app/learn',
+      query: { ...route.query, tree: rootId, category: id === rootId ? undefined : id, view: 'tree' }
     })
     return
   }
-  // ⚠️ **详情页点面包屑 = 切到那个目录看内容**，`categoryLink` 只带 `category` ⇒
-  // 会把搜索词扔掉（症状同 {@link bookLink}："切换目录后上方的搜索条件掉了"）。
-  // 2026-11-11 用户拍板「搜索词一律跟着走」⇒ 有词就一并带上；没词 URL 保持干净。
+  if (route.name === 'AppLearn') {
+    router.replace({
+      path: route.path,
+      query: { ...route.query, tree: undefined, category: id, view: undefined }
+    })
+    return
+  }
   const link = categoryLink(id)
   const kw = keyword.value.trim()
   if (kw) link.query = { ...link.query, q: kw }
@@ -1213,7 +1237,46 @@ function goAdmin() {
  * <p>⚠️ **只有一级这一种**：新建子目录 / 改名都在**目录页**里（看着那个目录时操作它）。
  */
 function openCreate() {
-  nameDialog.visible = true
+  Object.assign(nameDialog, {
+    visible: true,
+    mode: 'create',
+    parentId: ROOT_CATEGORY,
+    parentLabel: '',
+    initialName: '',
+    initialId: null
+  })
+}
+
+function openSideAdd(c) {
+  Object.assign(nameDialog, {
+    visible: true,
+    mode: 'create',
+    parentId: c.id,
+    parentLabel: c.name,
+    initialName: '',
+    initialId: null
+  })
+}
+
+function openSideRename(c) {
+  Object.assign(nameDialog, {
+    visible: true,
+    mode: 'rename',
+    parentId: ROOT_CATEGORY,
+    parentLabel: c.name,
+    initialName: c.name,
+    initialId: c.id
+  })
+}
+
+function openSidePoints(c) {
+  Object.assign(treeDialog, {
+    visible: true,
+    mode: 'points',
+    category: c,
+    planTask: null,
+    planOutline: ''
+  })
 }
 
 /**
@@ -1222,9 +1285,13 @@ function openCreate() {
  * <p>生成的目录**自成一体、放在第一层**：挂到哪、怎么挪层级，用户自己在侧边栏拖。
  */
 function openTreeDialog() {
-  treeDialog.planTask = null
-  treeDialog.planOutline = ''
-  treeDialog.visible = true
+  Object.assign(treeDialog, {
+    visible: true,
+    mode: 'pack',
+    category: null,
+    planTask: null,
+    planOutline: ''
+  })
 }
 
 /**
@@ -1234,18 +1301,13 @@ function openTreeDialog() {
  * 比在弹窗里干等（还可能超时）合理。树已经存在库里，这里只是"换个人接手"。
  */
 function openPlanTask({ task, outline }) {
-  treeDialog.planTask = task
-  treeDialog.planOutline = outline
-  treeDialog.visible = true
-}
-
-/**
- * 出题任务的「作答」：跳去对应页面（去哪由类型注册表说——随堂测验回这条知识的
- * 详情页、章节考试回考试页，路径参数从任务 params 取；组件零分支）。
- */
-function openAnswerTask(task) {
-  const path = taskType(task?.type)?.answerPath?.(task)
-  if (path) router.push(path)
+  Object.assign(treeDialog, {
+    visible: true,
+    mode: 'pack',
+    category: null,
+    planTask: task,
+    planOutline: outline
+  })
 }
 
 /**
@@ -1660,6 +1722,39 @@ onBeforeUnmount(() => {
    数字信息一点没少；树视图那列的条数（CategoryTree 的 .ct__count）从来就是纯数字。
    ⚠️ tabular-nums 保持（2026-11-06：一位数/两位数右缘对齐、数字变化不抖）；
    min-width 3ch 与 CategoryTree 同口径。 */
+.app-cats__tail {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  min-width: 24px;
+}
+.app-cats__menu {
+  display: none;
+}
+.app-cats__item:hover .app-cats__count,
+.app-cats__tail:focus-within .app-cats__count {
+  display: none;
+}
+.app-cats__item:hover .app-cats__menu,
+.app-cats__tail:focus-within .app-cats__menu {
+  display: inline-flex;
+}
+@media (hover: none) {
+  .app-cats__count {
+    display: inline-block !important;
+  }
+  .app-cats__menu {
+    display: inline-flex;
+    margin-left: var(--sp-2);
+  }
+}
+.app-cats__item:hover :deep(.app-cats__dots),
+.app-cats__tail:focus-within :deep(.app-cats__dots) {
+  width: 22px;
+  height: 22px;
+}
 .app-cats__count {
   /* 11.5px 是不在尺寸阶梯上的手写值（§5.2 禁的那类）→ 归位 --text-xs（2026-11-13）。 */
   font-size: var(--text-xs);
@@ -2022,7 +2117,7 @@ onBeforeUnmount(() => {
 .app-content:has(.home) {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
 }
 .app-content:has(.learn) {
   /* ⚠️ 2026-11-08 晚：这一页的留白**整个交给版心**（AppLearnView 的 .learn =

@@ -88,7 +88,7 @@ export function setSrcOpen(dom, btn, open) {
  *        返回值（清理函数）会在销毁时执行
  * @returns {object} ProseMirror 的 nodeView
  */
-export function createCodeFigureView(node, { prefix, paint, keepPrevious = false, onMount }) {
+export function createCodeFigureView(node, { prefix, paint }) {
   const dom = el('div', prefix)
   const fig = el('div', prefix + '__fig')
   // 图上的一行：类型标签 + 图名。**paint 不碰这两个**（见文件头「为什么画面单独一层」）
@@ -121,6 +121,7 @@ export function createCodeFigureView(node, { prefix, paint, keepPrevious = false
   const setHead = (res) => {
     kind.textContent = (res && res.kind) || ''
     title.textContent = (res && res.title) || ''
+    kind.classList.toggle('is-empty', !kind.textContent)
     head.classList.toggle('is-empty', !kind.textContent && !title.textContent)
   }
 
@@ -139,36 +140,23 @@ export function createCodeFigureView(node, { prefix, paint, keepPrevious = false
 
   dom.append(fig, toggle, pre)
 
-  // 记上一次画的源码：内容没变就不重画（mermaid.render 不便宜）
+  // 记上一次画的源码：内容没变就不重画
   let last = null
-  // 画图是异步的，两次 paint 可能交错结束 ⇒ 用序号认领"最后一次"
-  let ticket = 0
 
-  /**
-   * 画一次。
-   *
-   * @param {string} text 源码
-   * @param {boolean} force 忽略"内容没变"的缓存 —— 切主题时要重画（源码没变、配色变了）
-   */
-  const runPaint = async (text, force = false) => {
-    if (!force && text === last) return
+  /** 画一次。 */
+  const runPaint = (text) => {
+    if (text === last) return
     last = text
-    const mine = ++ticket
     if (!text.trim()) {
       canvas.textContent = ''
       canvas.classList.remove('is-error')
       clearHead()
       return
     }
-    // 同步渲染的（kbfig）：先清干净再画。异步的（mermaid）留着上一张，等新的画好再换。
-    if (!keepPrevious) {
-      canvas.textContent = ''
-      canvas.classList.remove('is-error')
-    }
+    canvas.textContent = ''
+    canvas.classList.remove('is-error')
 
-    const res = await paint({ canvas, text, stale: () => mine !== ticket })
-    // 已经有更新的一次画完了，这次作废
-    if (mine !== ticket) return
+    const res = paint({ canvas, text })
     if (res && res.error) {
       // **画不出来不许吞掉**：源码留在下面（能改），上面写清楚为什么没画出来。
       // 静默留空 = 用户以为"这知识没有图"。
@@ -210,16 +198,8 @@ export function createCodeFigureView(node, { prefix, paint, keepPrevious = false
       node = next
       runPaint(next.textContent)
       return true
-    },
-    /**
-     * 按新主题重画（SVG 里的颜色是写死的，它不会跟着 CSS 变量自己变）。
-     * 只有 mermaid 需要 —— kbfig 用的是普通 DOM + token，自动跟随主题。
-     */
-    repaint: () => runPaint(node.textContent, true),
-    // 节点被删掉/整页卸载时注销，别让外部攒一堆已销毁的视图
-    destroy: () => { if (disposer) disposer() }
+    }
   }
 
-  const disposer = onMount ? onMount(view) : null
   return view
 }

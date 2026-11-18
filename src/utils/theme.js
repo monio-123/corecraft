@@ -49,8 +49,31 @@ import { getUiPref, setUiPref } from './uiPrefs'
 const KEY = 'ui.theme'
 /** 老 localStorage 键（2026-11-09 前只存这个）：存量兜底 + 首屏防闪镜像 */
 const LEGACY_KEY = 'ui-theme'
-const VALID = ['bense', 'suya', 'liangzi', 'yaoye']
+const VALID = ['bense', 'suya', 'yaoye']
 const DEFAULT = 'bense'
+
+const FAVICON_PALETTE = {
+  bense: { bg: '#2b7fff', fg: '#ffffff', stroke: 'none' },
+  suya: { bg: '#2f7d6d', fg: '#fffef8', stroke: 'none' },
+  yaoye: { bg: '#171a22', fg: '#e8b059', stroke: '#e8b059' },
+  neutral: { bg: '#181c24', fg: '#ffffff', stroke: 'none' }
+}
+
+export function updateFavicon(theme) {
+  if (typeof document === 'undefined') return
+  const p = FAVICON_PALETTE[theme] || FAVICON_PALETTE.bense
+  const strokeAttr = p.stroke !== 'none' ? ` stroke="${p.stroke}" stroke-width="1.5"` : ''
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect x="1.5" y="1.5" width="29" height="29" rx="7.5" fill="${p.bg}"${strokeAttr}/><text x="16" y="22.2" text-anchor="middle" font-family="Inter,system-ui,-apple-system,sans-serif" font-size="18" font-weight="700" fill="${p.fg}">B</text></svg>`
+  let link = document.querySelector('link[rel="icon"][data-app-favicon]') || document.querySelector('link[rel="icon"][type="image/svg+xml"]')
+  if (!link) {
+    link = document.createElement('link')
+    link.rel = 'icon'
+    link.type = 'image/svg+xml'
+    document.head.appendChild(link)
+  }
+  link.setAttribute('data-app-favicon', '1')
+  link.href = 'data:image/svg+xml,' + encodeURIComponent(svg)
+}
 
 /**
  * peek = 设置弹窗「风格」小卡里的**微缩预览**四色（纸面 / 侧栏 / 线 / 主色）。
@@ -68,10 +91,6 @@ export const themeList = [
   {
     key: 'suya', name: '素雅',
     peek: { paper: '#f7f4ec', side: '#fbf9f2', line: '#b6ad97', accent: '#2f7d6d' }
-  },
-  {
-    key: 'liangzi', name: '量子',
-    peek: { paper: '#f4f6fb', side: '#eef1f8', line: '#9aa7ba', accent: '#5b51e8' }
   },
   {
     key: 'yaoye', name: '曜夜',
@@ -101,9 +120,10 @@ function readLegacy() {
 
 /** 挂 html[data-theme]（themes.css 的覆盖块认它）+ 老键镜像（首屏防闪读它） */
 function applyTheme(v) {
-  if (v !== DEFAULT) document.documentElement.dataset.theme = v
-  else delete document.documentElement.dataset.theme
-  try { localStorage.setItem(LEGACY_KEY, v) } catch (e) { /* 存不了只影响"记住" */ }
+  const next = VALID.includes(v) ? v : DEFAULT
+  document.documentElement.dataset.theme = next
+  updateFavicon(next)
+  try { localStorage.setItem(LEGACY_KEY, next) } catch (e) { /* 存不了只影响"记住" */ }
 }
 
 /** 换主题：立即生效（挂属性），再走配置树存档（跨设备/跨会话） */
@@ -140,7 +160,7 @@ export function migrateThemeToConfig() {
  * 素雅主题块里的自动衬线已撤——切素雅想要衬线来这里选。
  * 与主题同一条通道（配置树 + getUiPref 同源），入口在设置弹窗「界面」组。 */
 const FONT_KEY = 'ui.font'
-const FONT_VALID = ['sans', 'serif']
+const FONT_VALID = ['sans', 'serif', 'mono']
 const FONT_DEFAULT = 'sans'
 
 export function currentFont() {
@@ -149,12 +169,17 @@ export function currentFont() {
 }
 
 function applyFont(v) {
-  if (v !== FONT_DEFAULT) document.documentElement.dataset.font = v
-  else delete document.documentElement.dataset.font
+  const next = FONT_VALID.includes(v) ? v : FONT_DEFAULT
+  document.documentElement.dataset.font = next
 }
 
 export function setFont(v) {
   if (!FONT_VALID.includes(v)) return
   applyFont(v)
   setUiPref(FONT_KEY, v)
+}
+
+/** 清除老 localStorage 镜像，配合 resetPrefKeys('ui.theme') 让主题真正回到默认 */
+export function clearThemeLegacy() {
+  try { localStorage.removeItem(LEGACY_KEY) } catch (e) { /* ignore */ }
 }

@@ -7,7 +7,7 @@
  */
 import { reactive } from 'vue'
 import {
-  ROOT_CATEGORY, getCategories, getCategory, getCategorySubtreeIds, moveCategory
+  ROOT_CATEGORY, getCategories, getCategory, getCategorySubtreeIds, hasDirectTopics, moveCategory
 } from './useCorecraftWebStore'
 
 /**
@@ -88,6 +88,7 @@ function hitCategory(x, y) {
 function checkDrop(over) {
   if (over == null) return false
   if (over === dnd.catId) return false
+  if (over !== ROOT_CATEGORY && hasDirectTopics(over)) return false
   if (over !== ROOT_CATEGORY && getCategorySubtreeIds(dnd.catId).has(over)) return false
   const cat = getCategory(dnd.catId)
   if (!cat) return false

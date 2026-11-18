@@ -37,8 +37,7 @@ export function applyProfile(patch) {
  * 加载中就留空（只剩头像），失败就说"加载失败"。
  */
 export function sessionUserName(profile) {
-  return profile?.nickname || profile?.username
-    || (sessionState.value === 'failed' ? '加载失败' : '')
+  return profile?.username || (sessionState.value === 'failed' ? '加载失败' : '')
 }
 
 /**

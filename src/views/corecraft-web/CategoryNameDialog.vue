@@ -25,7 +25,6 @@
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { createCategory, renameCategory, ROOT_CATEGORY } from './useCorecraftWebStore'
-import { setView, VIEW_CARD } from '../../utils/viewPref'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -81,17 +80,7 @@ async function submit() {
       await renameCategory(props.initialId, n)
       ElMessage.success('已更新')
     } else {
-      const created = await createCategory(n, props.parentId)
-      // ⚠️ **手工建的一级目录 ⇒ 默认用「卡片」看**（2026-11-03 用户拍板：
-      // 「AI 生成的默认是树，其他场景默认是卡片，老数据不用管」）。
-      // AI 生成的书走代码兜底（一级目录 = 树，见 utils/viewPref.js）；
-      // 手工建的一级目录写一份**我的覆盖 = 卡片** —— 它多半只有几条，
-      // 摊成树只剩一行根，反而不如卡片直白。
-      //
-      // ⚠️ 这条覆盖写的是**"我的覆盖"**，系统默认那一行不动。
-      if (created?.id != null && !props.parentId) {
-        setView(created.id, VIEW_CARD)
-      }
+      await createCategory(n, props.parentId)
       ElMessage.success('已创建')
     }
     visible.value = false

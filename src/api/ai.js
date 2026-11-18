@@ -38,10 +38,6 @@ export function setCurrentAiEndpoint(endpointId) {
   return request.post('/ai/config/current', { endpointId }, { silent: true })
 }
 
-export function saveAiConfig(data) {
-  return request.put('/ai/config', data)
-}
-
 // ---------- API 列表（每人多个） ----------
 
 export function listAiEndpoints() {

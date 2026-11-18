@@ -37,12 +37,12 @@ export function usePaperTask({ onResult, onFail, onVanish } = {}) {
 
   watch(task, (t) => {
     if (!t || taskId.value == null) return
-    if (t.status === 'awaiting') {
+    if (t.status === 'succeeded' && !t.confirmedAt) {
       consume()
     } else if (t.status === 'failed') {
       taskId.value = null
       onFail?.(t.error || '出题失败')
-    } else if (['canceled', 'succeeded'].includes(t.status)) {
+    } else if (t.status === 'canceled' || (t.status === 'succeeded' && t.confirmedAt)) {
       taskId.value = null
       onVanish?.()
     }

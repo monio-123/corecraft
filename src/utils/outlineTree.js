@@ -275,11 +275,14 @@ export function importPlan(marked) {
   const orphan = []
   const build = (nodes, path) => {
     const out = []
+    const hasSubDirs = (nodes || []).some((c) => !c.leaf && c.checked)
     for (const n of nodes || []) {
       const p = joinPath(path, n.name)
       // **是不是知识点**：判据在 `markOutline` 那儿定好了（`leaf`）——
       // 这边只读，不再自己算一遍"没有下级就是知识点"。
       if (n.leaf) {
+        // 严格叶子约束：若当前目录层下有已勾选的子目录，跳过直属叶子节点
+        if (hasSubDirs) continue
         // 叶子 = 知识点：挂在 path 那个目录下。
         // 没有任何目录祖先 ⇒ 无处可挂（orphan），界面要说出来，不能静默丢。
         if (n.checked) {

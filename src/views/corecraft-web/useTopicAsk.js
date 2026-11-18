@@ -40,18 +40,23 @@ import { getPrefSpec, getUiPrefs, saveUiPrefs } from '../../utils/uiPrefs'
  * @param {() => void} [opts.onAskAi] 正文里选区提问进来的那一轮（转交出去）
  */
 export function useTopicAsk({ topicId, baseMdOf, docOf }) {
-const ASK_GUIDE_FALLBACK = ['这条知识讲的是什么？', '关键点有哪些？', '我应该怎么用它？']
+const ASK_GUIDE_FALLBACK = [
+  { key: 'comb:none', label: '梳理重点' },
+  { key: 'polish:none', label: '精简润色' },
+  { key: 'examples:none', label: '补充实例' },
+  { key: 'pick_category:categories', label: '关联目录' },
+  { key: 'rename:none', label: '提炼标题' }
+]
 
 const askOpen = ref(false)
 const askInput = ref('')
 
 /**
  * 引导问题优先用配置树上那组的（带 key，后端据此附目录/标签清单、套对应的描述规则）；
- * 配置树拉不到时退回这三条纯读取的本地问题——它们不需要任何附加料，缺了配置树也能用。
- * 配置树不是锦上添花，不该因为它没拉到就让空态什么都不剩。
+ * 配置树拉不到时退回这五条本地兜底项。
  */
 const guideQuestions = computed(() =>
-  aiQuestions.value.length ? aiQuestions.value : ASK_GUIDE_FALLBACK.map((label) => ({ key: '', label }))
+  aiQuestions.value.length ? aiQuestions.value : ASK_GUIDE_FALLBACK
 )
 
 // 抽屉宽度。**面板滑块、拖动把手、双击归位三处必须同源**，所以上下限和默认值
@@ -103,6 +108,7 @@ function onGripDown(e) {
   // 基准取**显示值**不是存档值：所见才能所拖
   const startW = askW.value
   el.setPointerCapture(e.pointerId)
+  document.body.classList.add('is-col-resizing')
   // 往左拖 = 变宽（抽屉贴右边），所以位移取反
   const move = (ev) => {
     const w = clampAskW(startW - (ev.clientX - startX))
@@ -115,6 +121,7 @@ function onGripDown(e) {
   }
   // pointercancel 也得收尾：指针被系统抢走时不会补一个 pointerup
   const up = () => {
+    document.body.classList.remove('is-col-resizing')
     el.removeEventListener('pointermove', move)
     el.removeEventListener('pointerup', up)
     el.removeEventListener('pointercancel', up)

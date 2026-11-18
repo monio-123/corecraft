@@ -28,15 +28,6 @@ export const TYPE_FALLBACK = {
   runningVerb: '正在处理',
 }
 
-/** 任务 params（JSON 字符串）→ 对象。answerPath 等类型元信息要从里面取参数。 */
-function paramsOf(t) {
-  try {
-    return JSON.parse(t?.params || '{}') || {}
-  } catch {
-    return {}
-  }
-}
-
 export const TASK_TYPES = {
   /**
    * **生成主题**（v2）：生成目录 → 确认 → 生成正文，**一个任务跑完三段**。
@@ -75,18 +66,19 @@ export const TASK_TYPES = {
     runningVerb: '正在写',
   },
   /**
-   * AI 归类：待归类里的条目自动归到目录。
+   * **命名**（2026-11-16 新增）：给随手记起一个标题。
    *
-   * <p>产物是一批「建议归到哪」，得逐条看过、挑着采纳 ⇒ 主操作「确认」
-   * 打开**采纳对话框**（节点 key = `adopt`，见 GenTaskPanel#onConfirm）。
+   * <p>⚠️ **单节点、无人工确认**：成功即写回标题（前端不给「采纳」入口）——
+   * 起个标题不是需要人把关的决定。而这恰恰是系统里唯一一处**AI 自动写回内容**的地方，
+   * 所以**任务卡就是这次自动改动的唯一留痕**。
    */
-  classify: {
-    key: 'classify',
-    name: 'AI 归类',
-    icon: 'expand',
+  name: {
+    key: 'name',
+    name: '命名',
+    icon: 'sparkle',
     unit: '条',
-    doneVerb: '已归类',
-    runningVerb: '正在归类',
+    doneVerb: '已命名',
+    runningVerb: '正在命名',
   },
   /** 出卷：按范围/难度生成题目 */
   exam: {
@@ -96,8 +88,6 @@ export const TASK_TYPES = {
     unit: '题',
     doneVerb: '已出题',
     runningVerb: '正在出题',
-    // 「作答」去哪（人工节点 answer 的落点，AppLayout 消费；路径参数从任务 params 取）
-    answerPath: (t) => `/app/exam?examTask=${t.id}`,
   },
   /** 随堂测验：就当前这条知识出几道题（详情页抽屉里考） */
   quiz: {
@@ -107,10 +97,6 @@ export const TASK_TYPES = {
     unit: '题',
     doneVerb: '已出题',
     runningVerb: '正在出题',
-    answerPath: (t) => {
-      const ids = paramsOf(t).topicIds || []
-      return ids.length ? `/app/topic/${ids[0]}?quizTask=${t.id}` : ''
-    },
   }
   // 「判分」（grade）注册项已删：判分走 /ai/chat/stream，任务链从未有过创建方
   //（与后端 GenTaskNodes 同步删除，2026-11-15）。真进任务链时按 task-protocol 三步重新登记。
@@ -222,10 +208,11 @@ export function nodeStatus(key) {
 }
 
 /**
- * **状态筛选的可选项**（一栏只有一个 chip 展开这些）。
+ * **状态筛选的可选项**（一栏只有一个 chip 展开这些，和 `matchesStatusFilter` 共用这一份定义）。
  *
- * <p>⚠️ **只有这一份**：筛选器里的选项和"哪些状态算进行中"若各写一份，
- * 会出现"筛『待确认』但列表里空着"（因为待确认的判据在别处）。
+ * <p>⚠️ **只有这一份**：筛选口径统一走 `taskStatus(t).key`（不直接比 `t.status`），
+ * 否则「部分完成」（后端 `succeeded` + `failedCount > 0`）会落到「已完成」里，
+ * 「人工节点等待」（后端 `succeeded` + `hasAwaitingNode`）会落不到「待确认」里。
  */
 export const STATUS_FILTERS = [
   { key: '', name: '全部状态' },
@@ -235,6 +222,20 @@ export const STATUS_FILTERS = [
   { key: 'failed', name: '失败' },
   { key: 'canceled', name: '已暂停' }
 ]
+
+/** 状态筛选谓词：按展示语义 `taskStatus(t).key` 归类 */
+export function matchesStatusFilter(task, filterKey) {
+  if (!filterKey) return true
+  const k = taskStatus(task).key
+  if (filterKey === 'awaiting') return k === 'awaiting'
+  if (filterKey === 'failed') return k === 'failed' || k === 'partial'
+  if (filterKey === 'running') {
+    return k === 'running' || k === 'queued' || k === 'canceling'
+  }
+  if (filterKey === 'canceled') return k === 'canceled'
+  if (filterKey === 'succeeded') return k === 'succeeded'
+  return true
+}
 
 /**
  * 秒数 → 人类读法的**唯一算口**：「48 秒」「2 分 46 秒」「1 小时 3 分」。

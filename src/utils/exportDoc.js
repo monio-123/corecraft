@@ -12,8 +12,34 @@
  * （canvas 客户端转换，每张 ~50ms）。PDF 不需要——打印引擎直接吃 SVG。
  */
 
+/** 打印与 Word 导出共享的浅色主题变量表：PRINT_CSS `:root` 与 SVG `var()` 兜底同源，只维护一份。 */
+const EXPORT_CSS_VARS = {
+  '--cc-bg': '#ffffff',
+  '--cc-surface': '#ffffff',
+  '--cc-surface-2': '#f7f8fa',
+  '--cc-surface-3': '#eef0f4',
+  '--cc-text-1': '#1f2329',
+  '--cc-text-2': '#4e5969',
+  '--cc-text-3': '#646a73',
+  '--cc-border': '#e5e6eb',
+  '--cc-border-strong': '#d0d3d9',
+  '--cc-primary': '#2b7fff',
+  '--cc-warning': '#d97706',
+  '--cc-success': '#16a34a',
+  '--cc-danger': '#dc2626',
+  '--font-body': 'Segoe UI, PingFang SC, Microsoft YaHei, sans-serif'
+}
+
+const PRINT_ROOT_VARS = Object.entries(EXPORT_CSS_VARS)
+  .filter(([k]) => k.startsWith('--cc-'))
+  .map(([k, v]) => `${k}: ${v};`)
+  .join('\n    ')
+
 /** 打印样式：PDF 导出（浏览器打印转存）。浅色纸底 + 展开折叠 + 防截断。 */
 const PRINT_CSS = `
+  :root {
+    ${PRINT_ROOT_VARS}
+  }
   body { margin: 0; padding: 32px 40px; background: #fff; color: #1f2329;
     font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
     font-size: 14px; line-height: 1.9; }
@@ -65,6 +91,27 @@ function download(blob, filename) {
  * SVG → PNG dataURL（Word 兜底用）：画到 canvas 再读 dataURL。
  * 读不出来（跨域污染等）返回 null，调用方保留原 svg。
  */
+function resolveSvgVars(clone) {
+  const cs = getComputedStyle(document.documentElement)
+  const resolveVal = (raw) => {
+    if (!raw || !raw.includes('var(')) return raw
+    return raw.replace(/var\(\s*(--[a-zA-Z0-9_-]+)\s*(?:,\s*([^)]+))?\)/g, (_, name, fb) => {
+      const v = cs.getPropertyValue(name).trim()
+      return v || EXPORT_CSS_VARS[name] || (fb ? fb.trim() : '#1f2329')
+    })
+  }
+  const attrs = ['stroke', 'fill', 'color', 'stop-color']
+  const all = [clone, ...clone.querySelectorAll('*')]
+  for (const node of all) {
+    for (const a of attrs) {
+      const val = node.getAttribute(a)
+      if (val && val.includes('var(')) node.setAttribute(a, resolveVal(val))
+    }
+    const st = node.getAttribute('style')
+    if (st && st.includes('var(')) node.setAttribute('style', resolveVal(st))
+  }
+}
+
 function svgToPngDataUrl(svg) {
   try {
     const w = svg.clientWidth || svg.viewBox?.baseVal?.width || 300
@@ -72,6 +119,7 @@ function svgToPngDataUrl(svg) {
     const clone = svg.cloneNode(true)
     clone.setAttribute('width', String(w))
     clone.setAttribute('height', String(h))
+    resolveSvgVars(clone)
     const xml = new XMLSerializer().serializeToString(clone)
     const img = new Image()
     const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml)

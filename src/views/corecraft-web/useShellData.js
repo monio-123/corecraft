@@ -1,7 +1,7 @@
 import { bootstrapSession } from '../../utils/session'
 import { SEARCH_SCOPE_BOTH } from '../../utils/searchMode'
 import {
-  ensureTopicIndexLoaded, ensureFullTopicIndexLoaded, ensureCategoriesLoaded, ensureTopicTypesLoaded
+  ensureTopicIndexLoaded, ensureFullTopicIndexLoaded, ensureCategoriesLoaded
 } from './useCorecraftWebStore'
 import { ensureAiConfigLoaded } from './useAi'
 
@@ -45,7 +45,6 @@ export async function loadShellData(keyword = '', scope = SEARCH_SCOPE_BOTH) {
     ensureTopicIndexLoaded(false, keyword, scope),
     ensureFullTopicIndexLoaded(false),
     ensureCategoriesLoaded(),
-    ensureTopicTypesLoaded(),
     // AI 配置也在这里拉：界面各处用 aiEnabled 控制 AI 入口显不显示，
     // 那个判断发生在渲染时——配置要是等进设置页才加载，首页/详情页会先画出一瞬
     // "没有 AI"的界面再跳变。跟着壳启动一次，状态从第一帧就是对的。

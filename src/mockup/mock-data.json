@@ -1,1 +1,2136 @@
-{"categories":[{"id":9001,"name":"计算机网络","parentId":0,"createdAt":"2026-10-27 10:00:00"},{"id":9002,"name":"1. 网络基础与体系结构","parentId":9001},{"id":9003,"name":"1.1 网络组成与交换","parentId":9002},{"id":9004,"name":"1.1.1 交换方式","parentId":9003},{"id":9005,"name":"1.1.2 网络构成与性能","parentId":9003},{"id":9006,"name":"1.2 分层体系结构","parentId":9002},{"id":9007,"name":"1.3 网络设备与标准","parentId":9002},{"id":9008,"name":"2. 物理层与数据链路层","parentId":9001},{"id":9009,"name":"2.1 物理层","parentId":9008},{"id":9010,"name":"2.2 数据链路层基础","parentId":9008},{"id":9011,"name":"2.2.1 成帧与差错检测","parentId":9010},{"id":9012,"name":"2.2.2 可靠传输协议","parentId":9010},{"id":9013,"name":"2.3 以太网与局域网","parentId":9008},{"id":9014,"name":"2.4 广域网与接入技术","parentId":9008},{"id":9015,"name":"3. 网络层","parentId":9001},{"id":9016,"name":"3.1 IPv4 协议","parentId":9015},{"id":9017,"name":"3.1.1 地址与子网","parentId":9016},{"id":9018,"name":"3.1.2 报文与辅助协议","parentId":9016},{"id":9019,"name":"3.2 路由与转发","parentId":9015},{"id":9020,"name":"3.3 IPv6 与组播","parentId":9015},{"id":9021,"name":"3.4 网络层排障","parentId":9015},{"id":9022,"name":"4. 传输层","parentId":9001},{"id":9023,"name":"4.1 传输层基础","parentId":9022},{"id":9024,"name":"4.2 TCP 连接管理","parentId":9022},{"id":9025,"name":"4.2.1 报文与握手","parentId":9024},{"id":9026,"name":"4.2.2 挥手与状态","parentId":9024},{"id":9027,"name":"4.3 TCP 可靠传输","parentId":9022},{"id":9028,"name":"4.4 TCP 拥塞控制","parentId":9022},{"id":9029,"name":"4.5 传输层工程实践","parentId":9022},{"id":9030,"name":"4.6 传输层抓包分析","parentId":9022},{"id":9031,"name":"5. 应用层","parentId":9001},{"id":9032,"name":"5.1 应用层模型与协议","parentId":9031},{"id":9033,"name":"5.2 DNS","parentId":9031},{"id":9034,"name":"5.3 HTTP","parentId":9031},{"id":9035,"name":"5.3.1 报文与语义","parentId":9034},{"id":9036,"name":"5.3.2 连接与状态","parentId":9034},{"id":9037,"name":"5.3.3 缓存与演进","parentId":9034},{"id":9038,"name":"5.4 HTTPS 与 TLS","parentId":9031},{"id":9039,"name":"5.4.1 密码学基础","parentId":9038},{"id":9040,"name":"5.4.2 证书体系","parentId":9038},{"id":9041,"name":"5.4.3 TLS 协议","parentId":9038},{"id":9042,"name":"5.5 其他应用层协议","parentId":9031},{"id":9043,"name":"6. 网络安全","parentId":9001},{"id":9044,"name":"6.1 网络安全基础","parentId":9043},{"id":9045,"name":"6.2 常见网络攻击","parentId":9043},{"id":9046,"name":"6.2.1 流量型攻击","parentId":9045},{"id":9047,"name":"6.2.2 应用型攻击","parentId":9045},{"id":9048,"name":"6.3 安全防护体系","parentId":9043},{"id":9049,"name":"7. 无线与移动网络","parentId":9001},{"id":9050,"name":"7.1 无线局域网","parentId":9049},{"id":9051,"name":"7.2 移动网络","parentId":9049},{"id":9052,"name":"8. 网络工程与后端实践","parentId":9001},{"id":9053,"name":"8.1 网络编程","parentId":9052},{"id":9054,"name":"8.2 代理与负载均衡","parentId":9052},{"id":9055,"name":"8.2.1 代理","parentId":9054},{"id":9056,"name":"8.2.2 负载均衡","parentId":9054},{"id":9057,"name":"8.3 网络排障与观测","parentId":9052},{"id":9058,"name":"8.4 云网络与容器网络","parentId":9052},{"id":9059,"name":"8.4.1 云网络","parentId":9058},{"id":9060,"name":"8.4.2 容器网络","parentId":9058},{"id":9061,"name":"8.4.2.1 Docker 网络","parentId":9060},{"id":9062,"name":"8.4.2.2 Kubernetes 网络","parentId":9060},{"id":9063,"name":"8.5 后端网络架构","parentId":9052},{"id":9101,"name":"Java 基础","parentId":0,"createdAt":"2026-10-27 10:00:00"},{"id":9102,"name":"1.1 面向对象基础","parentId":9101}],"topics":[{"id":101,"title":"计算机网络总览","categoryId":9001,"typeId":2,"createTime":"2026-10-01 09:07:00","hasContent":true,"content":"### 1. 定义\n\n计算机网络（computer network）= 由若干**节点**（node：主机、交换机、路由器等具备独立地址、能收发或转发数据的设备）、**链路**（link：连接相邻节点的传输介质）以及**协议**（protocol：通信双方共同遵守的报文格式与交互规则）三要素互连而成，以资源共享和信息交换为目的的系统。它属于计算机体系结构与数据通信的交叉领域。\n\n三条边界要分清：\n\n- 只有线连着、没有协议约定，不构成网络；协议是“双方约定好怎么发、怎么收、出错怎么办”，缺了它两台机器只能互发谁也看不懂的比特。\n- 计算机网络不等于**分布式系统**（distributed system）。分布式系统是建立在网络之上的软件系统，它向上层屏蔽了“通信会丢包、会乱序、会超时”这些细节；网络本身不屏蔽，它把这些细节原样暴露给使用它的人。\n- 同一台机器内两个进程通过管道通信不算网络通信；只有跨机器、经过协议栈才进入这门课的讨论范围。\n\n### 2. 原理\n\n#### 2.1 组织主线：分层与封装\n\n整门课反复使用的方法是**分层**（layering）：把“让两个进程跨网络交换数据”这一复杂问题，按职责切成若干层，每层只使用下层提供的服务、只向上层提供服务。分层后必然产生**封装**（encapsulation）：数据自上而下经过每一层时被加上该层的首部，形成该层的**协议数据单元**（PDU，protocol data unit），到达对端后再逐层剥掉首部还原，即解封装。\n\n- 每层只回答一类问题：链路层回答“相邻两个节点之间怎么传一帧”，网络层回答“跨越多个网络怎么找到目的主机”，传输层回答“进程到进程、要不要可靠”，应用层回答“这段字节是什么业务含义”。\n- 层与层之间只有“服务”这一条依赖方向，同层之间才用协议对话；这正是分层能把改动局限在一层的原因，例如把 IPv4 换成 IPv6，TCP 以上几乎不用动。\n- 教材用 [OSI 七层模型](/app/topic/1833) 讲概念划分，用 [TCP/IP 四层模型](/app/topic/1834) 讲真实实现；后端工程中一切配置、抓包、排障都按四层模型对号入座。\n\n#### 2.2 各章分工与主线\n\n下面八章不是并列的知识点集合，而是一条“自底向上的承载链”加几个横向切面：下层为上层提供承载能力，横向章节则贯穿各层。关系如下图所示，正文按图逐章说明。\n\n```mermaid\ngraph LR\n  A[1 网络基础与体系结构<br/>分层框架与性能指标] --> B[2 物理层与数据链路层<br/>相邻节点怎样传帧]\n  B --> C[3 网络层<br/>跨网络怎样找到主机]\n  C --> D[4 传输层<br/>进程到进程、可靠与否]\n  D --> E[5 应用层<br/>HTTP/DNS/TLS 的业务语义]\n  E --> F[8 网络工程与后端实践<br/>编程、代理、排障、云网络]\n  G[6 网络安全<br/>横切：认证、攻击、防护] -.-> E\n  H[7 无线与移动网络<br/>横切：802.11、4G/5G] -.-> B\n```\n\n**第 1 章 网络基础与体系结构**：给整门课立地基。先讲网络由什么组成（[网络边缘与网络核心](/app/topic/1827)：边缘是主机与应用，核心是路由器构成的转发网），再讲数据怎么在网络里被搬运（[报文交换与分组交换](/app/topic/1830)、[电路交换](/app/topic/1829)），然后给出衡量网络好坏的量（[时延与 RTT](/app/topic/1832)、带宽、吞吐量），最后落到分层模型与封装（[封装与解封装](/app/topic/1836)、[OSI 七层模型](/app/topic/1833)、[TCP/IP 四层模型](/app/topic/1834)）以及中继器、[交换机](/app/topic/1839)、[路由器](/app/topic/1840)、[网关](/app/topic/1841) 各工作在什么层次。这一章是全书的坐标系，后面每一章都可以理解为在其中某一层里展开。\n\n**第 2 章 物理层与数据链路层**：解决“一段链路上相邻两个节点怎么把比特交过去”。物理层处理信号的编码调制与介质上限（奈奎斯特、香农），链路层负责成帧、差错检测与介质访问，代表成果是以太网：[MAC 地址](/app/topic/1855) 标识接口、[以太网帧格式](/app/topic/1856) 承载上层数据、[CSMA/CD](/app/topic/1857) 解决共享介质竞争，[交换机](/app/topic/1839) 靠 [交换机自学习](/app/topic/1858) 转发帧，[VLAN](/app/topic/1859) 与 [生成树协议](/app/topic/1860) 解决广播域与环路问题。本章的关键词是“点到点”，它只管相邻两跳。\n\n**第 3 章 网络层**：解决“跨越很多个网络，怎么把分组送到目的主机”。核心是 IPv4 地址与首部（[IPv4 首部](/app/topic/1867)、[CIDR 与路由聚合](/app/topic/1871)、[私有地址与 NAT](/app/topic/1872)）、路由与转发（[路由表与最长前缀匹配](/app/topic/1875)、[距离向量算法与 RIP](/app/topic/1877)、[链路状态算法与 OSPF](/app/topic/1878)、[BGP](/app/topic/1879)），以及 DHCP 配地址、ICMP 报错。本章的关键词是“主机到主机”，即网络层只负责把数据送到目的机器，不负责送到目的进程。\n\n**第 4 章 传输层**：解决“送到目的机器上的哪个进程”以及“要不要保证可靠”。TCP 用 [三次握手](/app/topic/1895)、[四次挥手](/app/topic/1896)、序号确认、超时重传、窗口与拥塞控制把不可靠的网络层包装成可靠字节流；UDP 只提供复用分用与校验。工程侧这一章内容最多：[TIME_WAIT](/app/topic/1898)、[粘包与拆包](/app/topic/1913)、[端口耗尽](/app/topic/1914)、[半连接与全连接队列](/app/topic/1916)、[长连接与连接池](/app/topic/1918)、[Keepalive 与心跳](/app/topic/1917)，几乎每一条都是线上事故的直接原因。\n\n**第 5 章 应用层**：解决“这段字节的业务语义”。DNS 把域名解析成 IP，HTTP 定义请求响应语义（[HTTP 报文格式](/app/topic/1932)、[请求方法与状态码](/app/topic/1933)、[强缓存与协商缓存](/app/topic/1938)、[HTTP/2 多路复用](/app/topic/1939)、[HTTP/3 与 QUIC](/app/topic/1940)），TLS 提供加密与身份认证（[TLS 握手](/app/topic/1947)、[X.509 证书](/app/topic/1944)），此外还有 WebSocket、RPC、MQTT 等协议。后端开发日常打交道最多的就是这一层。\n\n**第 6 章 网络安全**：横切各层。既讲攻击（[DDoS](/app/topic/1964)、[SYN Flood](/app/topic/1965)、中间人、SQL 注入、XSS、CSRF），也讲防护（[防火墙](/app/topic/1972)、WAF、[零信任模型](/app/topic/1978)、微隔离），还讲认证授权（OAuth 2.0、JWT、RBAC）。它单独成章的原因，是安全问题可以在任意一层发生，不能塞进某一层里。\n\n**第 7 章 无线与移动网络**：横切物理层与链路层。无线介质是共享的、开放的、易受干扰的，所以介质访问用 CSMA/CA 而不用 CSMA/CD，安全靠 WPA2/WPA3\n\n附件演示：\n\n[天源迪科-电渠资源台账.xlsx](/api/files/u/6/contents/abc123/天源迪科-电渠资源台账.xlsx)\n\n[说明文档.md](/api/files/u/6/contents/abc123/说明文档.md)\n\n[报告.pdf](/api/files/u/6/contents/abc123/报告.pdf)\n","masteryLevel":"熟练","masteryEnabled":true,"masteryOverride":null},{"id":102,"title":"网络基础与体系结构总览","categoryId":9002,"typeId":2,"createTime":"2026-10-01 09:14:00","hasContent":false,"content":""},{"id":103,"title":"电路交换","categoryId":9004,"typeId":2,"createTime":"2026-10-01 09:21:00","hasContent":true,"content":"### 1. 定义\n\n**电路交换**（circuit switching） = 通信双方在开始传输数据之前，先通过信令在网络中逐跳建立一条端到端的**专用通路**（电路），通信期间这条通路被双方独占，通信结束后再释放。它属于网络核心的三种交换方式之一，与 [报文交换与分组交换](/app/topic/1830) 相对。边界：电路交换的“独占”占的是复用后的**信道**（一个频段或一个时隙），而不是整条物理链路；中间节点只负责把信号直通转发，不做存储转发，也不做差错控制。\n\n### 2. 原理\n\n#### 2.1 三个阶段\n\n```mermaid\nstateDiagram-v2\n    [*] --> 空闲\n    空闲 --> 连接建立中: 主叫发起呼叫\n    连接建立中 --> 空闲: 某段链路无空闲信道（阻塞）\n    连接建立中 --> 数据传输: 逐跳预留信道成功\n    数据传输 --> 连接释放: 通信结束\n    连接释放 --> 空闲: 归还信道资源\n```\n\n1. **连接建立**（setup）：主叫发出呼叫请求，沿途每个交换机检查去往下一跳的链路上是否还有空闲信道；有，就预留一个；全部预留成功才返回“接通”。\n2. **数据传输**：数据沿已建立的通路一路直通，中间节点不做完整的收存与转发，也不在中间排队。因此数据流几乎是连续到达的，端到端时延基本只剩传播时延。\n3. **连接释放**（teardown）：任一方挂断，信令逐跳归还信道资源。\n\n建立过程是**全有或全无**的：只要有一段链路没有空闲信道，呼叫就失败（**阻塞**（blocking），用户听到的忙音），并且要回滚已经占用的部分。这正是“预留”语义的来源。\n\n```text\nfunction setup(path, demand):\n    for link in path:\n        slot = link.alloc(demand)\n        if slot == null:\n            release_all(path)      // 回滚已占用的链路\n            return BUSY\n        link.reserve(slot)\n    return OK\n```\n\n#### 2.2 信道复用\n\n一条物理链路的容量远大于一路话音，所以要用复用把它切成多条独立信道；否则每条通话都要一根线，成本不可接受。\n\n- **频分复用**（FDM, Frequency Division Multiplexing）：把链路频带切成若干子频段，每路连接固定占用一个频段，频段之间留**保护带**（guard band）防止串扰。\n- **时分复用**（TDM, Time Division Multiplexing）：把时间切成等长的帧，每帧再切成若干时隙，每路连接固定占用每帧中的某一个时隙，只能在自己的时隙里发送。\n\n具体例子：一路数字化话音按 8 kHz 采样、8 bit 量化，得到 64 kbps 的信道；一条 2.048 Mbps 的 E1 线路用 TDM 切成 32 个 64 kbps 时隙，正好容纳 30 路话音，另加 2 个时隙用于同步和信令。\n\n#### 2.3 为什么时延小且固定\n\n通路建好后，数据经过中间交换机只是信号的转发，不存下来再发。因此端到端时延 ≈ 各段链路的传播时延之和，与网络当时是否拥塞无关。代价是：即使你这一秒不发声，那个时隙或频段也照样归你，别人用不了。\n\n### 3. 特征与对比\n\n| 维度 | 电路交换 | 分组交换 |\n| --- | --- | --- |\n| 资源分配 | 传输前预留，独占信道 | 按需使用，统计复用 |\n| 建立开销 | 有连接建立时延 | 无连接建立（面向连接的分组网也只需一次轻量握手） |\n| 数据传输时延 | 小且稳定，只有传播时延 | 有排队时延，随负载抖动 |\n| 带宽利用率 | 低，静默期信道空转 | 高，突发流量可以互相填补 |\n| 拥塞表现 | 建立阶段被拒绝（忙音） | 传输阶段排队、丢包、时延上升 |\n| 差错与顺序 | 网络不保证，端到端自行处理 | 网络本身通常也不保证，由端系统协议保证 |\n| 计费 | 按连接时长/距离 | 按流量 |\n\n数字例子：传 1 Mbit 数据，链路速率 1 Mbps，经过 3 段链路，建立时间 0.2 s。电路交换 ≈ 0.2 + 1 = 1.2 s；整报文存储转发 = 3 × 1 = 3 s；分成 1000 个 1 kbit 的分组后流水线传输 ≈ (1000 + 2) × 1 ms ≈ 1.0 s。可见建立时延对短数据传输很不划算，这正是电路交换不适合突发数据的原因。\n\n### 4. 应用\n\n- **公共交换电话网**（PSTN, Public Switched Telephone Network）、ISDN，以及 2G/3G 移动网的语音通道，都是典型的电路交换或准电路交换（后者在无线段用专用信道，在核心网侧逐步向分组化演进）。\n- **专线**（leased line）：企业向运营商租用一条固定带宽的点到点通路，带宽是预留的，超出就丢弃或阻塞，而不是排队等待。云上的**专线接入**（如 Direct Connect 类产品）沿用同一思路：物理链路独享、时延稳定、按带宽计费。\n- 后端视角的三点提示：\n  1. “先建后传 + 预留”的语义在应用层也有影子：数据库连接池预热、gRPC 长连接、为实时音视频预留带宽上限，都是牺牲利用率换确定性。\n  2. 这类链路出问题时，表现是**建立失败**（拨号不通、专线 down、TCP 握手超时），而不是“卡顿 + 重传”。排障时应看建立阶段，不要先用抓包查重传。\n  3. 反过来，绝大多数后端系统跑在统计复用的分组网上，容量规划必须按峰值而不是按预留来算，具体指标见 [网络性能指标](/app/topic/1831) 与 [时延与 RTT](/app/topic/1832)。\n\n### 5. 常见考点\n\n- **问：为什么电路交换不适合计算机数据？** 答：数据传输具有突发性，而电路交换的独占信道在静默期会空转，利用率低；短报文的连接建立时延占比过高；电路交换通路无差错控制，可靠性要靠端到端完成。\n- **问：电路交换的“独占”到底独占什么？** 答：独占的是复用后的一个信道（频段或时隙），不是整条物理链路。这是最常见的错答。\n- **计算题**：总时间 = 建立时间 + 传输时间（＋每跳传播时延，题目给了才加），释放时间一般忽略；与分组交换的 (k + n − 1) × 单跳发送时延 做对比。\n- **问：电路交换能保证带宽吗？** 答：能，连接建立成功即保证固定速率；代价是建立失败时完全无法通信。\n- **易错点**：把 PSTN 说成“端到端一根物理线”——实际是逐跳建立、逐段复用拼起来的通路。","masteryLevel":"基本掌握","masteryEnabled":true,"masteryOverride":null},{"id":104,"title":"报文交换与分组交换","categoryId":9004,"typeId":2,"createTime":"2026-10-01 09:28:00","hasContent":false,"content":""},{"id":105,"title":"网络边缘与网络核心","categoryId":9005,"typeId":2,"createTime":"2026-10-01 09:35:00","hasContent":true,"content":"### 1. 定义\n\n**网络边缘（network edge）** 是互联网拓扑的外围部分，由**端系统（end system，也称主机 host）**和把它们接入骨干的**接入网（access network）**组成；**网络核心（network core）** 是由大量**路由器（router）**和高速链路互连成的网状骨干，负责把数据从一端送到另一端。两者是同一张网络上的两组角色分工：边缘产生和消费流量，核心只搬运流量。\n\n需要划清的边界是：这里的“边缘”指拓扑位置，即端系统和接入网，与“地理上离用户近”的**边缘计算**节点不是一回事；核心也不等于“运营商机房”，企业内网的三层交换机同样可以充当核心。\n\n### 2. 原理\n\n#### 2.1 划分依据：谁产生流量，谁搬运流量\n\n- **端系统（end system / host）** = 能运行应用程序的设备，是数据的源和宿，包括 PC、手机、服务器、摄像头等。应用程序的智能全部集中在这里。\n- **网络核心（network core）** = 只做转发的网状网络，由路由器和链路构成，不关心承载的是 HTTP 还是视频流。\n- 一条端到端路径的标准划分是：源端系统 → 源接入网 → 若干核心路由器 → 宿接入网 → 宿端系统。核心在中间，两端都在边缘。\n\n#### 2.2 网络边缘的组成\n\n- **端系统**：客户端和服务器都算，[客户端-服务器模型](/app/topic/1922)还是 P2P 模型只影响端系统之间谁发起通信，不改变它们都属于边缘这一点。\n- **接入网（access network）** = 把端系统物理连到第一台路由器的那部分网络，三类典型形态：\n  - 家庭：DSL、同轴电缆（HFC）、光纤到户（见 [PON 接入](/app/topic/1864)）。\n  - 企业/园区：以太网 + Wi-Fi，端系统先连[交换机](/app/topic/1839)，再经出口路由器出网。\n  - 广域无线：4G/5G（见 [蜂窝接入](/app/topic/1865)），端系统直接接入基站。\n- **物理介质**：接入网和核心都靠[传输介质](/app/topic/1844)承载信号，区别只在距离和带宽量级。\n\n#### 2.3 网络核心的组成\n\n- **核心路由器**：只做**存储转发（store-and-forward）**，即先把整个分组收全、查表选路，再发往下一跳，节点之间靠网状冗余链路互联。\n- **边缘路由器（edge router）**：直接与接入网相连、汇聚一片区域端系统流量的第一台核心路由器，是边缘与核心的物理分界点。家庭宽带的第一跳网关、云上 VPC 的出口网关都扮演这个角色。\n- 核心提供两种交换方式：**电路交换（circuit switching）** 与 **分组交换（packet switching）**，二者的取舍见 [电路交换](/app/topic/1829) 和 [报文交换与分组交换](/app/topic/1830)；核心的拓扑形态见 [网络分类与拓扑](/app/topic/1828)。\n\n#### 2.4 一条路径的完整形态\n\n```mermaid\ngraph LR\n    subgraph EDGE[\"网络边缘\"]\n        C1[\"客户端端系统\"]\n        S1[\"服务器端系统\"]\n    end\n    subgraph ACCESS[\"接入网\"]\n        AP[\"接入路由器 / 基站\"]\n        ER1[\"边缘路由器\"]\n        ER2[\"边缘路由器\"]\n    end\n    subgraph CORE[\"网络核心\"]\n        R1((\"核心路由器\"))\n        R2((\"核心路由器\"))\n        R3((\"核心路由器\"))\n        R1 --- R2\n        R2 --- R3\n        R1 --- R3\n    end\n    C1 --- AP\n    AP --- ER1\n    ER1 --- R1\n    R3 --- ER2\n    ER2 --- S1\n```\n\n用 `traceroute` 能直接把这条路径上的角色分出来：\n\n```text\ntraceroute to api.example.com (203.0.113.10), 30 hops max\n 1  192.168.1.1     1.2 ms    家庭网关（接入网边缘）\n 2  10.10.0.1       2.1 ms    运营商汇聚设备（边缘路由器）\n 3  172.16.8.5      5.4 ms    核心路由器\n 4  172.16.9.9      6.0 ms    核心路由器\n 5  203.0.113.10    7.3 ms    目标服务器（对端边缘）\n```\n\n第 1、2 跳属于接入侧，中间的 3、4 跳属于核心，最后一跳回到对端边缘。时延的构成与测量口径见 [时延与 RTT](/app/topic/1832)。\n\n### 3. 特征与对比\n\n| 维度 | 网络边缘 | 网络核心 |\n| --- | --- | --- |\n| 组成 | 端系统 + 接入网 | 路由器 + 高速链路 |\n| 职责 | 产生、消费数据，运行应用 | 转发数据，提供端到端连通性 |\n| 典型设备 | PC、手机、服务器、AP、接入交换机 | 核心/骨干路由器 |\n| 处理深度 | 可到应用层 | 主要到网络层（三层转发） |\n| 关注指标 | 应用响应时间、接入带宽 | 吞吐量、链路利用率、路由收敛速度 |\n| 数量级 | 设备数量极多、分散 | 节点少、链路带宽高、高度冗余 |\n\n一句话概括这个分工：**智能在边缘，简单和快速在核心**，这也是互联网可扩展性的来源——新增应用不需要改动核心。\n\n### 4. 应用\n\n- **判断一次调用走没走核心**：同机房/同可用区的两台机器互访只经过接入交换机，时延在亚毫秒级；跨可用区、跨地域才穿核心骨干，时延抬升到毫秒到几十毫秒。后端做超时与重试配置时，要按这条思路定不同量级。\n- **把内容推向边缘**：CDN、边缘计算节点本质上是把服务器这类端系统前置到离用户更近的接入侧，缩短“客户端 → 核心 → 服务器”中核心段的长度，降低 RTT。\n- **排障按边缘/核心分段**：先确认本机到网关（边缘侧）通不通，再看中间核心跳，最后看对端接入。ping 网关通但 ping 对端不通，问题基本在核心或对端边缘。\n- **策略通常落在边缘路由器上**：NAT、ACL、安全组、出入口限流都在边缘路由器或网关上执行，核心内部一般不做逐业务策略——这也是云上安全组挂在子网边界、而不是挂在骨干上的原因。\n- **核心故障影响面大**：核心链路中断会同时影响大量边缘用户，所以核心设计强调冗余与快速收敛；而单台端系统故障只影响自己。\n\n### 5. 常见考点\n\n- 问：网络边缘包括哪些部分？答：端系统（主机）和接入网，不含核心路由器。\n- 问：核心只负责转发吗？答：转发是数据平面的事，核心还承担路由选择（控制平面），但都不涉及应用内容。\n- 问：接入网和网络边缘是一回事吗？答：接入网是网络边缘的一部分，边缘还包括端系统本身。\n- 易错点：把“边缘计算”的“边缘”当作拓扑边缘——教材里的网络边缘仅指端系统与接入网，与部署位置是否靠近用户无关。\n- 易错点：认为服务器不在边缘。服务器本身是端系统，同样属于网络边缘，只是通常放在机房一侧。","masteryLevel":"待巩固","masteryEnabled":true,"masteryOverride":null},{"id":106,"title":"网络分类与拓扑","categoryId":9005,"typeId":2,"createTime":"2026-10-01 09:42:00","hasContent":false,"content":"","masteryLevel":"稳定掌握","masteryEnabled":true,"masteryOverride":null},{"id":107,"title":"网络性能指标","categoryId":9005,"typeId":2,"createTime":"2026-10-01 09:49:00","hasContent":false,"content":""},{"id":108,"title":"时延与 RTT","categoryId":9005,"typeId":2,"createTime":"2026-10-01 09:56:00","hasContent":false,"content":""},{"id":109,"title":"OSI 七层模型","categoryId":9006,"typeId":2,"createTime":"2026-10-01 10:03:00","hasContent":false,"content":""},{"id":110,"title":"TCP/IP 四层模型","categoryId":9006,"typeId":2,"createTime":"2026-10-01 10:10:00","hasContent":false,"content":""},{"id":111,"title":"协议、接口与服务","categoryId":9006,"typeId":2,"createTime":"2026-10-01 10:17:00","hasContent":false,"content":""},{"id":112,"title":"封装与解封装","categoryId":9006,"typeId":2,"createTime":"2026-10-01 10:24:00","hasContent":false,"content":""},{"id":113,"title":"PDU 与各层协议","categoryId":9006,"typeId":2,"createTime":"2026-10-01 10:31:00","hasContent":false,"content":""},{"id":114,"title":"中继器与集线器","categoryId":9007,"typeId":2,"createTime":"2026-10-01 10:38:00","hasContent":false,"content":""},{"id":115,"title":"交换机","categoryId":9007,"typeId":2,"createTime":"2026-10-01 10:45:00","hasContent":false,"content":""},{"id":116,"title":"路由器","categoryId":9007,"typeId":2,"createTime":"2026-10-01 10:52:00","hasContent":false,"content":""},{"id":117,"title":"网关","categoryId":9007,"typeId":2,"createTime":"2026-10-01 10:59:00","hasContent":false,"content":""},{"id":118,"title":"IEEE 802 与 RFC","categoryId":9007,"typeId":2,"createTime":"2026-10-01 11:06:00","hasContent":false,"content":""},{"id":119,"title":"物理层与数据链路层总览","categoryId":9008,"typeId":2,"createTime":"2026-10-01 11:13:00","hasContent":false,"content":""},{"id":120,"title":"传输介质","categoryId":9009,"typeId":2,"createTime":"2026-10-01 11:20:00","hasContent":false,"content":""},{"id":121,"title":"编码与调制","categoryId":9009,"typeId":2,"createTime":"2026-10-01 11:27:00","hasContent":false,"content":""},{"id":122,"title":"奈奎斯特定理","categoryId":9009,"typeId":2,"createTime":"2026-10-01 11:34:00","hasContent":false,"content":""},{"id":123,"title":"香农定理","categoryId":9009,"typeId":2,"createTime":"2026-10-01 11:41:00","hasContent":false,"content":""},{"id":124,"title":"复用技术","categoryId":9009,"typeId":2,"createTime":"2026-10-01 11:48:00","hasContent":false,"content":""},{"id":125,"title":"成帧与透明传输","categoryId":9011,"typeId":2,"createTime":"2026-10-01 11:55:00","hasContent":false,"content":""},{"id":126,"title":"差错检测与 CRC","categoryId":9011,"typeId":2,"createTime":"2026-10-01 12:02:00","hasContent":false,"content":""},{"id":127,"title":"停止等待协议","categoryId":9012,"typeId":2,"createTime":"2026-10-01 12:09:00","hasContent":false,"content":""},{"id":128,"title":"后退 N 帧协议","categoryId":9012,"typeId":2,"createTime":"2026-10-01 12:16:00","hasContent":false,"content":""},{"id":129,"title":"选择重传协议","categoryId":9012,"typeId":2,"createTime":"2026-10-01 12:23:00","hasContent":false,"content":""},{"id":130,"title":"滑动窗口","categoryId":9012,"typeId":2,"createTime":"2026-10-01 12:30:00","hasContent":false,"content":""},{"id":131,"title":"MAC 地址","categoryId":9013,"typeId":2,"createTime":"2026-10-01 12:37:00","hasContent":false,"content":""},{"id":132,"title":"以太网帧格式","categoryId":9013,"typeId":2,"createTime":"2026-10-01 12:44:00","hasContent":false,"content":""},{"id":133,"title":"CSMA/CD","categoryId":9013,"typeId":2,"createTime":"2026-10-01 12:51:00","hasContent":false,"content":""},{"id":134,"title":"交换机自学习","categoryId":9013,"typeId":2,"createTime":"2026-10-01 12:58:00","hasContent":false,"content":""},{"id":135,"title":"VLAN","categoryId":9013,"typeId":2,"createTime":"2026-10-01 13:05:00","hasContent":false,"content":""},{"id":136,"title":"生成树协议","categoryId":9013,"typeId":2,"createTime":"2026-10-01 13:12:00","hasContent":false,"content":""},{"id":137,"title":"IEEE 802.11 架构","categoryId":9013,"typeId":2,"createTime":"2026-10-01 13:19:00","hasContent":false,"content":""},{"id":138,"title":"CSMA/CA","categoryId":9013,"typeId":2,"createTime":"2026-10-01 13:26:00","hasContent":false,"content":""},{"id":139,"title":"PPP 协议","categoryId":9014,"typeId":2,"createTime":"2026-10-01 13:33:00","hasContent":false,"content":""},{"id":140,"title":"PON 接入","categoryId":9014,"typeId":2,"createTime":"2026-10-01 13:40:00","hasContent":false,"content":""},{"id":141,"title":"蜂窝接入","categoryId":9014,"typeId":2,"createTime":"2026-10-01 13:47:00","hasContent":false,"content":""},{"id":142,"title":"网络层总览","categoryId":9015,"typeId":2,"createTime":"2026-10-01 13:54:00","hasContent":false,"content":""},{"id":143,"title":"IP 地址分类","categoryId":9017,"typeId":2,"createTime":"2026-10-01 14:01:00","hasContent":false,"content":""},{"id":144,"title":"子网掩码与子网划分","categoryId":9017,"typeId":2,"createTime":"2026-10-01 14:08:00","hasContent":false,"content":""},{"id":145,"title":"CIDR 与路由聚合","categoryId":9017,"typeId":2,"createTime":"2026-10-01 14:15:00","hasContent":false,"content":""},{"id":146,"title":"私有地址与 NAT","categoryId":9017,"typeId":2,"createTime":"2026-10-01 14:22:00","hasContent":false,"content":""},{"id":147,"title":"IPv4 首部","categoryId":9018,"typeId":2,"createTime":"2026-10-01 14:29:00","hasContent":false,"content":""},{"id":148,"title":"IP 分片与重组","categoryId":9018,"typeId":2,"createTime":"2026-10-01 14:36:00","hasContent":false,"content":""},{"id":149,"title":"DHCP","categoryId":9018,"typeId":2,"createTime":"2026-10-01 14:43:00","hasContent":false,"content":""},{"id":150,"title":"ICMP","categoryId":9018,"typeId":2,"createTime":"2026-10-01 14:50:00","hasContent":false,"content":""},{"id":151,"title":"路由表与最长前缀匹配","categoryId":9019,"typeId":2,"createTime":"2026-10-01 14:57:00","hasContent":false,"content":""},{"id":152,"title":"静态路由与默认路由","categoryId":9019,"typeId":2,"createTime":"2026-10-01 15:04:00","hasContent":false,"content":""},{"id":153,"title":"距离向量算法与 RIP","categoryId":9019,"typeId":2,"createTime":"2026-10-01 15:11:00","hasContent":false,"content":""},{"id":154,"title":"链路状态算法与 OSPF","categoryId":9019,"typeId":2,"createTime":"2026-10-01 15:18:00","hasContent":false,"content":""},{"id":155,"title":"BGP","categoryId":9019,"typeId":2,"createTime":"2026-10-01 15:25:00","hasContent":false,"content":""},{"id":156,"title":"路由环路与水平分割","categoryId":9019,"typeId":2,"createTime":"2026-10-01 15:32:00","hasContent":false,"content":""},{"id":157,"title":"等价多路径 ECMP","categoryId":9019,"typeId":2,"createTime":"2026-10-01 15:39:00","hasContent":false,"content":""},{"id":158,"title":"IPv6 地址与首部","categoryId":9020,"typeId":2,"createTime":"2026-10-01 15:46:00","hasContent":false,"content":""},{"id":159,"title":"邻居发现协议 NDP","categoryId":9020,"typeId":2,"createTime":"2026-10-01 15:53:00","hasContent":false,"content":""},{"id":160,"title":"IPv4/IPv6 过渡","categoryId":9020,"typeId":2,"createTime":"2026-10-01 16:00:00","hasContent":false,"content":""},{"id":161,"title":"组播与 IGMP","categoryId":9020,"typeId":2,"createTime":"2026-10-01 16:07:00","hasContent":false,"content":""},{"id":162,"title":"MTU 与分片问题","categoryId":9021,"typeId":2,"createTime":"2026-10-01 16:14:00","hasContent":false,"content":""},{"id":163,"title":"NAT 与端口映射问题","categoryId":9021,"typeId":2,"createTime":"2026-10-01 16:21:00","hasContent":false,"content":""},{"id":164,"title":"路由连通性排查","categoryId":9021,"typeId":2,"createTime":"2026-10-01 16:28:00","hasContent":false,"content":""},{"id":165,"title":"传输层总览","categoryId":9022,"typeId":2,"createTime":"2026-10-01 16:35:00","hasContent":false,"content":""},{"id":166,"title":"端口号","categoryId":9023,"typeId":2,"createTime":"2026-10-01 16:42:00","hasContent":false,"content":""},{"id":167,"title":"套接字四元组","categoryId":9023,"typeId":2,"createTime":"2026-10-01 16:49:00","hasContent":false,"content":""},{"id":168,"title":"复用与分用","categoryId":9023,"typeId":2,"createTime":"2026-10-01 16:56:00","hasContent":false,"content":""},{"id":169,"title":"UDP 报文与特性","categoryId":9023,"typeId":2,"createTime":"2026-10-01 17:03:00","hasContent":false,"content":""},{"id":170,"title":"TCP 首部字段","categoryId":9025,"typeId":2,"createTime":"2026-10-01 17:10:00","hasContent":false,"content":""},{"id":171,"title":"三次握手","categoryId":9025,"typeId":2,"createTime":"2026-10-01 17:17:00","hasContent":false,"content":""},{"id":172,"title":"四次挥手","categoryId":9026,"typeId":2,"createTime":"2026-10-01 17:24:00","hasContent":false,"content":""},{"id":173,"title":"TCP 状态机","categoryId":9026,"typeId":2,"createTime":"2026-10-01 17:31:00","hasContent":false,"content":""},{"id":174,"title":"TIME_WAIT","categoryId":9026,"typeId":2,"createTime":"2026-10-01 17:38:00","hasContent":false,"content":""},{"id":175,"title":"SYN Flood 与 backlog","categoryId":9026,"typeId":2,"createTime":"2026-10-01 17:45:00","hasContent":false,"content":""},{"id":176,"title":"序号与累积确认","categoryId":9027,"typeId":2,"createTime":"2026-10-01 17:52:00","hasContent":false,"content":""},{"id":177,"title":"超时重传与 RTO","categoryId":9027,"typeId":2,"createTime":"2026-10-01 17:59:00","hasContent":false,"content":""},{"id":178,"title":"快速重传","categoryId":9027,"typeId":2,"createTime":"2026-10-01 18:06:00","hasContent":false,"content":""},{"id":179,"title":"SACK","categoryId":9027,"typeId":2,"createTime":"2026-10-01 18:13:00","hasContent":false,"content":""},{"id":180,"title":"发送窗口与接收窗口","categoryId":9027,"typeId":2,"createTime":"2026-10-01 18:20:00","hasContent":false,"content":""},{"id":181,"title":"流量控制与零窗口","categoryId":9027,"typeId":2,"createTime":"2026-10-01 18:27:00","hasContent":false,"content":""},{"id":182,"title":"Nagle 算法与延迟确认","categoryId":9027,"typeId":2,"createTime":"2026-10-01 18:34:00","hasContent":false,"content":""},{"id":183,"title":"慢启动","categoryId":9028,"typeId":2,"createTime":"2026-10-01 18:41:00","hasContent":false,"content":""},{"id":184,"title":"拥塞避免","categoryId":9028,"typeId":2,"createTime":"2026-10-01 18:48:00","hasContent":false,"content":""},{"id":185,"title":"快速恢复","categoryId":9028,"typeId":2,"createTime":"2026-10-01 18:55:00","hasContent":false,"content":""},{"id":186,"title":"Reno 与 NewReno","categoryId":9028,"typeId":2,"createTime":"2026-10-01 19:02:00","hasContent":false,"content":""},{"id":187,"title":"CUBIC","categoryId":9028,"typeId":2,"createTime":"2026-10-01 19:09:00","hasContent":false,"content":""},{"id":188,"title":"BBR","categoryId":9028,"typeId":2,"createTime":"2026-10-01 19:16:00","hasContent":false,"content":""},{"id":189,"title":"粘包与拆包","categoryId":9029,"typeId":2,"createTime":"2026-10-01 19:23:00","hasContent":false,"content":""},{"id":190,"title":"端口耗尽","categoryId":9029,"typeId":2,"createTime":"2026-10-01 19:30:00","hasContent":false,"content":""},{"id":191,"title":"连接重置 RST","categoryId":9029,"typeId":2,"createTime":"2026-10-01 19:37:00","hasContent":false,"content":""},{"id":192,"title":"半连接与全连接队列","categoryId":9029,"typeId":2,"createTime":"2026-10-01 19:44:00","hasContent":false,"content":""},{"id":193,"title":"Keepalive 与心跳","categoryId":9029,"typeId":2,"createTime":"2026-10-01 19:51:00","hasContent":false,"content":""},{"id":194,"title":"长连接与连接池","categoryId":9029,"typeId":2,"createTime":"2026-10-01 19:58:00","hasContent":false,"content":""},{"id":195,"title":"tcpdump 过滤","categoryId":9030,"typeId":2,"createTime":"2026-10-01 20:05:00","hasContent":false,"content":""},{"id":196,"title":"重传与时延分析","categoryId":9030,"typeId":2,"createTime":"2026-10-01 20:12:00","hasContent":false,"content":""},{"id":197,"title":"应用层总览","categoryId":9031,"typeId":2,"createTime":"2026-10-01 20:19:00","hasContent":false,"content":""},{"id":198,"title":"客户端-服务器模型","categoryId":9032,"typeId":2,"createTime":"2026-10-01 20:26:00","hasContent":false,"content":""},{"id":199,"title":"P2P 模型","categoryId":9032,"typeId":2,"createTime":"2026-10-01 20:33:00","hasContent":false,"content":""},{"id":200,"title":"熟知端口","categoryId":9032,"typeId":2,"createTime":"2026-10-01 20:40:00","hasContent":false,"content":""},{"id":201,"title":"文本协议与二进制协议","categoryId":9032,"typeId":2,"createTime":"2026-10-01 20:47:00","hasContent":false,"content":""},{"id":202,"title":"域名空间与资源记录","categoryId":9033,"typeId":2,"createTime":"2026-10-01 20:54:00","hasContent":false,"content":""},{"id":203,"title":"域名服务器层级","categoryId":9033,"typeId":2,"createTime":"2026-10-01 21:01:00","hasContent":false,"content":""},{"id":204,"title":"递归查询与迭代查询","categoryId":9033,"typeId":2,"createTime":"2026-10-01 21:08:00","hasContent":false,"content":""},{"id":205,"title":"DNS 缓存与 TTL","categoryId":9033,"typeId":2,"createTime":"2026-10-01 21:15:00","hasContent":false,"content":""},{"id":206,"title":"智能解析与 CDN","categoryId":9033,"typeId":2,"createTime":"2026-10-01 21:22:00","hasContent":false,"content":""},{"id":207,"title":"DNS 劫持与污染","categoryId":9033,"typeId":2,"createTime":"2026-10-01 21:29:00","hasContent":false,"content":""},{"id":208,"title":"HTTP 报文格式","categoryId":9035,"typeId":2,"createTime":"2026-10-01 21:36:00","hasContent":false,"content":""},{"id":209,"title":"请求方法与状态码","categoryId":9035,"typeId":2,"createTime":"2026-10-01 21:43:00","hasContent":false,"content":""},{"id":210,"title":"首部字段与内容协商","categoryId":9035,"typeId":2,"createTime":"2026-10-01 21:50:00","hasContent":false,"content":""},{"id":211,"title":"长连接与管线化","categoryId":9036,"typeId":2,"createTime":"2026-10-01 21:57:00","hasContent":false,"content":""},{"id":212,"title":"Cookie 与 Session","categoryId":9036,"typeId":2,"createTime":"2026-10-01 22:04:00","hasContent":false,"content":""},{"id":213,"title":"同源策略与 CORS","categoryId":9036,"typeId":2,"createTime":"2026-10-01 22:11:00","hasContent":false,"content":""},{"id":214,"title":"强缓存与协商缓存","categoryId":9037,"typeId":2,"createTime":"2026-10-01 22:18:00","hasContent":false,"content":""},{"id":215,"title":"HTTP/2 多路复用","categoryId":9037,"typeId":2,"createTime":"2026-10-01 22:25:00","hasContent":false,"content":""},{"id":216,"title":"HTTP/3 与 QUIC","categoryId":9037,"typeId":2,"createTime":"2026-10-01 22:32:00","hasContent":false,"content":""},{"id":217,"title":"头部压缩 HPACK/QPACK","categoryId":9037,"typeId":2,"createTime":"2026-10-01 22:39:00","hasContent":false,"content":""},{"id":218,"title":"对称与非对称加密","categoryId":9039,"typeId":2,"createTime":"2026-10-01 22:46:00","hasContent":false,"content":""},{"id":219,"title":"哈希与数字签名","categoryId":9039,"typeId":2,"createTime":"2026-10-01 22:53:00","hasContent":false,"content":""},{"id":220,"title":"X.509 证书","categoryId":9040,"typeId":2,"createTime":"2026-10-01 23:00:00","hasContent":false,"content":""},{"id":221,"title":"CA 与证书链","categoryId":9040,"typeId":2,"createTime":"2026-10-01 23:07:00","hasContent":false,"content":""},{"id":222,"title":"证书校验与吊销","categoryId":9040,"typeId":2,"createTime":"2026-10-01 23:14:00","hasContent":false,"content":""},{"id":223,"title":"TLS 握手","categoryId":9041,"typeId":2,"createTime":"2026-10-01 23:21:00","hasContent":false,"content":""},{"id":224,"title":"会话恢复","categoryId":9041,"typeId":2,"createTime":"2026-10-01 23:28:00","hasContent":false,"content":""},{"id":225,"title":"TLS 1.2 与 1.3","categoryId":9041,"typeId":2,"createTime":"2026-10-01 23:35:00","hasContent":false,"content":""},{"id":226,"title":"HTTPS 性能优化","categoryId":9041,"typeId":2,"createTime":"2026-10-01 23:42:00","hasContent":false,"content":""},{"id":227,"title":"FTP 与 SFTP","categoryId":9042,"typeId":2,"createTime":"2026-10-01 23:49:00","hasContent":false,"content":""},{"id":228,"title":"SMTP 与 IMAP","categoryId":9042,"typeId":2,"createTime":"2026-10-01 23:56:00","hasContent":false,"content":""},{"id":229,"title":"WebSocket","categoryId":9042,"typeId":2,"createTime":"2026-10-02 00:03:00","hasContent":false,"content":""},{"id":230,"title":"MQTT","categoryId":9042,"typeId":2,"createTime":"2026-10-02 00:10:00","hasContent":false,"content":""},{"id":231,"title":"RPC 与 gRPC","categoryId":9042,"typeId":2,"createTime":"2026-10-02 00:17:00","hasContent":false,"content":""},{"id":232,"title":"AMQP 与 Kafka 协议","categoryId":9042,"typeId":2,"createTime":"2026-10-02 00:24:00","hasContent":false,"content":""},{"id":233,"title":"网络安全总览","categoryId":9043,"typeId":2,"createTime":"2026-10-02 00:31:00","hasContent":false,"content":""},{"id":234,"title":"机密性、完整性与可用性","categoryId":9044,"typeId":2,"createTime":"2026-10-02 00:38:00","hasContent":false,"content":""},{"id":235,"title":"攻击面与信任边界","categoryId":9044,"typeId":2,"createTime":"2026-10-02 00:45:00","hasContent":false,"content":""},{"id":236,"title":"认证与授权","categoryId":9044,"typeId":2,"createTime":"2026-10-02 00:52:00","hasContent":false,"content":""},{"id":237,"title":"OAuth 2.0 与 OIDC","categoryId":9044,"typeId":2,"createTime":"2026-10-02 00:59:00","hasContent":false,"content":""},{"id":238,"title":"JWT","categoryId":9044,"typeId":2,"createTime":"2026-10-02 01:06:00","hasContent":false,"content":""},{"id":239,"title":"RBAC","categoryId":9044,"typeId":2,"createTime":"2026-10-02 01:13:00","hasContent":false,"content":""},{"id":240,"title":"DDoS","categoryId":9046,"typeId":2,"createTime":"2026-10-02 01:20:00","hasContent":false,"content":""},{"id":241,"title":"SYN Flood","categoryId":9046,"typeId":2,"createTime":"2026-10-02 01:27:00","hasContent":false,"content":""},{"id":242,"title":"ARP 欺骗","categoryId":9046,"typeId":2,"createTime":"2026-10-02 01:34:00","hasContent":false,"content":""},{"id":243,"title":"DNS 缓存投毒","categoryId":9046,"typeId":2,"createTime":"2026-10-02 01:41:00","hasContent":false,"content":""},{"id":244,"title":"中间人攻击","categoryId":9047,"typeId":2,"createTime":"2026-10-02 01:48:00","hasContent":false,"content":""},{"id":245,"title":"SQL 注入","categoryId":9047,"typeId":2,"createTime":"2026-10-02 01:55:00","hasContent":false,"content":""},{"id":246,"title":"XSS","categoryId":9047,"typeId":2,"createTime":"2026-10-02 02:02:00","hasContent":false,"content":""},{"id":247,"title":"CSRF","categoryId":9047,"typeId":2,"createTime":"2026-10-02 02:09:00","hasContent":false,"content":""},{"id":248,"title":"防火墙","categoryId":9048,"typeId":2,"createTime":"2026-10-02 02:16:00","hasContent":false,"content":""},{"id":249,"title":"WAF","categoryId":9048,"typeId":2,"createTime":"2026-10-02 02:23:00","hasContent":false,"content":""},{"id":250,"title":"IDS/IPS","categoryId":9048,"typeId":2,"createTime":"2026-10-02 02:30:00","hasContent":false,"content":""},{"id":251,"title":"安全组与 ACL","categoryId":9048,"typeId":2,"createTime":"2026-10-02 02:37:00","hasContent":false,"content":""},{"id":252,"title":"IPSec VPN","categoryId":9048,"typeId":2,"createTime":"2026-10-02 02:44:00","hasContent":false,"content":""},{"id":253,"title":"SSL VPN","categoryId":9048,"typeId":2,"createTime":"2026-10-02 02:51:00","hasContent":false,"content":""},{"id":254,"title":"零信任模型","categoryId":9048,"typeId":2,"createTime":"2026-10-02 02:58:00","hasContent":false,"content":""},{"id":255,"title":"微隔离","categoryId":9048,"typeId":2,"createTime":"2026-10-02 03:05:00","hasContent":false,"content":""},{"id":256,"title":"无线与移动网络总览","categoryId":9049,"typeId":2,"createTime":"2026-10-02 03:12:00","hasContent":false,"content":""},{"id":257,"title":"WPA2/WPA3","categoryId":9050,"typeId":2,"createTime":"2026-10-02 03:19:00","hasContent":false,"content":""},{"id":258,"title":"无线漫游","categoryId":9050,"typeId":2,"createTime":"2026-10-02 03:26:00","hasContent":false,"content":""},{"id":259,"title":"4G/5G 架构","categoryId":9051,"typeId":2,"createTime":"2026-10-02 03:33:00","hasContent":false,"content":""},{"id":260,"title":"移动 IP","categoryId":9051,"typeId":2,"createTime":"2026-10-02 03:40:00","hasContent":false,"content":""},{"id":261,"title":"NB-IoT 与 LoRa","categoryId":9051,"typeId":2,"createTime":"2026-10-02 03:47:00","hasContent":false,"content":""},{"id":262,"title":"网络工程与后端实践总览","categoryId":9052,"typeId":2,"createTime":"2026-10-02 03:54:00","hasContent":false,"content":""},{"id":263,"title":"Socket API","categoryId":9053,"typeId":2,"createTime":"2026-10-02 04:01:00","hasContent":false,"content":""},{"id":264,"title":"TCP 服务端模型","categoryId":9053,"typeId":2,"createTime":"2026-10-02 04:08:00","hasContent":false,"content":""},{"id":265,"title":"阻塞与非阻塞 I/O","categoryId":9053,"typeId":2,"createTime":"2026-10-02 04:15:00","hasContent":false,"content":""},{"id":266,"title":"select/poll/epoll","categoryId":9053,"typeId":2,"createTime":"2026-10-02 04:22:00","hasContent":false,"content":""},{"id":267,"title":"Reactor 模型","categoryId":9053,"typeId":2,"createTime":"2026-10-02 04:29:00","hasContent":false,"content":""},{"id":268,"title":"零拷贝","categoryId":9053,"typeId":2,"createTime":"2026-10-02 04:36:00","hasContent":false,"content":""},{"id":269,"title":"正向代理与反向代理","categoryId":9055,"typeId":2,"createTime":"2026-10-02 04:43:00","hasContent":false,"content":""},{"id":270,"title":"API 网关","categoryId":9055,"typeId":2,"createTime":"2026-10-02 04:50:00","hasContent":false,"content":""},{"id":271,"title":"四层负载均衡","categoryId":9056,"typeId":2,"createTime":"2026-10-02 04:57:00","hasContent":false,"content":""},{"id":272,"title":"七层负载均衡","categoryId":9056,"typeId":2,"createTime":"2026-10-02 05:04:00","hasContent":false,"content":""},{"id":273,"title":"负载均衡算法","categoryId":9056,"typeId":2,"createTime":"2026-10-02 05:11:00","hasContent":false,"content":""},{"id":274,"title":"健康检查","categoryId":9056,"typeId":2,"createTime":"2026-10-02 05:18:00","hasContent":false,"content":""},{"id":275,"title":"限流与熔断","categoryId":9056,"typeId":2,"createTime":"2026-10-02 05:25:00","hasContent":false,"content":""},{"id":276,"title":"ping 与 traceroute","categoryId":9057,"typeId":2,"createTime":"2026-10-02 05:32:00","hasContent":false,"content":""},{"id":277,"title":"netstat 与 ss","categoryId":9057,"typeId":2,"createTime":"2026-10-02 05:39:00","hasContent":false,"content":""},{"id":278,"title":"tcpdump 与 Wireshark","categoryId":9057,"typeId":2,"createTime":"2026-10-02 05:46:00","hasContent":false,"content":""},{"id":279,"title":"时延分解","categoryId":9057,"typeId":2,"createTime":"2026-10-02 05:53:00","hasContent":false,"content":""},{"id":280,"title":"丢包与重传定位","categoryId":9057,"typeId":2,"createTime":"2026-10-02 06:00:00","hasContent":false,"content":""},{"id":281,"title":"DNS 与 TLS 耗时分析","categoryId":9057,"typeId":2,"createTime":"2026-10-02 06:07:00","hasContent":false,"content":""},{"id":282,"title":"VPC 与子网","categoryId":9059,"typeId":2,"createTime":"2026-10-02 06:14:00","hasContent":false,"content":""},{"id":283,"title":"NAT 网关","categoryId":9059,"typeId":2,"createTime":"2026-10-02 06:21:00","hasContent":false,"content":""},{"id":284,"title":"安全组与网络 ACL","categoryId":9059,"typeId":2,"createTime":"2026-10-02 06:28:00","hasContent":false,"content":""},{"id":285,"title":"Bridge 网络","categoryId":9061,"typeId":2,"createTime":"2026-10-02 06:35:00","hasContent":false,"content":""},{"id":286,"title":"Overlay 网络","categoryId":9061,"typeId":2,"createTime":"2026-10-02 06:42:00","hasContent":false,"content":""},{"id":287,"title":"CNI 插件","categoryId":9062,"typeId":2,"createTime":"2026-10-02 06:49:00","hasContent":false,"content":""},{"id":288,"title":"Kubernetes Service 与 kube-proxy","categoryId":9062,"typeId":2,"createTime":"2026-10-02 06:56:00","hasContent":false,"content":""},{"id":289,"title":"Ingress","categoryId":9062,"typeId":2,"createTime":"2026-10-02 07:03:00","hasContent":false,"content":""},{"id":290,"title":"多活与容灾","categoryId":9063,"typeId":2,"createTime":"2026-10-02 07:10:00","hasContent":false,"content":""},{"id":291,"title":"故障转移","categoryId":9063,"typeId":2,"createTime":"2026-10-02 07:17:00","hasContent":false,"content":""},{"id":292,"title":"超时与重试","categoryId":9063,"typeId":2,"createTime":"2026-10-02 07:24:00","hasContent":false,"content":""},{"id":293,"title":"同步调用与异步消息","categoryId":9063,"typeId":2,"createTime":"2026-10-02 07:31:00","hasContent":false,"content":""},{"id":294,"title":"Service Mesh","categoryId":9063,"typeId":2,"createTime":"2026-10-02 07:38:00","hasContent":false,"content":""},{"id":295,"title":"链路追踪","categoryId":9063,"typeId":2,"createTime":"2026-10-02 07:45:00","hasContent":false,"content":""},{"id":7,"title":"封装继承与多态","categoryId":9102,"typeId":2,"createTime":"2026-11-07 10:26:00","hasContent":true,"content":"### 1. 定义\n\n**封装**（encapsulation）= 把数据与操作数据的方法绑定在一个类里，对外只暴露必要的接口。**继承**（inheritance）让子类复用父类的字段与方法，**多态**（polymorphism）让同一个调用在运行期落在不同的实现上。\n\n### 2. 要点\n\n- 封装的目的是收敛变化：字段私有、方法公开，调用方不依赖内部表示。\n- 继承表达\"is-a\"，组合表达\"has-a\"；能用组合就不要用继承。\n- 多态的运行期绑定靠方法表：重载是编译期、重写是运行期。"},{"id":8,"title":"HashMap 的底层实现","categoryId":9102,"typeId":2,"createTime":"2026-11-07 10:27:00","hasContent":false,"content":""},{"id":296,"title":"Java 基础总览","categoryId":9101,"typeId":2,"createTime":"2026-11-10 20:25:00","hasContent":true,"content":"### 1. 定义\n\nJava 是一门静态类型、面向对象的编程语言。\n\n### 2. 原理\n\n一次编译到处运行。"},{"id":297,"title":"Java 学习路线","categoryId":9101,"typeId":2,"createTime":"2026-11-10 20:26:00","hasContent":false,"content":""}]}
+{
+  "categories": [
+    {
+      "id": 9001,
+      "name": "计算机网络",
+      "parentId": 0,
+      "createdAt": "2026-10-27 10:00:00"
+    },
+    {
+      "id": 9002,
+      "name": "1. 网络基础与体系结构",
+      "parentId": 9001
+    },
+    {
+      "id": 9003,
+      "name": "1.1 网络组成与交换",
+      "parentId": 9002
+    },
+    {
+      "id": 9004,
+      "name": "1.1.1 交换方式",
+      "parentId": 9003
+    },
+    {
+      "id": 9005,
+      "name": "1.1.2 网络构成与性能",
+      "parentId": 9003
+    },
+    {
+      "id": 9006,
+      "name": "1.2 分层体系结构",
+      "parentId": 9002
+    },
+    {
+      "id": 9007,
+      "name": "1.3 网络设备与标准",
+      "parentId": 9002
+    },
+    {
+      "id": 9008,
+      "name": "2. 物理层与数据链路层",
+      "parentId": 9001
+    },
+    {
+      "id": 9009,
+      "name": "2.1 物理层",
+      "parentId": 9008
+    },
+    {
+      "id": 9010,
+      "name": "2.2 数据链路层基础",
+      "parentId": 9008
+    },
+    {
+      "id": 9011,
+      "name": "2.2.1 成帧与差错检测",
+      "parentId": 9010
+    },
+    {
+      "id": 9012,
+      "name": "2.2.2 可靠传输协议",
+      "parentId": 9010
+    },
+    {
+      "id": 9013,
+      "name": "2.3 以太网与局域网",
+      "parentId": 9008
+    },
+    {
+      "id": 9014,
+      "name": "2.4 广域网与接入技术",
+      "parentId": 9008
+    },
+    {
+      "id": 9015,
+      "name": "3. 网络层",
+      "parentId": 9001
+    },
+    {
+      "id": 9016,
+      "name": "3.1 IPv4 协议",
+      "parentId": 9015
+    },
+    {
+      "id": 9017,
+      "name": "3.1.1 地址与子网",
+      "parentId": 9016
+    },
+    {
+      "id": 9018,
+      "name": "3.1.2 报文与辅助协议",
+      "parentId": 9016
+    },
+    {
+      "id": 9019,
+      "name": "3.2 路由与转发",
+      "parentId": 9015
+    },
+    {
+      "id": 9020,
+      "name": "3.3 IPv6 与组播",
+      "parentId": 9015
+    },
+    {
+      "id": 9021,
+      "name": "3.4 网络层排障",
+      "parentId": 9015
+    },
+    {
+      "id": 9022,
+      "name": "4. 传输层",
+      "parentId": 9001
+    },
+    {
+      "id": 9023,
+      "name": "4.1 传输层基础",
+      "parentId": 9022
+    },
+    {
+      "id": 9024,
+      "name": "4.2 TCP 连接管理",
+      "parentId": 9022
+    },
+    {
+      "id": 9025,
+      "name": "4.2.1 报文与握手",
+      "parentId": 9024
+    },
+    {
+      "id": 9026,
+      "name": "4.2.2 挥手与状态",
+      "parentId": 9024
+    },
+    {
+      "id": 9027,
+      "name": "4.3 TCP 可靠传输",
+      "parentId": 9022
+    },
+    {
+      "id": 9028,
+      "name": "4.4 TCP 拥塞控制",
+      "parentId": 9022
+    },
+    {
+      "id": 9029,
+      "name": "4.5 传输层工程实践",
+      "parentId": 9022
+    },
+    {
+      "id": 9030,
+      "name": "4.6 传输层抓包分析",
+      "parentId": 9022
+    },
+    {
+      "id": 9031,
+      "name": "5. 应用层",
+      "parentId": 9001
+    },
+    {
+      "id": 9032,
+      "name": "5.1 应用层模型与协议",
+      "parentId": 9031
+    },
+    {
+      "id": 9033,
+      "name": "5.2 DNS",
+      "parentId": 9031
+    },
+    {
+      "id": 9034,
+      "name": "5.3 HTTP",
+      "parentId": 9031
+    },
+    {
+      "id": 9035,
+      "name": "5.3.1 报文与语义",
+      "parentId": 9034
+    },
+    {
+      "id": 9036,
+      "name": "5.3.2 连接与状态",
+      "parentId": 9034
+    },
+    {
+      "id": 9037,
+      "name": "5.3.3 缓存与演进",
+      "parentId": 9034
+    },
+    {
+      "id": 9038,
+      "name": "5.4 HTTPS 与 TLS",
+      "parentId": 9031
+    },
+    {
+      "id": 9039,
+      "name": "5.4.1 密码学基础",
+      "parentId": 9038
+    },
+    {
+      "id": 9040,
+      "name": "5.4.2 证书体系",
+      "parentId": 9038
+    },
+    {
+      "id": 9041,
+      "name": "5.4.3 TLS 协议",
+      "parentId": 9038
+    },
+    {
+      "id": 9042,
+      "name": "5.5 其他应用层协议",
+      "parentId": 9031
+    },
+    {
+      "id": 9043,
+      "name": "6. 网络安全",
+      "parentId": 9001
+    },
+    {
+      "id": 9044,
+      "name": "6.1 网络安全基础",
+      "parentId": 9043
+    },
+    {
+      "id": 9045,
+      "name": "6.2 常见网络攻击",
+      "parentId": 9043
+    },
+    {
+      "id": 9046,
+      "name": "6.2.1 流量型攻击",
+      "parentId": 9045
+    },
+    {
+      "id": 9047,
+      "name": "6.2.2 应用型攻击",
+      "parentId": 9045
+    },
+    {
+      "id": 9048,
+      "name": "6.3 安全防护体系",
+      "parentId": 9043
+    },
+    {
+      "id": 9049,
+      "name": "7. 无线与移动网络",
+      "parentId": 9001
+    },
+    {
+      "id": 9050,
+      "name": "7.1 无线局域网",
+      "parentId": 9049
+    },
+    {
+      "id": 9051,
+      "name": "7.2 移动网络",
+      "parentId": 9049
+    },
+    {
+      "id": 9052,
+      "name": "8. 网络工程与后端实践",
+      "parentId": 9001
+    },
+    {
+      "id": 9053,
+      "name": "8.1 网络编程",
+      "parentId": 9052
+    },
+    {
+      "id": 9054,
+      "name": "8.2 代理与负载均衡",
+      "parentId": 9052
+    },
+    {
+      "id": 9055,
+      "name": "8.2.1 代理",
+      "parentId": 9054
+    },
+    {
+      "id": 9056,
+      "name": "8.2.2 负载均衡",
+      "parentId": 9054
+    },
+    {
+      "id": 9057,
+      "name": "8.3 网络排障与观测",
+      "parentId": 9052
+    },
+    {
+      "id": 9058,
+      "name": "8.4 云网络与容器网络",
+      "parentId": 9052
+    },
+    {
+      "id": 9059,
+      "name": "8.4.1 云网络",
+      "parentId": 9058
+    },
+    {
+      "id": 9060,
+      "name": "8.4.2 容器网络",
+      "parentId": 9058
+    },
+    {
+      "id": 9061,
+      "name": "8.4.2.1 Docker 网络",
+      "parentId": 9060
+    },
+    {
+      "id": 9062,
+      "name": "8.4.2.2 Kubernetes 网络",
+      "parentId": 9060
+    },
+    {
+      "id": 9063,
+      "name": "8.5 后端网络架构",
+      "parentId": 9052
+    },
+    {
+      "id": 9101,
+      "name": "Java 基础",
+      "parentId": 0,
+      "createdAt": "2026-10-27 10:00:00"
+    },
+    {
+      "id": 9102,
+      "name": "1.1 面向对象基础",
+      "parentId": 9101
+    }
+  ],
+  "topics": [
+    {
+      "id": 101,
+      "title": "计算机网络总览",
+      "categoryId": 9003,
+      "typeId": 2,
+      "createTime": "2026-10-01 09:07:00",
+      "hasContent": true,
+      "content": "### 1. 定义\n\n计算机网络（computer network）= 由若干**节点**（node：主机、交换机、路由器等具备独立地址、能收发或转发数据的设备）、**链路**（link：连接相邻节点的传输介质）以及**协议**（protocol：通信双方共同遵守的报文格式与交互规则）三要素互连而成，以资源共享和信息交换为目的的系统。它属于计算机体系结构与数据通信的交叉领域。\n\n三条边界要分清：\n\n- 只有线连着、没有协议约定，不构成网络；协议是“双方约定好怎么发、怎么收、出错怎么办”，缺了它两台机器只能互发谁也看不懂的比特。\n- 计算机网络不等于**分布式系统**（distributed system）。分布式系统是建立在网络之上的软件系统，它向上层屏蔽了“通信会丢包、会乱序、会超时”这些细节；网络本身不屏蔽，它把这些细节原样暴露给使用它的人。\n- 同一台机器内两个进程通过管道通信不算网络通信；只有跨机器、经过协议栈才进入这门课的讨论范围。\n\n### 2. 原理\n\n#### 2.1 组织主线：分层与封装\n\n整门课反复使用的方法是**分层**（layering）：把“让两个进程跨网络交换数据”这一复杂问题，按职责切成若干层，每层只使用下层提供的服务、只向上层提供服务。分层后必然产生**封装**（encapsulation）：数据自上而下经过每一层时被加上该层的首部，形成该层的**协议数据单元**（PDU，protocol data unit），到达对端后再逐层剥掉首部还原，即解封装。\n\n- 每层只回答一类问题：链路层回答“相邻两个节点之间怎么传一帧”，网络层回答“跨越多个网络怎么找到目的主机”，传输层回答“进程到进程、要不要可靠”，应用层回答“这段字节是什么业务含义”。\n- 层与层之间只有“服务”这一条依赖方向，同层之间才用协议对话；这正是分层能把改动局限在一层的原因，例如把 IPv4 换成 IPv6，TCP 以上几乎不用动。\n- 教材用 [OSI 七层模型](/app/topic/1833) 讲概念划分，用 [TCP/IP 四层模型](/app/topic/1834) 讲真实实现；后端工程中一切配置、抓包、排障都按四层模型对号入座。\n\n#### 2.2 各章分工与主线\n\n下面八章不是并列的知识点集合，而是一条“自底向上的承载链”加几个横向切面：下层为上层提供承载能力，横向章节则贯穿各层。关系如下图所示，正文按图逐章说明。\n\n```mermaid\ngraph LR\n  A[1 网络基础与体系结构<br/>分层框架与性能指标] --> B[2 物理层与数据链路层<br/>相邻节点怎样传帧]\n  B --> C[3 网络层<br/>跨网络怎样找到主机]\n  C --> D[4 传输层<br/>进程到进程、可靠与否]\n  D --> E[5 应用层<br/>HTTP/DNS/TLS 的业务语义]\n  E --> F[8 网络工程与后端实践<br/>编程、代理、排障、云网络]\n  G[6 网络安全<br/>横切：认证、攻击、防护] -.-> E\n  H[7 无线与移动网络<br/>横切：802.11、4G/5G] -.-> B\n```\n\n**第 1 章 网络基础与体系结构**：给整门课立地基。先讲网络由什么组成（[网络边缘与网络核心](/app/topic/1827)：边缘是主机与应用，核心是路由器构成的转发网），再讲数据怎么在网络里被搬运（[报文交换与分组交换](/app/topic/1830)、[电路交换](/app/topic/1829)），然后给出衡量网络好坏的量（[时延与 RTT](/app/topic/1832)、带宽、吞吐量），最后落到分层模型与封装（[封装与解封装](/app/topic/1836)、[OSI 七层模型](/app/topic/1833)、[TCP/IP 四层模型](/app/topic/1834)）以及中继器、[交换机](/app/topic/1839)、[路由器](/app/topic/1840)、[网关](/app/topic/1841) 各工作在什么层次。这一章是全书的坐标系，后面每一章都可以理解为在其中某一层里展开。\n\n**第 2 章 物理层与数据链路层**：解决“一段链路上相邻两个节点怎么把比特交过去”。物理层处理信号的编码调制与介质上限（奈奎斯特、香农），链路层负责成帧、差错检测与介质访问，代表成果是以太网：[MAC 地址](/app/topic/1855) 标识接口、[以太网帧格式](/app/topic/1856) 承载上层数据、[CSMA/CD](/app/topic/1857) 解决共享介质竞争，[交换机](/app/topic/1839) 靠 [交换机自学习](/app/topic/1858) 转发帧，[VLAN](/app/topic/1859) 与 [生成树协议](/app/topic/1860) 解决广播域与环路问题。本章的关键词是“点到点”，它只管相邻两跳。\n\n**第 3 章 网络层**：解决“跨越很多个网络，怎么把分组送到目的主机”。核心是 IPv4 地址与首部（[IPv4 首部](/app/topic/1867)、[CIDR 与路由聚合](/app/topic/1871)、[私有地址与 NAT](/app/topic/1872)）、路由与转发（[路由表与最长前缀匹配](/app/topic/1875)、[距离向量算法与 RIP](/app/topic/1877)、[链路状态算法与 OSPF](/app/topic/1878)、[BGP](/app/topic/1879)），以及 DHCP 配地址、ICMP 报错。本章的关键词是“主机到主机”，即网络层只负责把数据送到目的机器，不负责送到目的进程。\n\n**第 4 章 传输层**：解决“送到目的机器上的哪个进程”以及“要不要保证可靠”。TCP 用 [三次握手](/app/topic/1895)、[四次挥手](/app/topic/1896)、序号确认、超时重传、窗口与拥塞控制把不可靠的网络层包装成可靠字节流；UDP 只提供复用分用与校验。工程侧这一章内容最多：[TIME_WAIT](/app/topic/1898)、[粘包与拆包](/app/topic/1913)、[端口耗尽](/app/topic/1914)、[半连接与全连接队列](/app/topic/1916)、[长连接与连接池](/app/topic/1918)、[Keepalive 与心跳](/app/topic/1917)，几乎每一条都是线上事故的直接原因。\n\n**第 5 章 应用层**：解决“这段字节的业务语义”。DNS 把域名解析成 IP，HTTP 定义请求响应语义（[HTTP 报文格式](/app/topic/1932)、[请求方法与状态码](/app/topic/1933)、[强缓存与协商缓存](/app/topic/1938)、[HTTP/2 多路复用](/app/topic/1939)、[HTTP/3 与 QUIC](/app/topic/1940)），TLS 提供加密与身份认证（[TLS 握手](/app/topic/1947)、[X.509 证书](/app/topic/1944)），此外还有 WebSocket、RPC、MQTT 等协议。后端开发日常打交道最多的就是这一层。\n\n**第 6 章 网络安全**：横切各层。既讲攻击（[DDoS](/app/topic/1964)、[SYN Flood](/app/topic/1965)、中间人、SQL 注入、XSS、CSRF），也讲防护（[防火墙](/app/topic/1972)、WAF、[零信任模型](/app/topic/1978)、微隔离），还讲认证授权（OAuth 2.0、JWT、RBAC）。它单独成章的原因，是安全问题可以在任意一层发生，不能塞进某一层里。\n\n**第 7 章 无线与移动网络**：横切物理层与链路层。无线介质是共享的、开放的、易受干扰的，所以介质访问用 CSMA/CA 而不用 CSMA/CD，安全靠 WPA2/WPA3\n\n附件演示：\n\n[天源迪科-电渠资源台账.xlsx](/api/files/u/6/contents/abc123/天源迪科-电渠资源台账.xlsx)\n\n[说明文档.md](/api/files/u/6/contents/abc123/说明文档.md)\n\n[报告.pdf](/api/files/u/6/contents/abc123/报告.pdf)\n",
+      "masteryLevel": "熟练",
+      "masteryEnabled": true,
+      "masteryOverride": null
+    },
+    {
+      "id": 102,
+      "title": "网络基础与体系结构总览",
+      "categoryId": null,
+      "typeId": 2,
+      "createTime": "2026-10-01 09:14:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 103,
+      "title": "电路交换",
+      "categoryId": 9004,
+      "typeId": 2,
+      "createTime": "2026-10-01 09:21:00",
+      "hasContent": true,
+      "content": "### 1. 定义\n\n**电路交换**（circuit switching） = 通信双方在开始传输数据之前，先通过信令在网络中逐跳建立一条端到端的**专用通路**（电路），通信期间这条通路被双方独占，通信结束后再释放。它属于网络核心的三种交换方式之一，与 [报文交换与分组交换](/app/topic/1830) 相对。边界：电路交换的“独占”占的是复用后的**信道**（一个频段或一个时隙），而不是整条物理链路；中间节点只负责把信号直通转发，不做存储转发，也不做差错控制。\n\n### 2. 原理\n\n#### 2.1 三个阶段\n\n```mermaid\nstateDiagram-v2\n    [*] --> 空闲\n    空闲 --> 连接建立中: 主叫发起呼叫\n    连接建立中 --> 空闲: 某段链路无空闲信道（阻塞）\n    连接建立中 --> 数据传输: 逐跳预留信道成功\n    数据传输 --> 连接释放: 通信结束\n    连接释放 --> 空闲: 归还信道资源\n```\n\n1. **连接建立**（setup）：主叫发出呼叫请求，沿途每个交换机检查去往下一跳的链路上是否还有空闲信道；有，就预留一个；全部预留成功才返回“接通”。\n2. **数据传输**：数据沿已建立的通路一路直通，中间节点不做完整的收存与转发，也不在中间排队。因此数据流几乎是连续到达的，端到端时延基本只剩传播时延。\n3. **连接释放**（teardown）：任一方挂断，信令逐跳归还信道资源。\n\n建立过程是**全有或全无**的：只要有一段链路没有空闲信道，呼叫就失败（**阻塞**（blocking），用户听到的忙音），并且要回滚已经占用的部分。这正是“预留”语义的来源。\n\n```text\nfunction setup(path, demand):\n    for link in path:\n        slot = link.alloc(demand)\n        if slot == null:\n            release_all(path)      // 回滚已占用的链路\n            return BUSY\n        link.reserve(slot)\n    return OK\n```\n\n#### 2.2 信道复用\n\n一条物理链路的容量远大于一路话音，所以要用复用把它切成多条独立信道；否则每条通话都要一根线，成本不可接受。\n\n- **频分复用**（FDM, Frequency Division Multiplexing）：把链路频带切成若干子频段，每路连接固定占用一个频段，频段之间留**保护带**（guard band）防止串扰。\n- **时分复用**（TDM, Time Division Multiplexing）：把时间切成等长的帧，每帧再切成若干时隙，每路连接固定占用每帧中的某一个时隙，只能在自己的时隙里发送。\n\n具体例子：一路数字化话音按 8 kHz 采样、8 bit 量化，得到 64 kbps 的信道；一条 2.048 Mbps 的 E1 线路用 TDM 切成 32 个 64 kbps 时隙，正好容纳 30 路话音，另加 2 个时隙用于同步和信令。\n\n#### 2.3 为什么时延小且固定\n\n通路建好后，数据经过中间交换机只是信号的转发，不存下来再发。因此端到端时延 ≈ 各段链路的传播时延之和，与网络当时是否拥塞无关。代价是：即使你这一秒不发声，那个时隙或频段也照样归你，别人用不了。\n\n### 3. 特征与对比\n\n| 维度 | 电路交换 | 分组交换 |\n| --- | --- | --- |\n| 资源分配 | 传输前预留，独占信道 | 按需使用，统计复用 |\n| 建立开销 | 有连接建立时延 | 无连接建立（面向连接的分组网也只需一次轻量握手） |\n| 数据传输时延 | 小且稳定，只有传播时延 | 有排队时延，随负载抖动 |\n| 带宽利用率 | 低，静默期信道空转 | 高，突发流量可以互相填补 |\n| 拥塞表现 | 建立阶段被拒绝（忙音） | 传输阶段排队、丢包、时延上升 |\n| 差错与顺序 | 网络不保证，端到端自行处理 | 网络本身通常也不保证，由端系统协议保证 |\n| 计费 | 按连接时长/距离 | 按流量 |\n\n数字例子：传 1 Mbit 数据，链路速率 1 Mbps，经过 3 段链路，建立时间 0.2 s。电路交换 ≈ 0.2 + 1 = 1.2 s；整报文存储转发 = 3 × 1 = 3 s；分成 1000 个 1 kbit 的分组后流水线传输 ≈ (1000 + 2) × 1 ms ≈ 1.0 s。可见建立时延对短数据传输很不划算，这正是电路交换不适合突发数据的原因。\n\n### 4. 应用\n\n- **公共交换电话网**（PSTN, Public Switched Telephone Network）、ISDN，以及 2G/3G 移动网的语音通道，都是典型的电路交换或准电路交换（后者在无线段用专用信道，在核心网侧逐步向分组化演进）。\n- **专线**（leased line）：企业向运营商租用一条固定带宽的点到点通路，带宽是预留的，超出就丢弃或阻塞，而不是排队等待。云上的**专线接入**（如 Direct Connect 类产品）沿用同一思路：物理链路独享、时延稳定、按带宽计费。\n- 后端视角的三点提示：\n  1. “先建后传 + 预留”的语义在应用层也有影子：数据库连接池预热、gRPC 长连接、为实时音视频预留带宽上限，都是牺牲利用率换确定性。\n  2. 这类链路出问题时，表现是**建立失败**（拨号不通、专线 down、TCP 握手超时），而不是“卡顿 + 重传”。排障时应看建立阶段，不要先用抓包查重传。\n  3. 反过来，绝大多数后端系统跑在统计复用的分组网上，容量规划必须按峰值而不是按预留来算，具体指标见 [网络性能指标](/app/topic/1831) 与 [时延与 RTT](/app/topic/1832)。\n\n### 5. 常见考点\n\n- **问：为什么电路交换不适合计算机数据？** 答：数据传输具有突发性，而电路交换的独占信道在静默期会空转，利用率低；短报文的连接建立时延占比过高；电路交换通路无差错控制，可靠性要靠端到端完成。\n- **问：电路交换的“独占”到底独占什么？** 答：独占的是复用后的一个信道（频段或时隙），不是整条物理链路。这是最常见的错答。\n- **计算题**：总时间 = 建立时间 + 传输时间（＋每跳传播时延，题目给了才加），释放时间一般忽略；与分组交换的 (k + n − 1) × 单跳发送时延 做对比。\n- **问：电路交换能保证带宽吗？** 答：能，连接建立成功即保证固定速率；代价是建立失败时完全无法通信。\n- **易错点**：把 PSTN 说成“端到端一根物理线”——实际是逐跳建立、逐段复用拼起来的通路。",
+      "masteryLevel": "基本掌握",
+      "masteryEnabled": true,
+      "masteryOverride": null
+    },
+    {
+      "id": 104,
+      "title": "报文交换与分组交换",
+      "categoryId": 9004,
+      "typeId": 2,
+      "createTime": "2026-10-01 09:28:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 105,
+      "title": "网络边缘与网络核心",
+      "categoryId": 9005,
+      "typeId": 2,
+      "createTime": "2026-10-01 09:35:00",
+      "hasContent": true,
+      "content": "### 1. 定义\n\n**网络边缘（network edge）** 是互联网拓扑的外围部分，由**端系统（end system，也称主机 host）**和把它们接入骨干的**接入网（access network）**组成；**网络核心（network core）** 是由大量**路由器（router）**和高速链路互连成的网状骨干，负责把数据从一端送到另一端。两者是同一张网络上的两组角色分工：边缘产生和消费流量，核心只搬运流量。\n\n需要划清的边界是：这里的“边缘”指拓扑位置，即端系统和接入网，与“地理上离用户近”的**边缘计算**节点不是一回事；核心也不等于“运营商机房”，企业内网的三层交换机同样可以充当核心。\n\n### 2. 原理\n\n#### 2.1 划分依据：谁产生流量，谁搬运流量\n\n- **端系统（end system / host）** = 能运行应用程序的设备，是数据的源和宿，包括 PC、手机、服务器、摄像头等。应用程序的智能全部集中在这里。\n- **网络核心（network core）** = 只做转发的网状网络，由路由器和链路构成，不关心承载的是 HTTP 还是视频流。\n- 一条端到端路径的标准划分是：源端系统 → 源接入网 → 若干核心路由器 → 宿接入网 → 宿端系统。核心在中间，两端都在边缘。\n\n#### 2.2 网络边缘的组成\n\n- **端系统**：客户端和服务器都算，[客户端-服务器模型](/app/topic/1922)还是 P2P 模型只影响端系统之间谁发起通信，不改变它们都属于边缘这一点。\n- **接入网（access network）** = 把端系统物理连到第一台路由器的那部分网络，三类典型形态：\n  - 家庭：DSL、同轴电缆（HFC）、光纤到户（见 [PON 接入](/app/topic/1864)）。\n  - 企业/园区：以太网 + Wi-Fi，端系统先连[交换机](/app/topic/1839)，再经出口路由器出网。\n  - 广域无线：4G/5G（见 [蜂窝接入](/app/topic/1865)），端系统直接接入基站。\n- **物理介质**：接入网和核心都靠[传输介质](/app/topic/1844)承载信号，区别只在距离和带宽量级。\n\n#### 2.3 网络核心的组成\n\n- **核心路由器**：只做**存储转发（store-and-forward）**，即先把整个分组收全、查表选路，再发往下一跳，节点之间靠网状冗余链路互联。\n- **边缘路由器（edge router）**：直接与接入网相连、汇聚一片区域端系统流量的第一台核心路由器，是边缘与核心的物理分界点。家庭宽带的第一跳网关、云上 VPC 的出口网关都扮演这个角色。\n- 核心提供两种交换方式：**电路交换（circuit switching）** 与 **分组交换（packet switching）**，二者的取舍见 [电路交换](/app/topic/1829) 和 [报文交换与分组交换](/app/topic/1830)；核心的拓扑形态见 [网络分类与拓扑](/app/topic/1828)。\n\n#### 2.4 一条路径的完整形态\n\n```mermaid\ngraph LR\n    subgraph EDGE[\"网络边缘\"]\n        C1[\"客户端端系统\"]\n        S1[\"服务器端系统\"]\n    end\n    subgraph ACCESS[\"接入网\"]\n        AP[\"接入路由器 / 基站\"]\n        ER1[\"边缘路由器\"]\n        ER2[\"边缘路由器\"]\n    end\n    subgraph CORE[\"网络核心\"]\n        R1((\"核心路由器\"))\n        R2((\"核心路由器\"))\n        R3((\"核心路由器\"))\n        R1 --- R2\n        R2 --- R3\n        R1 --- R3\n    end\n    C1 --- AP\n    AP --- ER1\n    ER1 --- R1\n    R3 --- ER2\n    ER2 --- S1\n```\n\n用 `traceroute` 能直接把这条路径上的角色分出来：\n\n```text\ntraceroute to api.example.com (203.0.113.10), 30 hops max\n 1  192.168.1.1     1.2 ms    家庭网关（接入网边缘）\n 2  10.10.0.1       2.1 ms    运营商汇聚设备（边缘路由器）\n 3  172.16.8.5      5.4 ms    核心路由器\n 4  172.16.9.9      6.0 ms    核心路由器\n 5  203.0.113.10    7.3 ms    目标服务器（对端边缘）\n```\n\n第 1、2 跳属于接入侧，中间的 3、4 跳属于核心，最后一跳回到对端边缘。时延的构成与测量口径见 [时延与 RTT](/app/topic/1832)。\n\n### 3. 特征与对比\n\n| 维度 | 网络边缘 | 网络核心 |\n| --- | --- | --- |\n| 组成 | 端系统 + 接入网 | 路由器 + 高速链路 |\n| 职责 | 产生、消费数据，运行应用 | 转发数据，提供端到端连通性 |\n| 典型设备 | PC、手机、服务器、AP、接入交换机 | 核心/骨干路由器 |\n| 处理深度 | 可到应用层 | 主要到网络层（三层转发） |\n| 关注指标 | 应用响应时间、接入带宽 | 吞吐量、链路利用率、路由收敛速度 |\n| 数量级 | 设备数量极多、分散 | 节点少、链路带宽高、高度冗余 |\n\n一句话概括这个分工：**智能在边缘，简单和快速在核心**，这也是互联网可扩展性的来源——新增应用不需要改动核心。\n\n### 4. 应用\n\n- **判断一次调用走没走核心**：同机房/同可用区的两台机器互访只经过接入交换机，时延在亚毫秒级；跨可用区、跨地域才穿核心骨干，时延抬升到毫秒到几十毫秒。后端做超时与重试配置时，要按这条思路定不同量级。\n- **把内容推向边缘**：CDN、边缘计算节点本质上是把服务器这类端系统前置到离用户更近的接入侧，缩短“客户端 → 核心 → 服务器”中核心段的长度，降低 RTT。\n- **排障按边缘/核心分段**：先确认本机到网关（边缘侧）通不通，再看中间核心跳，最后看对端接入。ping 网关通但 ping 对端不通，问题基本在核心或对端边缘。\n- **策略通常落在边缘路由器上**：NAT、ACL、安全组、出入口限流都在边缘路由器或网关上执行，核心内部一般不做逐业务策略——这也是云上安全组挂在子网边界、而不是挂在骨干上的原因。\n- **核心故障影响面大**：核心链路中断会同时影响大量边缘用户，所以核心设计强调冗余与快速收敛；而单台端系统故障只影响自己。\n\n### 5. 常见考点\n\n- 问：网络边缘包括哪些部分？答：端系统（主机）和接入网，不含核心路由器。\n- 问：核心只负责转发吗？答：转发是数据平面的事，核心还承担路由选择（控制平面），但都不涉及应用内容。\n- 问：接入网和网络边缘是一回事吗？答：接入网是网络边缘的一部分，边缘还包括端系统本身。\n- 易错点：把“边缘计算”的“边缘”当作拓扑边缘——教材里的网络边缘仅指端系统与接入网，与部署位置是否靠近用户无关。\n- 易错点：认为服务器不在边缘。服务器本身是端系统，同样属于网络边缘，只是通常放在机房一侧。",
+      "masteryLevel": "待巩固",
+      "masteryEnabled": true,
+      "masteryOverride": null
+    },
+    {
+      "id": 106,
+      "title": "网络分类与拓扑",
+      "categoryId": 9005,
+      "typeId": 2,
+      "createTime": "2026-10-01 09:42:00",
+      "hasContent": false,
+      "content": "",
+      "masteryLevel": "稳定掌握",
+      "masteryEnabled": true,
+      "masteryOverride": null
+    },
+    {
+      "id": 107,
+      "title": "网络性能指标",
+      "categoryId": 9005,
+      "typeId": 2,
+      "createTime": "2026-10-01 09:49:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 108,
+      "title": "时延与 RTT",
+      "categoryId": 9005,
+      "typeId": 2,
+      "createTime": "2026-10-01 09:56:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 109,
+      "title": "OSI 七层模型",
+      "categoryId": 9006,
+      "typeId": 2,
+      "createTime": "2026-10-01 10:03:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 110,
+      "title": "TCP/IP 四层模型",
+      "categoryId": 9006,
+      "typeId": 2,
+      "createTime": "2026-10-01 10:10:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 111,
+      "title": "协议、接口与服务",
+      "categoryId": 9006,
+      "typeId": 2,
+      "createTime": "2026-10-01 10:17:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 112,
+      "title": "封装与解封装",
+      "categoryId": 9006,
+      "typeId": 2,
+      "createTime": "2026-10-01 10:24:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 113,
+      "title": "PDU 与各层协议",
+      "categoryId": 9006,
+      "typeId": 2,
+      "createTime": "2026-10-01 10:31:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 114,
+      "title": "中继器与集线器",
+      "categoryId": 9007,
+      "typeId": 2,
+      "createTime": "2026-10-01 10:38:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 115,
+      "title": "交换机",
+      "categoryId": 9007,
+      "typeId": 2,
+      "createTime": "2026-10-01 10:45:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 116,
+      "title": "路由器",
+      "categoryId": 9007,
+      "typeId": 2,
+      "createTime": "2026-10-01 10:52:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 117,
+      "title": "网关",
+      "categoryId": 9007,
+      "typeId": 2,
+      "createTime": "2026-10-01 10:59:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 118,
+      "title": "IEEE 802 与 RFC",
+      "categoryId": 9007,
+      "typeId": 2,
+      "createTime": "2026-10-01 11:06:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 119,
+      "title": "物理层与数据链路层总览",
+      "categoryId": null,
+      "typeId": 2,
+      "createTime": "2026-10-01 11:13:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 120,
+      "title": "传输介质",
+      "categoryId": 9009,
+      "typeId": 2,
+      "createTime": "2026-10-01 11:20:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 121,
+      "title": "编码与调制",
+      "categoryId": 9009,
+      "typeId": 2,
+      "createTime": "2026-10-01 11:27:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 122,
+      "title": "奈奎斯特定理",
+      "categoryId": 9009,
+      "typeId": 2,
+      "createTime": "2026-10-01 11:34:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 123,
+      "title": "香农定理",
+      "categoryId": 9009,
+      "typeId": 2,
+      "createTime": "2026-10-01 11:41:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 124,
+      "title": "复用技术",
+      "categoryId": 9009,
+      "typeId": 2,
+      "createTime": "2026-10-01 11:48:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 125,
+      "title": "成帧与透明传输",
+      "categoryId": 9011,
+      "typeId": 2,
+      "createTime": "2026-10-01 11:55:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 126,
+      "title": "差错检测与 CRC",
+      "categoryId": 9011,
+      "typeId": 2,
+      "createTime": "2026-10-01 12:02:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 127,
+      "title": "停止等待协议",
+      "categoryId": 9012,
+      "typeId": 2,
+      "createTime": "2026-10-01 12:09:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 128,
+      "title": "后退 N 帧协议",
+      "categoryId": 9012,
+      "typeId": 2,
+      "createTime": "2026-10-01 12:16:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 129,
+      "title": "选择重传协议",
+      "categoryId": 9012,
+      "typeId": 2,
+      "createTime": "2026-10-01 12:23:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 130,
+      "title": "滑动窗口",
+      "categoryId": 9012,
+      "typeId": 2,
+      "createTime": "2026-10-01 12:30:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 131,
+      "title": "MAC 地址",
+      "categoryId": 9013,
+      "typeId": 2,
+      "createTime": "2026-10-01 12:37:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 132,
+      "title": "以太网帧格式",
+      "categoryId": 9013,
+      "typeId": 2,
+      "createTime": "2026-10-01 12:44:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 133,
+      "title": "CSMA/CD",
+      "categoryId": 9013,
+      "typeId": 2,
+      "createTime": "2026-10-01 12:51:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 134,
+      "title": "交换机自学习",
+      "categoryId": 9013,
+      "typeId": 2,
+      "createTime": "2026-10-01 12:58:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 135,
+      "title": "VLAN",
+      "categoryId": 9013,
+      "typeId": 2,
+      "createTime": "2026-10-01 13:05:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 136,
+      "title": "生成树协议",
+      "categoryId": 9013,
+      "typeId": 2,
+      "createTime": "2026-10-01 13:12:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 137,
+      "title": "IEEE 802.11 架构",
+      "categoryId": 9013,
+      "typeId": 2,
+      "createTime": "2026-10-01 13:19:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 138,
+      "title": "CSMA/CA",
+      "categoryId": 9013,
+      "typeId": 2,
+      "createTime": "2026-10-01 13:26:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 139,
+      "title": "PPP 协议",
+      "categoryId": 9014,
+      "typeId": 2,
+      "createTime": "2026-10-01 13:33:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 140,
+      "title": "PON 接入",
+      "categoryId": 9014,
+      "typeId": 2,
+      "createTime": "2026-10-01 13:40:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 141,
+      "title": "蜂窝接入",
+      "categoryId": 9014,
+      "typeId": 2,
+      "createTime": "2026-10-01 13:47:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 142,
+      "title": "网络层总览",
+      "categoryId": null,
+      "typeId": 2,
+      "createTime": "2026-10-01 13:54:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 143,
+      "title": "IP 地址分类",
+      "categoryId": 9017,
+      "typeId": 2,
+      "createTime": "2026-10-01 14:01:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 144,
+      "title": "子网掩码与子网划分",
+      "categoryId": 9017,
+      "typeId": 2,
+      "createTime": "2026-10-01 14:08:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 145,
+      "title": "CIDR 与路由聚合",
+      "categoryId": 9017,
+      "typeId": 2,
+      "createTime": "2026-10-01 14:15:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 146,
+      "title": "私有地址与 NAT",
+      "categoryId": 9017,
+      "typeId": 2,
+      "createTime": "2026-10-01 14:22:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 147,
+      "title": "IPv4 首部",
+      "categoryId": 9018,
+      "typeId": 2,
+      "createTime": "2026-10-01 14:29:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 148,
+      "title": "IP 分片与重组",
+      "categoryId": 9018,
+      "typeId": 2,
+      "createTime": "2026-10-01 14:36:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 149,
+      "title": "DHCP",
+      "categoryId": 9018,
+      "typeId": 2,
+      "createTime": "2026-10-01 14:43:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 150,
+      "title": "ICMP",
+      "categoryId": 9018,
+      "typeId": 2,
+      "createTime": "2026-10-01 14:50:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 151,
+      "title": "路由表与最长前缀匹配",
+      "categoryId": 9019,
+      "typeId": 2,
+      "createTime": "2026-10-01 14:57:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 152,
+      "title": "静态路由与默认路由",
+      "categoryId": 9019,
+      "typeId": 2,
+      "createTime": "2026-10-01 15:04:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 153,
+      "title": "距离向量算法与 RIP",
+      "categoryId": 9019,
+      "typeId": 2,
+      "createTime": "2026-10-01 15:11:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 154,
+      "title": "链路状态算法与 OSPF",
+      "categoryId": 9019,
+      "typeId": 2,
+      "createTime": "2026-10-01 15:18:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 155,
+      "title": "BGP",
+      "categoryId": 9019,
+      "typeId": 2,
+      "createTime": "2026-10-01 15:25:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 156,
+      "title": "路由环路与水平分割",
+      "categoryId": 9019,
+      "typeId": 2,
+      "createTime": "2026-10-01 15:32:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 157,
+      "title": "等价多路径 ECMP",
+      "categoryId": 9019,
+      "typeId": 2,
+      "createTime": "2026-10-01 15:39:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 158,
+      "title": "IPv6 地址与首部",
+      "categoryId": 9020,
+      "typeId": 2,
+      "createTime": "2026-10-01 15:46:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 159,
+      "title": "邻居发现协议 NDP",
+      "categoryId": 9020,
+      "typeId": 2,
+      "createTime": "2026-10-01 15:53:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 160,
+      "title": "IPv4/IPv6 过渡",
+      "categoryId": 9020,
+      "typeId": 2,
+      "createTime": "2026-10-01 16:00:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 161,
+      "title": "组播与 IGMP",
+      "categoryId": 9020,
+      "typeId": 2,
+      "createTime": "2026-10-01 16:07:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 162,
+      "title": "MTU 与分片问题",
+      "categoryId": 9021,
+      "typeId": 2,
+      "createTime": "2026-10-01 16:14:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 163,
+      "title": "NAT 与端口映射问题",
+      "categoryId": 9021,
+      "typeId": 2,
+      "createTime": "2026-10-01 16:21:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 164,
+      "title": "路由连通性排查",
+      "categoryId": 9021,
+      "typeId": 2,
+      "createTime": "2026-10-01 16:28:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 165,
+      "title": "传输层总览",
+      "categoryId": null,
+      "typeId": 2,
+      "createTime": "2026-10-01 16:35:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 166,
+      "title": "端口号",
+      "categoryId": 9023,
+      "typeId": 2,
+      "createTime": "2026-10-01 16:42:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 167,
+      "title": "套接字四元组",
+      "categoryId": 9023,
+      "typeId": 2,
+      "createTime": "2026-10-01 16:49:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 168,
+      "title": "复用与分用",
+      "categoryId": 9023,
+      "typeId": 2,
+      "createTime": "2026-10-01 16:56:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 169,
+      "title": "UDP 报文与特性",
+      "categoryId": 9023,
+      "typeId": 2,
+      "createTime": "2026-10-01 17:03:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 170,
+      "title": "TCP 首部字段",
+      "categoryId": 9025,
+      "typeId": 2,
+      "createTime": "2026-10-01 17:10:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 171,
+      "title": "三次握手",
+      "categoryId": 9025,
+      "typeId": 2,
+      "createTime": "2026-10-01 17:17:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 172,
+      "title": "四次挥手",
+      "categoryId": 9026,
+      "typeId": 2,
+      "createTime": "2026-10-01 17:24:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 173,
+      "title": "TCP 状态机",
+      "categoryId": 9026,
+      "typeId": 2,
+      "createTime": "2026-10-01 17:31:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 174,
+      "title": "TIME_WAIT",
+      "categoryId": 9026,
+      "typeId": 2,
+      "createTime": "2026-10-01 17:38:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 175,
+      "title": "SYN Flood 与 backlog",
+      "categoryId": 9026,
+      "typeId": 2,
+      "createTime": "2026-10-01 17:45:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 176,
+      "title": "序号与累积确认",
+      "categoryId": 9027,
+      "typeId": 2,
+      "createTime": "2026-10-01 17:52:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 177,
+      "title": "超时重传与 RTO",
+      "categoryId": 9027,
+      "typeId": 2,
+      "createTime": "2026-10-01 17:59:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 178,
+      "title": "快速重传",
+      "categoryId": 9027,
+      "typeId": 2,
+      "createTime": "2026-10-01 18:06:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 179,
+      "title": "SACK",
+      "categoryId": 9027,
+      "typeId": 2,
+      "createTime": "2026-10-01 18:13:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 180,
+      "title": "发送窗口与接收窗口",
+      "categoryId": 9027,
+      "typeId": 2,
+      "createTime": "2026-10-01 18:20:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 181,
+      "title": "流量控制与零窗口",
+      "categoryId": 9027,
+      "typeId": 2,
+      "createTime": "2026-10-01 18:27:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 182,
+      "title": "Nagle 算法与延迟确认",
+      "categoryId": 9027,
+      "typeId": 2,
+      "createTime": "2026-10-01 18:34:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 183,
+      "title": "慢启动",
+      "categoryId": 9028,
+      "typeId": 2,
+      "createTime": "2026-10-01 18:41:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 184,
+      "title": "拥塞避免",
+      "categoryId": 9028,
+      "typeId": 2,
+      "createTime": "2026-10-01 18:48:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 185,
+      "title": "快速恢复",
+      "categoryId": 9028,
+      "typeId": 2,
+      "createTime": "2026-10-01 18:55:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 186,
+      "title": "Reno 与 NewReno",
+      "categoryId": 9028,
+      "typeId": 2,
+      "createTime": "2026-10-01 19:02:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 187,
+      "title": "CUBIC",
+      "categoryId": 9028,
+      "typeId": 2,
+      "createTime": "2026-10-01 19:09:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 188,
+      "title": "BBR",
+      "categoryId": 9028,
+      "typeId": 2,
+      "createTime": "2026-10-01 19:16:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 189,
+      "title": "粘包与拆包",
+      "categoryId": 9029,
+      "typeId": 2,
+      "createTime": "2026-10-01 19:23:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 190,
+      "title": "端口耗尽",
+      "categoryId": 9029,
+      "typeId": 2,
+      "createTime": "2026-10-01 19:30:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 191,
+      "title": "连接重置 RST",
+      "categoryId": 9029,
+      "typeId": 2,
+      "createTime": "2026-10-01 19:37:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 192,
+      "title": "半连接与全连接队列",
+      "categoryId": 9029,
+      "typeId": 2,
+      "createTime": "2026-10-01 19:44:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 193,
+      "title": "Keepalive 与心跳",
+      "categoryId": 9029,
+      "typeId": 2,
+      "createTime": "2026-10-01 19:51:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 194,
+      "title": "长连接与连接池",
+      "categoryId": 9029,
+      "typeId": 2,
+      "createTime": "2026-10-01 19:58:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 195,
+      "title": "tcpdump 过滤",
+      "categoryId": 9030,
+      "typeId": 2,
+      "createTime": "2026-10-01 20:05:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 196,
+      "title": "重传与时延分析",
+      "categoryId": 9030,
+      "typeId": 2,
+      "createTime": "2026-10-01 20:12:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 197,
+      "title": "应用层总览",
+      "categoryId": null,
+      "typeId": 2,
+      "createTime": "2026-10-01 20:19:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 198,
+      "title": "客户端-服务器模型",
+      "categoryId": 9032,
+      "typeId": 2,
+      "createTime": "2026-10-01 20:26:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 199,
+      "title": "P2P 模型",
+      "categoryId": 9032,
+      "typeId": 2,
+      "createTime": "2026-10-01 20:33:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 200,
+      "title": "熟知端口",
+      "categoryId": 9032,
+      "typeId": 2,
+      "createTime": "2026-10-01 20:40:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 201,
+      "title": "文本协议与二进制协议",
+      "categoryId": 9032,
+      "typeId": 2,
+      "createTime": "2026-10-01 20:47:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 202,
+      "title": "域名空间与资源记录",
+      "categoryId": 9033,
+      "typeId": 2,
+      "createTime": "2026-10-01 20:54:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 203,
+      "title": "域名服务器层级",
+      "categoryId": 9033,
+      "typeId": 2,
+      "createTime": "2026-10-01 21:01:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 204,
+      "title": "递归查询与迭代查询",
+      "categoryId": 9033,
+      "typeId": 2,
+      "createTime": "2026-10-01 21:08:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 205,
+      "title": "DNS 缓存与 TTL",
+      "categoryId": 9033,
+      "typeId": 2,
+      "createTime": "2026-10-01 21:15:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 206,
+      "title": "智能解析与 CDN",
+      "categoryId": 9033,
+      "typeId": 2,
+      "createTime": "2026-10-01 21:22:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 207,
+      "title": "DNS 劫持与污染",
+      "categoryId": 9033,
+      "typeId": 2,
+      "createTime": "2026-10-01 21:29:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 208,
+      "title": "HTTP 报文格式",
+      "categoryId": 9035,
+      "typeId": 2,
+      "createTime": "2026-10-01 21:36:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 209,
+      "title": "请求方法与状态码",
+      "categoryId": 9035,
+      "typeId": 2,
+      "createTime": "2026-10-01 21:43:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 210,
+      "title": "首部字段与内容协商",
+      "categoryId": 9035,
+      "typeId": 2,
+      "createTime": "2026-10-01 21:50:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 211,
+      "title": "长连接与管线化",
+      "categoryId": 9036,
+      "typeId": 2,
+      "createTime": "2026-10-01 21:57:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 212,
+      "title": "Cookie 与 Session",
+      "categoryId": 9036,
+      "typeId": 2,
+      "createTime": "2026-10-01 22:04:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 213,
+      "title": "同源策略与 CORS",
+      "categoryId": 9036,
+      "typeId": 2,
+      "createTime": "2026-10-01 22:11:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 214,
+      "title": "强缓存与协商缓存",
+      "categoryId": 9037,
+      "typeId": 2,
+      "createTime": "2026-10-01 22:18:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 215,
+      "title": "HTTP/2 多路复用",
+      "categoryId": 9037,
+      "typeId": 2,
+      "createTime": "2026-10-01 22:25:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 216,
+      "title": "HTTP/3 与 QUIC",
+      "categoryId": 9037,
+      "typeId": 2,
+      "createTime": "2026-10-01 22:32:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 217,
+      "title": "头部压缩 HPACK/QPACK",
+      "categoryId": 9037,
+      "typeId": 2,
+      "createTime": "2026-10-01 22:39:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 218,
+      "title": "对称与非对称加密",
+      "categoryId": 9039,
+      "typeId": 2,
+      "createTime": "2026-10-01 22:46:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 219,
+      "title": "哈希与数字签名",
+      "categoryId": 9039,
+      "typeId": 2,
+      "createTime": "2026-10-01 22:53:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 220,
+      "title": "X.509 证书",
+      "categoryId": 9040,
+      "typeId": 2,
+      "createTime": "2026-10-01 23:00:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 221,
+      "title": "CA 与证书链",
+      "categoryId": 9040,
+      "typeId": 2,
+      "createTime": "2026-10-01 23:07:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 222,
+      "title": "证书校验与吊销",
+      "categoryId": 9040,
+      "typeId": 2,
+      "createTime": "2026-10-01 23:14:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 223,
+      "title": "TLS 握手",
+      "categoryId": 9041,
+      "typeId": 2,
+      "createTime": "2026-10-01 23:21:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 224,
+      "title": "会话恢复",
+      "categoryId": 9041,
+      "typeId": 2,
+      "createTime": "2026-10-01 23:28:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 225,
+      "title": "TLS 1.2 与 1.3",
+      "categoryId": 9041,
+      "typeId": 2,
+      "createTime": "2026-10-01 23:35:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 226,
+      "title": "HTTPS 性能优化",
+      "categoryId": 9041,
+      "typeId": 2,
+      "createTime": "2026-10-01 23:42:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 227,
+      "title": "FTP 与 SFTP",
+      "categoryId": 9042,
+      "typeId": 2,
+      "createTime": "2026-10-01 23:49:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 228,
+      "title": "SMTP 与 IMAP",
+      "categoryId": 9042,
+      "typeId": 2,
+      "createTime": "2026-10-01 23:56:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 229,
+      "title": "WebSocket",
+      "categoryId": 9042,
+      "typeId": 2,
+      "createTime": "2026-10-02 00:03:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 230,
+      "title": "MQTT",
+      "categoryId": 9042,
+      "typeId": 2,
+      "createTime": "2026-10-02 00:10:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 231,
+      "title": "RPC 与 gRPC",
+      "categoryId": 9042,
+      "typeId": 2,
+      "createTime": "2026-10-02 00:17:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 232,
+      "title": "AMQP 与 Kafka 协议",
+      "categoryId": 9042,
+      "typeId": 2,
+      "createTime": "2026-10-02 00:24:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 233,
+      "title": "网络安全总览",
+      "categoryId": null,
+      "typeId": 2,
+      "createTime": "2026-10-02 00:31:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 234,
+      "title": "机密性、完整性与可用性",
+      "categoryId": 9044,
+      "typeId": 2,
+      "createTime": "2026-10-02 00:38:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 235,
+      "title": "攻击面与信任边界",
+      "categoryId": 9044,
+      "typeId": 2,
+      "createTime": "2026-10-02 00:45:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 236,
+      "title": "认证与授权",
+      "categoryId": 9044,
+      "typeId": 2,
+      "createTime": "2026-10-02 00:52:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 237,
+      "title": "OAuth 2.0 与 OIDC",
+      "categoryId": 9044,
+      "typeId": 2,
+      "createTime": "2026-10-02 00:59:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 238,
+      "title": "JWT",
+      "categoryId": 9044,
+      "typeId": 2,
+      "createTime": "2026-10-02 01:06:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 239,
+      "title": "RBAC",
+      "categoryId": 9044,
+      "typeId": 2,
+      "createTime": "2026-10-02 01:13:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 240,
+      "title": "DDoS",
+      "categoryId": 9046,
+      "typeId": 2,
+      "createTime": "2026-10-02 01:20:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 241,
+      "title": "SYN Flood",
+      "categoryId": 9046,
+      "typeId": 2,
+      "createTime": "2026-10-02 01:27:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 242,
+      "title": "ARP 欺骗",
+      "categoryId": 9046,
+      "typeId": 2,
+      "createTime": "2026-10-02 01:34:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 243,
+      "title": "DNS 缓存投毒",
+      "categoryId": 9046,
+      "typeId": 2,
+      "createTime": "2026-10-02 01:41:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 244,
+      "title": "中间人攻击",
+      "categoryId": 9047,
+      "typeId": 2,
+      "createTime": "2026-10-02 01:48:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 245,
+      "title": "SQL 注入",
+      "categoryId": 9047,
+      "typeId": 2,
+      "createTime": "2026-10-02 01:55:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 246,
+      "title": "XSS",
+      "categoryId": 9047,
+      "typeId": 2,
+      "createTime": "2026-10-02 02:02:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 247,
+      "title": "CSRF",
+      "categoryId": 9047,
+      "typeId": 2,
+      "createTime": "2026-10-02 02:09:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 248,
+      "title": "防火墙",
+      "categoryId": 9048,
+      "typeId": 2,
+      "createTime": "2026-10-02 02:16:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 249,
+      "title": "WAF",
+      "categoryId": 9048,
+      "typeId": 2,
+      "createTime": "2026-10-02 02:23:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 250,
+      "title": "IDS/IPS",
+      "categoryId": 9048,
+      "typeId": 2,
+      "createTime": "2026-10-02 02:30:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 251,
+      "title": "安全组与 ACL",
+      "categoryId": 9048,
+      "typeId": 2,
+      "createTime": "2026-10-02 02:37:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 252,
+      "title": "IPSec VPN",
+      "categoryId": 9048,
+      "typeId": 2,
+      "createTime": "2026-10-02 02:44:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 253,
+      "title": "SSL VPN",
+      "categoryId": 9048,
+      "typeId": 2,
+      "createTime": "2026-10-02 02:51:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 254,
+      "title": "零信任模型",
+      "categoryId": 9048,
+      "typeId": 2,
+      "createTime": "2026-10-02 02:58:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 255,
+      "title": "微隔离",
+      "categoryId": 9048,
+      "typeId": 2,
+      "createTime": "2026-10-02 03:05:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 256,
+      "title": "无线与移动网络总览",
+      "categoryId": null,
+      "typeId": 2,
+      "createTime": "2026-10-02 03:12:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 257,
+      "title": "WPA2/WPA3",
+      "categoryId": 9050,
+      "typeId": 2,
+      "createTime": "2026-10-02 03:19:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 258,
+      "title": "无线漫游",
+      "categoryId": 9050,
+      "typeId": 2,
+      "createTime": "2026-10-02 03:26:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 259,
+      "title": "4G/5G 架构",
+      "categoryId": 9051,
+      "typeId": 2,
+      "createTime": "2026-10-02 03:33:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 260,
+      "title": "移动 IP",
+      "categoryId": 9051,
+      "typeId": 2,
+      "createTime": "2026-10-02 03:40:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 261,
+      "title": "NB-IoT 与 LoRa",
+      "categoryId": 9051,
+      "typeId": 2,
+      "createTime": "2026-10-02 03:47:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 262,
+      "title": "网络工程与后端实践总览",
+      "categoryId": null,
+      "typeId": 2,
+      "createTime": "2026-10-02 03:54:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 263,
+      "title": "Socket API",
+      "categoryId": 9053,
+      "typeId": 2,
+      "createTime": "2026-10-02 04:01:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 264,
+      "title": "TCP 服务端模型",
+      "categoryId": 9053,
+      "typeId": 2,
+      "createTime": "2026-10-02 04:08:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 265,
+      "title": "阻塞与非阻塞 I/O",
+      "categoryId": 9053,
+      "typeId": 2,
+      "createTime": "2026-10-02 04:15:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 266,
+      "title": "select/poll/epoll",
+      "categoryId": 9053,
+      "typeId": 2,
+      "createTime": "2026-10-02 04:22:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 267,
+      "title": "Reactor 模型",
+      "categoryId": 9053,
+      "typeId": 2,
+      "createTime": "2026-10-02 04:29:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 268,
+      "title": "零拷贝",
+      "categoryId": 9053,
+      "typeId": 2,
+      "createTime": "2026-10-02 04:36:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 269,
+      "title": "正向代理与反向代理",
+      "categoryId": 9055,
+      "typeId": 2,
+      "createTime": "2026-10-02 04:43:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 270,
+      "title": "API 网关",
+      "categoryId": 9055,
+      "typeId": 2,
+      "createTime": "2026-10-02 04:50:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 271,
+      "title": "四层负载均衡",
+      "categoryId": 9056,
+      "typeId": 2,
+      "createTime": "2026-10-02 04:57:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 272,
+      "title": "七层负载均衡",
+      "categoryId": 9056,
+      "typeId": 2,
+      "createTime": "2026-10-02 05:04:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 273,
+      "title": "负载均衡算法",
+      "categoryId": 9056,
+      "typeId": 2,
+      "createTime": "2026-10-02 05:11:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 274,
+      "title": "健康检查",
+      "categoryId": 9056,
+      "typeId": 2,
+      "createTime": "2026-10-02 05:18:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 275,
+      "title": "限流与熔断",
+      "categoryId": 9056,
+      "typeId": 2,
+      "createTime": "2026-10-02 05:25:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 276,
+      "title": "ping 与 traceroute",
+      "categoryId": 9057,
+      "typeId": 2,
+      "createTime": "2026-10-02 05:32:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 277,
+      "title": "netstat 与 ss",
+      "categoryId": 9057,
+      "typeId": 2,
+      "createTime": "2026-10-02 05:39:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 278,
+      "title": "tcpdump 与 Wireshark",
+      "categoryId": 9057,
+      "typeId": 2,
+      "createTime": "2026-10-02 05:46:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 279,
+      "title": "时延分解",
+      "categoryId": 9057,
+      "typeId": 2,
+      "createTime": "2026-10-02 05:53:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 280,
+      "title": "丢包与重传定位",
+      "categoryId": 9057,
+      "typeId": 2,
+      "createTime": "2026-10-02 06:00:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 281,
+      "title": "DNS 与 TLS 耗时分析",
+      "categoryId": 9057,
+      "typeId": 2,
+      "createTime": "2026-10-02 06:07:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 282,
+      "title": "VPC 与子网",
+      "categoryId": 9059,
+      "typeId": 2,
+      "createTime": "2026-10-02 06:14:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 283,
+      "title": "NAT 网关",
+      "categoryId": 9059,
+      "typeId": 2,
+      "createTime": "2026-10-02 06:21:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 284,
+      "title": "安全组与网络 ACL",
+      "categoryId": 9059,
+      "typeId": 2,
+      "createTime": "2026-10-02 06:28:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 285,
+      "title": "Bridge 网络",
+      "categoryId": 9061,
+      "typeId": 2,
+      "createTime": "2026-10-02 06:35:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 286,
+      "title": "Overlay 网络",
+      "categoryId": 9061,
+      "typeId": 2,
+      "createTime": "2026-10-02 06:42:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 287,
+      "title": "CNI 插件",
+      "categoryId": 9062,
+      "typeId": 2,
+      "createTime": "2026-10-02 06:49:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 288,
+      "title": "Kubernetes Service 与 kube-proxy",
+      "categoryId": 9062,
+      "typeId": 2,
+      "createTime": "2026-10-02 06:56:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 289,
+      "title": "Ingress",
+      "categoryId": 9062,
+      "typeId": 2,
+      "createTime": "2026-10-02 07:03:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 290,
+      "title": "多活与容灾",
+      "categoryId": 9063,
+      "typeId": 2,
+      "createTime": "2026-10-02 07:10:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 291,
+      "title": "故障转移",
+      "categoryId": 9063,
+      "typeId": 2,
+      "createTime": "2026-10-02 07:17:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 292,
+      "title": "超时与重试",
+      "categoryId": 9063,
+      "typeId": 2,
+      "createTime": "2026-10-02 07:24:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 293,
+      "title": "同步调用与异步消息",
+      "categoryId": 9063,
+      "typeId": 2,
+      "createTime": "2026-10-02 07:31:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 294,
+      "title": "Service Mesh",
+      "categoryId": 9063,
+      "typeId": 2,
+      "createTime": "2026-10-02 07:38:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 295,
+      "title": "链路追踪",
+      "categoryId": 9063,
+      "typeId": 2,
+      "createTime": "2026-10-02 07:45:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 7,
+      "title": "封装继承与多态",
+      "categoryId": 9102,
+      "typeId": 2,
+      "createTime": "2026-11-07 10:26:00",
+      "hasContent": true,
+      "content": "### 1. 定义\n\n**封装**（encapsulation）= 把数据与操作数据的方法绑定在一个类里，对外只暴露必要的接口。**继承**（inheritance）让子类复用父类的字段与方法，**多态**（polymorphism）让同一个调用在运行期落在不同的实现上。\n\n### 2. 要点\n\n- 封装的目的是收敛变化：字段私有、方法公开，调用方不依赖内部表示。\n- 继承表达\"is-a\"，组合表达\"has-a\"；能用组合就不要用继承。\n- 多态的运行期绑定靠方法表：重载是编译期、重写是运行期。"
+    },
+    {
+      "id": 8,
+      "title": "HashMap 的底层实现",
+      "categoryId": 9102,
+      "typeId": 2,
+      "createTime": "2026-11-07 10:27:00",
+      "hasContent": false,
+      "content": ""
+    },
+    {
+      "id": 296,
+      "title": "Java 基础总览",
+      "categoryId": null,
+      "typeId": 2,
+      "createTime": "2026-11-10 20:25:00",
+      "hasContent": true,
+      "content": "### 1. 定义\n\nJava 是一门静态类型、面向对象的编程语言。\n\n### 2. 原理\n\n一次编译到处运行。"
+    },
+    {
+      "id": 297,
+      "title": "Java 学习路线",
+      "categoryId": null,
+      "typeId": 2,
+      "createTime": "2026-11-10 20:26:00",
+      "hasContent": false,
+      "content": ""
+    }
+  ]
+}

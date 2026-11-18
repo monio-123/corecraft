@@ -8,7 +8,6 @@ import { getDictTypeList, getDictItemList } from '../../api/dict'
 import {
   getAiConfig as fetchAiConfig,
   listAiEndpoints as fetchEndpoints,
-  saveAiConfig as saveApi,
   createAiEndpoint as createApi,
   updateAiEndpoint as updateApi,
   deleteAiEndpoint as deleteApi,
@@ -56,7 +55,6 @@ import {
 
 const CURRENT_KEY = 'ai-current-endpoint'
 
-const aiConfig = ref({ enabled: false })
 // 列表直接给界面用（下拉、设置页列表），不再包一层 getter——那才是第 2 处重复
 export const aiEndpoints = ref([])
 /** 引导问题，来自配置树上的「引导问题」那组。key 是 `key:contexts` 复合值，前端只当不透明字符串 */
@@ -83,13 +81,11 @@ function readCurrentId() {
  */
 export async function ensureAiConfigLoaded(force = false) {
   return loadOnce(aiSlot, force, async (isCurrent) => {
-    // 开关和列表是一次装载的：分开 await 会让首页多等一个 RTT
     const [configRes, endpointRes] = await Promise.all([fetchAiConfig(), fetchEndpoints()])
-    const config = configRes?.data || { enabled: false }
+    const config = configRes?.data || {}
     const endpoints = endpointRes?.data || []
     // 只有最新发起的那次才落缓存（见 lazyLoad 的「版本号」）
     if (isCurrent()) {
-      aiConfig.value = config
       aiEndpoints.value = endpoints
     }
     // **服务端说了算**（账号级，跨设备一致）；服务端没有就认本地那份并补写上去（存量迁移）；
@@ -108,22 +104,6 @@ export async function ensureAiConfigLoaded(force = false) {
     }
     return { config, endpoints }
   })
-}
-
-export async function saveAiConfig(data) {
-  // 用后端回的形状覆盖：只有后端算得准 enabled
-  const res = await saveApi(data)
-  aiConfig.value = res?.data || aiConfig.value
-  // 缓存里的那份也得是最新的：**只改 `aiConfig` 不改缓存的话**，下一次
-  // ensureAiConfigLoaded() 命中 'ready' 会把**旧**的那份原样返回
-  // （loadOnce 直接 return slot.value），于是开关刚打开、过一会儿又变回关的，
-  // 刷新一下才对。
-  //
-  // 改法用**重拉**而不是手工改缓存：缓存归 loadOnce 管（它的 value 是什么形状
-  // 是它自己的事），手工塞一份进去等于在别处复制那条规则。
-  // 和下面增删改 API 三个函数是同一个写法。
-  await ensureAiConfigLoaded(true)
-  return aiConfig.value
 }
 
 export async function addAiEndpoint(data) {
@@ -224,7 +204,7 @@ const protocolSlot = createLoadSlot()
 
 /**
  * 读协议字典。**没读到就不落缓存**（return undefined = 这次没拿到，下次还会重试），
- * 界面继续用兜底那两项 —— 和 `ensureTopicTypesLoaded` 同一套口径：
+ * 界面继续用兜底那两项 ——
  * 不能把"这次查不到"存成"字典里就是没有"这个结论。
  */
 export async function ensureAiProtocolsLoaded(force = false) {
@@ -284,8 +264,17 @@ export async function testAiEndpoint(payload) {
   return res?.data || { ok: false, message: '没有返回内容' }
 }
 
-/** 界面各处控制 AI 入口显不显示，一律用这个 */
-export const aiEnabled = computed(() => Boolean(aiConfig.value.enabled))
+/**
+ * **AI 能力是否可用**（2026-11-16 D6 开关退役后的唯一判据）。
+ *
+ * <p>⚠️ **不再是「总开关」**：那个开关同时管着交互类（问答）、一次点击多次调用
+ * （生成/出卷）、零点击自主任务（命名）——三件不相干的事绑在一起，关掉它三件一起变。
+ * 而"能不能用 AI"的真相只有一条：**当前端点配全了没有**。
+ *
+ * <p>⇒ AI 入口**一律常显**（没配好就在调用时报事实错误 + 引导去设置），
+ * 不再因为一个开关消失。急停 = 停用或删除端点。
+ */
+export const aiEnabled = computed(() => resolveEndpoint() != null)
 
 /** 当前选中的那一条（可能不存在——列表被清空过） */
 export const currentEndpoint = computed(
@@ -316,17 +305,16 @@ export function resolveEndpoint(endpointId = null) {
 }
 
 /**
- * **能不能调模型**：开关 + 端点配全，两条都要满足。
+ * **能不能调模型**：端点配全没有（2026-11-16 D6：总开关退役，只剩这一条）。
  *
  * <p>⚠️ **和后端 `AiEndpointService.requireReady` 是同一个判据**：
- * 开关开没开 → 用的那条自己配全没配全。
+ * 用的那条自己配全没配全。
  * 前端判一道是为了**别建出一个注定失败的任务**（后台任务一建就是几十上百步），
  * 但**真正的判据在后端**（前端能改，服务端才是权威）⇒ 两边都判，各管各的。
  *
  * @returns {string} 空 = 能调；非空 = 不能调，值是**给用户看的原因**
  */
 export function endpointProblem() {
-  if (!aiEnabled.value) return 'AI 开关没打开'
   const ep = resolveEndpoint()
   if (!ep) {
     // ⚠️ **两种情况要说不同的话**：「一个都没配」和「配了但没配全」，
@@ -366,12 +354,10 @@ export async function ask(
   question,
   { topicId, topicIds, material, history, onPrompt, onDelta, onReasoning, signal, questionKey, endpointId, thinking, maxTokens } = {}
 ) {
-  if (!aiEnabled.value) {
-    throw new Error('AI 开关没打开')
-  }
   // **这次用哪个 API**：显式指定的优先（生成弹窗里可以临时换一个模型），
   // 否则用全局当前选中的那条。**两种都要先看配全没有**——
   // 配不全的端点调过去只会得到一句「还没配全」。
+  // ⚠️ **不再查总开关**（2026-11-16 D6 开关退役）：判据只剩"端点配全了没有"。
   const ep = endpointId != null
     ? aiEndpoints.value.find((e) => e.id === endpointId)
     : currentEndpoint.value
@@ -432,7 +418,6 @@ export async function ensureAiQuestionsLoaded(force = false) {
  * （它们也是直接订阅、不额外导出一个 reset 函数）。
  */
 onAuthChange(() => {
-  aiConfig.value = { enabled: false }
   aiEndpoints.value = []
   aiQuestions.value = []
   aiVendors.value = []

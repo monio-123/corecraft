@@ -56,31 +56,14 @@
  * EP 浮层同样飘）。自建拖拽和 EP 浮层定位都靠「JS 坐标 = 视口坐标」这条不变式。
  */
 import { ref } from 'vue'
-import { clearMyConfig, getConfigNodes, getMyConfig, saveMyConfig } from '../api/config'
+import { clearMyConfigKeys, getMyConfig, saveMyConfig } from '../api/config'
 
 /** 本地缓存（只是缓存，后端才是真相） */
 const PREF_KEY = 'app-ui-prefs'
 /** 一次性迁移标记：老版本（只有本地、没有后端）调好的值要搬上后端一次 */
 const MIGRATED_KEY = 'app-ui-prefs-migrated'
-/** 后端 sys_config 里界面偏好的命名空间 = 配置树上界面偏好那一块的根（根节点的 code = 命名空间） */
+/** 后端 sys_config 里界面偏好的命名空间 */
 const UI_NS = 'ui'
-
-/**
- * 面板上的百分比 → 一对 flex-grow 比值（录入框 : 弹性尾巴）。存的是百分比（人能读懂），
- * 写进 CSS 的是比值。
- *
- * ⚠️ **必须成对写，不能只写一个**。之前只有 `--home-quick-grow`，省下的高度靠下面两排
- * 一起长来消化；现在下面两排固定自身高度（用户要求），如果还只写一个，录入区就成了
- * 唯一的 grow 项 —— 它会**恒定地拿走全部剩余高度**，滑块变成一根废的（实测 65%–100%
- * 完全不动，ProseMirror 都是 232px）。
- *
- * 100% 时尾巴取 0（不是极小值）：默认档必须**一点不多一点不少**等于现状。
- */
-function quickGrow(share) {
-  if (share >= 100) return { quick: 999, tail: 0 }
-  const quick = share / (100 - share)
-  return { quick, tail: 1 / quick }
-}
 
 /**
  * 界面偏好项的**规格**（范围 / 步长 / 单位 / 内置默认）+ CSS 变量投影。
@@ -114,73 +97,24 @@ function quickGrow(share) {
  * - **没有「阅读宽度」**：详情页不再有任何宽度封顶（2026-10-21 删掉）。
  */
 const PREF_SPECS = {
-  'ui.side.sideWidth': { min: 200, max: 360, step: 4, unit: 'px', def: 264, css: (v) => ({ '--w-side': `${v}px` }) },
-  'ui.side.sidePadX': { min: 0, max: 32, step: 2, unit: 'px', def: 12, css: (v) => ({ '--side-px': `${v}px` }) },
-  'ui.side.sidePadY': { min: 0, max: 24, step: 1, unit: 'px', def: 7, css: (v) => ({ '--side-py': `${v}px`, '--side-gap': `${v}px` }) },
-  'ui.home.homeQuick': {
-    min: 30, max: 100, step: 5, unit: '%', def: 100,
-    css: (v) => {
-      const g = quickGrow(v)
-      return { '--home-quick-grow': String(g.quick), '--home-tail-grow': String(g.tail) }
-    }
-  },
-  // 首页左右内距。⚠️ **2026-11-11 改：def 32 → 44**。
-  // 这个键原来**零消费者**（面板里的滑块拖了没反应，AppLayout 的注释还写着
-  // 「左右留白交给偏好面板（--home-pad-x）」—— 注释在撒谎）。接上 CSS 之后，
-  // def 必须等于 .home 原来写死的 44px ⇒ **默认状态下视觉零变化**，滑块也终于能调了。
-  'ui.home.homePadX': { min: 0, max: 120, step: 4, unit: 'px', def: 44, css: (v) => ({ '--home-pad-x': `${v}px` }) },
-  'ui.home.homeGap': { min: 0, max: 64, step: 4, unit: 'px', def: 24, css: (v) => ({ '--home-gap': `${v}px` }) },
-  'ui.learn.learnGap': { min: 0, max: 48, step: 2, unit: 'px', def: 16, css: (v) => ({ '--learn-gap': `${v}px` }) },
-  // **顶部间距**（内容整体离顶栏多远）。2026-11-04 加（用户：「这个一级目录 -> 二级目录
-  // 往上一点 现在离上面的间隙比较大显得不好看」）。
-  // ⚠️ **它和「上下」（learnGap）不是一回事**：「上下」是区块**之间**的间距
-  // （面包屑 / 筛选条 / 卡片区彼此隔多远），这个是**整体往上的偏移**（内容区离顶栏多远）
-  // —— 用户原话：「目前的上下改的是每个框的上下间隔 不是整体往上的间隔」。
-  // 默认 34 / 44（2026-11-08 晚改）：老稿 .main__inner 的 padding-top / padding-x
-  // （34px 44px 60px）—— 复刻后这两个滑块消费在 .learn 的版心 padding 上，默认值跟着老稿走。
-  'ui.learn.learnPadY': { min: 0, max: 48, step: 2, unit: 'px', def: 22, css: (v) => ({ '--learn-pad-y': `${v}px` }) },
-  'ui.learn.learnPadX': { min: 0, max: 120, step: 4, unit: 'px', def: 44, css: (v) => ({ '--learn-pad-x': `${v}px` }) },
-  'ui.learn.learnGridGap': { min: 0, max: 48, step: 2, unit: 'px', def: 14, css: (v) => ({ '--learn-grid-gap': `${v}px` }) },
-  // ⚠️ 2026-11-15 删掉 'ui.learn.learnPillPy'：`--learn-pill-py` 全仓零消费者
-  // ——面板里那根滑块拖了没反应（和 homePadX 那次同款）。真要调 pill 内距时
-  // 先把 CSS 接上，再把规格加回来。
-  'ui.detail.detailTagsGap': { min: 0, max: 64, step: 2, unit: 'px', def: 20, css: (v) => ({ '--detail-tags-gap': `${v}px` }) },
-  'ui.detail.detailTextInset': { min: 20, max: 96, step: 2, unit: 'px', def: 34, css: (v) => ({ '--detail-text-inset': `${v}px` }) },
-  'ui.detail.editorFs': { min: 12, max: 20, step: 1, unit: 'px', def: 14, css: (v) => ({ '--editor-fs': `${v}px` }) },
-  // ---- 正文排版（2026-10-24 加）----
-  // 标题原来**一条字号规则都没有** ⇒ 走浏览器默认（h3 1.17em vs 正文 14px，
-  // 几乎看不出差别），加上全局 reset 把标题上下 margin 归零 ⇒ 层次全靠加粗撑着。
-  // 下面的比例写在 kb-editor.css 里（那边才是排版的地方），这里只管"能拖到多少"。
-  //
-  // ⚠️ **标题不给独立字号，给一个"放大倍数"**：
-  // 标题字号 = 正文字号 × 固定层级比例 × 这个倍数 ⇒ 层次永远成比例，
-  // 不会出现"标题调大了、正文没动"的失衡。拖它 = 整体调标题大小（不改编排比例）。
-  // 真要改比例（层级感更强/更弱）得改 CSS，那是排版规范的事，不是"我的偏好"。
-  'ui.detail.headingScale': {
-    min: 0.8, max: 1.6, step: 0.05, unit: '×', def: 1,
-    css: (v) => ({ '--kb-head-scale': String(v) })
-  },
-  // 标题上下留白。**上下不对称是 CSS 那边写死的比例**（上 = 它 ×1.8…0.8 随层级递减，
-  // 下 = 它 ×0.6…0.35），这里拖的是那个基准值。
-  'ui.detail.headingGap': { min: 0, max: 40, step: 2, unit: 'px', def: 20, css: (v) => ({ '--kb-head-gap': `${v}px` }) },
+  'ui.side.sideWidth': { label: '侧栏宽度', min: 200, max: 360, step: 4, unit: 'px', def: 264, css: (v) => ({ '--w-side': `${v}px` }) },
+  'ui.detail.editorFs': { label: '正文字号', min: 12, max: 20, step: 1, unit: 'px', def: 14, css: (v) => ({ '--editor-fs': `${v}px` }) },
   // 行高：行与行之间的距离（比值，1.8 = 1.75 的旧值再松一点，语雀那档）。
-  'ui.detail.lineHeight': { min: 1.4, max: 2.2, step: 0.05, unit: '', def: 1.8, css: (v) => ({ '--kb-line-height': String(v) }) },
+  'ui.detail.lineHeight': { label: '正文行高', min: 1.4, max: 2.2, step: 0.05, unit: '', def: 1.8, css: (v) => ({ '--kb-line-height': String(v) }) },
   // 段间距：段落之间留多少。**列表 / 表格 / 引用 / 代码块也用这一个值**
   //（它们跟段落是同一件事的"块与块之间" ⇒ 一处定义，不各自一套）。
-  'ui.detail.paraGap': { min: 0, max: 24, step: 2, unit: 'px', def: 12, css: (v) => ({ '--kb-para-gap': `${v}px` }) },
-  // 段首缩进：几个字宽。**单位是 em 不是 px** —— 缩进要跟着字号缩放，
-  // 写死 px 的话，字号一调大缩进就不够看了。
-  'ui.detail.paraIndent': { min: 0, max: 4, step: 1, unit: '字', def: 0, css: (v) => ({ '--kb-para-indent': `${v}em` }) },
+  'ui.detail.paraGap': { label: '段落间距', min: 0, max: 24, step: 2, unit: 'px', def: 12, css: (v) => ({ '--kb-para-gap': `${v}px` }) },
+  // 代码块是否自动换行
+  'ui.detail.codeWrap': {
+    def: '0',
+    css: (v) => ({ '--code-white-space': (v === '1' || v === 1 || v === true) ? 'pre-wrap' : 'pre' })
+  },
+  // 掌握度指示显隐（树行/卡片/概览条：由组件响应式读取 isMasteryShown() 控制渲染）
+  'ui.browse.showMastery': { def: '1' },
   // 问答抽屉宽度：**JS 值，不是 CSS 变量**（el-drawer 的 size 会把 var() 拼成非法宽度）。
   // 它没有 css ⇒ 不进偏好面板（面板上那根滑块改不到任何东西），
   // 但规格要留着：详情页拖动把手时用它夹上下限（见 AppTopicDetailView 的 clampAskW）。
-  'ui.detail.detailAskW': { min: 320, max: 1200, step: 20, unit: 'px', def: 420 },
-  // AI 调整正文抽屉的宽度：同样是 JS 值（同一段理由：size 只吃真数字）。
-  // **单独一项，不复用问答那一项**：两边形态不同 —— 问答是一问一答，420px 够；
-  // 调整正文是**左右两栏并排对比**，420px 分两半每栏只剩 210px，读不下去 ⇒ 默认 720。
-  'ui.detail.detailEditW': { min: 480, max: 1200, step: 20, unit: 'px', def: 720 }
-  // 「ui.detail.detailDockPinned」（Dock 固定开关，2026-11-08 v6 加）已随 v10 头部固定
-  // 改版整个退役（Dock 删除、头部常驻不需要"固定"），登记一并移除。
+  'ui.detail.detailAskW': { min: 320, max: 1200, step: 20, unit: 'px', def: 420 }
 }
 
 /** 探针值：只为拿到"这个键会写哪些变量名"，值本身不重要 */
@@ -194,27 +128,6 @@ function varNamesOf(configKey) {
 
 /** 所有会被写进行内的变量：摘的时候一次摘干净 */
 const ALL_VARS = Object.keys(PREF_SPECS).flatMap(varNamesOf)
-
-/**
- * 配置树上的那一组（`{ key, title, items }`），响应式。
- *
- * **面板直接读它**：有哪些组、每组有哪些项、叫什么、能拖到多少 —— 全部来自树上。
- * 树还没到的时候是空数组，面板就还没东西可画（会话引导会先把它拉回来）。
- */
-export const prefGroups = ref([])
-
-/**
- * 配置树的**加载状态**（2026-11-13）。
- *
- * ⚠️ **为什么需要它**：面板原来靠 `!curItems.length` 判断"加载失败" ——
- *   但**树还没到**和**树拉失败了**是两件事，前者是"正在加载"（该转圈），
- *   后者才是"失败"（该说失败）。混成一句话 ⇒ 打开设置面板先看到一句"加载失败"，
- *   然后树一到内容又出现 ⇒ 界面自己打自己的脸。
- *
- * 口径：idle（还没开始）/ loading（在飞）/ success（拿到了）/ failed（没拿到）。
- * ⚠️ **唯一出口在这里**：面板不许自己猜，它只读这个状态。
- */
-export const prefTreeState = ref('idle')
 
 /** 生效值（键 → 数字）：我的覆盖 > 系统默认 > 内置默认 */
 const effective = ref({})
@@ -311,17 +224,8 @@ export function applyUiPrefs() {
  */
 export async function loadRemotePrefs() {
   const cached = readCache()
-  prefTreeState.value = 'loading'
   try {
-    const [cfgRes, nodeRes] = await Promise.all([
-      getMyConfig(UI_NS).catch(() => null),
-      getConfigNodes().catch(() => null)
-    ])
-    const nodes = nodeRes?.data || []
-    if (nodeRes) {
-      prefGroups.value = buildGroups(nodes)
-    }
-
+    const cfgRes = await getMyConfig(UI_NS).catch(() => null)
     const values = cfgRes?.data?.values || {}
     const defaultsRaw = cfgRes?.data?.defaults || {}
     const eff = {}
@@ -338,10 +242,8 @@ export async function loadRemotePrefs() {
     defaults = defs
     explicit = new Set(Object.keys(eff))
 
-    // 迁移要靠树认得那些键（老缓存里是短名）。**树没到就不动缓存**——
-    // 否则会把老缓存里那些还没搬走的短名条目冲掉，用户的偏好就真丢了。
-    if (nodeRes) {
-      const merged = await migrateOnce(cached, values, nodes)
+    if (cfgRes) {
+      const merged = await migrateOnce(cached, values)
       for (const [k, v] of Object.entries(merged)) {
         eff[k] = v
         explicit.add(k)
@@ -349,16 +251,13 @@ export async function loadRemotePrefs() {
     }
     effective.value = eff
     remoteLoaded = true
-    // 树有没有到，决定"面板是空的"到底是失败还是成功（空树也是成功）。
-    prefTreeState.value = nodeRes ? 'success' : 'failed'
     const written = pickExplicit(eff)
     applyPrefs(written)
-    if (nodeRes) {
+    if (cfgRes) {
       writeCache(written)
     }
   } catch {
     // 拉不到就用本地缓存那份（applyUiPrefs 已经套过了）
-    prefTreeState.value = 'failed'
   }
 }
 
@@ -384,16 +283,17 @@ function pickExplicit(values) {
  * @return 这次搬上去的那些值（调用方要一并算进生效值，
  *         否则这一轮界面显示的还是默认值，要等下次刷新才对）
  */
-async function migrateOnce(cached, backendValues, nodes) {
+async function migrateOnce(cached, backendValues) {
   if (localStorage.getItem(MIGRATED_KEY)) return {}
   const items = []
   const merged = {}
-  for (const item of itemsOf(nodes)) {
-    const v = cached[item.configKey] != null ? cached[item.configKey] : cached[legacyKey(item.configKey)]
+  for (const [configKey, spec] of Object.entries(PREF_SPECS)) {
+    if (!spec.css) continue
+    const v = cached[configKey] != null ? cached[configKey] : cached[legacyKey(configKey)]
     if (typeof v !== 'number') continue
-    if (backendValues[item.configKey] != null) continue
-    items.push({ key: item.configKey, value: String(v) })
-    merged[item.configKey] = v
+    if (backendValues[configKey] != null) continue
+    items.push({ key: configKey, value: String(v) })
+    merged[configKey] = v
   }
   if (items.length) await saveMyConfig(items)
   localStorage.setItem(MIGRATED_KEY, '1')
@@ -498,86 +398,37 @@ export function clearUiPrefs() {
 }
 
 /**
- * 「恢复系统默认」：把行内全摘掉让 CSS 那边接管，**并删掉后端里"我自己的覆盖"**。
- *
- * `only` 给的是组 key 数组，**只处理这几组**：面板按自己显示的组来调，
- * 在首页面板点「恢复系统默认」不该把用户调好的侧边栏宽度一起抹掉。
- * 不传 = 全部（`resetUiPrefs()` 保留这个名字给"清空全部"用）。
- *
- * ⚠️ **只摘行内不够，还要删后端**：行内摘了、后端还留着我的覆盖 ⇒
- * 下次拉后端又把它盖回来。症状是「恢复系统默认」看着生效、刷新一下又变回去。
+ * 是否展示掌握度指示（树行圆点染色 / 进度条 / 卡片轻签 / 书页概览条）。
+ * 默认展示；显式设为 '0' / 0 / false 时隐藏。
  */
-export async function resetUiPrefs(only) {
-  // 不传就是全部——各组是同一件事的几个范围，不是几段逻辑。
-  const groups = only || prefGroups.value.map((g) => g.key)
-  const picked = prefGroups.value.filter((g) => groups.includes(g.key))
+export function isMasteryShown() {
+  const v = getUiPref('ui.browse.showMastery')
+  return v !== '0' && v !== 0 && v !== false
+}
+
+/**
+ * 按指定的 key 列表恢复系统默认（精确清掉我的覆盖，保留系统默认与同前缀他键）
+ */
+export async function resetPrefKeys(keys) {
   const el = document.documentElement
-  for (const g of picked) {
-    for (const it of g.items) {
-      for (const name of varNamesOf(it.configKey)) el.style.removeProperty(name)
-    }
+  for (const k of keys) {
+    for (const name of varNamesOf(k)) el.style.removeProperty(name)
   }
-  // 本地：这几项回到系统默认（系统默认也没有就回到内置默认 ⇒ 摘掉行内）
   const next = { ...effective.value }
-  for (const g of picked) {
-    for (const it of g.items) {
-      if (defaults[it.configKey] != null) next[it.configKey] = defaults[it.configKey]
-      else delete next[it.configKey]
+  for (const k of keys) {
+    if (defaults[k] != null) {
+      next[k] = defaults[k]
+      explicit.add(k)
+    } else {
+      delete next[k]
+      explicit.delete(k)
     }
   }
   effective.value = next
-  writeCache(pickExplicit(next))
-  applyPrefs(pickExplicit(next))
-  // 后端：删掉这几组的"我自己的覆盖"（= 恢复系统默认）
-  await Promise.all(picked.map((g) => clearMyConfig(`${g.configKey}.`)))
-}
-
-// ==================== 配置树 → 面板的数据 ====================
-
-/**
- * 树 → 面板的组：`[{ key, title, configKey, items: [...] }]`。
- *
- * **名字来自树，规格来自代码**：
- * - 树回答"这一项叫什么、属于哪一组"（通用配置项的事）；
- * - `PREF_SPECS` 回答"能拖到多少、落到哪些 CSS 变量"（界面偏好专属的事）。
- *
- * **面板只列 `PREF_SPECS` 里有的那些键** —— 树上的通用 KV（AI 提示词那些）
- * 不是界面偏好，不该出现在偏好面板里。
- */
-function buildGroups(nodes) {
-  const byParent = new Map()
-  for (const n of nodes) {
-    if (!byParent.has(n.parentId)) byParent.set(n.parentId, [])
-    byParent.get(n.parentId).push(n)
-  }
-  const root = nodes.find((n) => n.configKey === UI_NS)
-  if (!root) return []
-  return (byParent.get(root.id) || []).map((g) => ({
-    key: g.code,
-    title: g.name,
-    configKey: g.configKey,
-    items: (byParent.get(g.id) || []).map(toItem).filter(Boolean)
-  }))
-}
-
-/** 一个叶子节点 → 面板上的一行。**没有 CSS 投影的键不进面板**（树上别的通用 KV 也是） */
-function toItem(n) {
-  const spec = PREF_SPECS[n.configKey]
-  if (!spec || !spec.css) return null
-  return {
-    configKey: n.configKey,
-    name: n.name,
-    unit: spec.unit,
-    min: spec.min,
-    max: spec.max,
-    step: spec.step,
-    defaultValue: spec.def
-  }
-}
-
-/** 树里 ui 命名空间下的所有数值项（算生效值时按它过一遍） */
-function itemsOf(nodes) {
-  return buildGroups(nodes).flatMap((g) => g.items)
+  const written = pickExplicit(next)
+  writeCache(written)
+  applyPrefs(written)
+  await clearMyConfigKeys(keys).catch(() => null)
 }
 
 /**
@@ -593,6 +444,7 @@ export function getPrefSpec(configKey) {
   if (!spec) return null
   return {
     configKey,
+    label: spec.label,
     unit: spec.unit,
     min: spec.min,
     max: spec.max,

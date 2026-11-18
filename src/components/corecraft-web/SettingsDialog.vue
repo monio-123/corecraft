@@ -7,10 +7,6 @@
 
   <el-dialog v-model="visible" title="设置" width="var(--cc-dialog-w-lg)" class="settings-dlg">
     <div class="settings">
-      <!-- 分类目录：**这里是扩展点** —— 后续新增一类设置（编辑器 / 快捷键 / 复习…）
-           就往 pages 里加一项、右区挂一个面板组件，框架不动。
-           目录里的项一律出右区；只有"编辑某条 API"那种动作表单才叠弹窗
-           （2026-11-13 定：界面出右区、AI 单独弹窗 = 割裂，已收口）。 -->
       <nav class="settings__rail">
         <button
           v-for="p in pages"
@@ -23,12 +19,10 @@
       </nav>
 
       <div class="settings__pane">
-        <!-- ==================== 界面 ==================== -->
-        <template v-if="page === 'ui'">
-          <!-- 风格：微缩预览小卡（2026-11-13 用户认可的形态）——风格是"看"的，
-               三个名字不传达长相；小卡里纸色 + 主色一眼可选。
-               peek 色在 utils/theme.js 的 themeList 上（加主题时一起给）。 -->
-          <div class="prefs__cap">风格</div>
+        <!-- ==================== 1. 界面设置 ==================== -->
+        <div v-if="page === 'ui'" class="settings__ui">
+          <el-scrollbar class="settings__scroll">
+            <div class="prefs__cap">风格</div>
           <div class="prefs__swatches">
             <button
               v-for="t in themeList"
@@ -50,10 +44,7 @@
             </button>
           </div>
 
-          <!-- 字体：正文/展示字体归配置不归主题（2026-11-15 三档收敛 D）。
-               默认「标准」（无衬线）；「衬线」= 素雅那套 Noto Serif SC。
-               两个名字用各自的真实字体渲染——名字即预览。 -->
-          <div class="prefs__cap" style="margin-top: var(--sp-12);">字体</div>
+          <div class="prefs__cap prefs__cap--gap">字体</div>
           <div class="prefs__swatches">
             <button
               v-for="f in fontOptions"
@@ -64,58 +55,78 @@
               :aria-pressed="font === f.key"
               @click="pickFont(f.key)"
             >
-              <span class="prefs__peek prefs__peek-font" :style="{ fontFamily: f.preview }">文 Aa</span>
+              <span class="prefs__peek prefs__peek-font" :style="{ fontFamily: f.preview }">{{ f.sample }}</span>
               <span class="prefs__swatch-name">{{ f.name }}</span>
+              <span class="prefs__swatch-hint">{{ f.hint }}</span>
               <span class="prefs__tick">✓</span>
             </button>
           </div>
 
-          <!-- 组切换：下划线 tabs（导航形态 ≠ 风格卡的选择形态，两排不再打架）。
-               ⚠️ 组名只在这条 tabs 里出现一次，正文不再重复标题。 -->
-          <div v-if="shown.length > 1" class="prefs__tabs">
-            <button
-              v-for="g in shown"
-              :key="g.key"
-              type="button"
-              class="prefs__tab"
-              :class="{ 'is-on': active === g.key }"
-              @click="active = g.key"
-            >{{ g.title }}</button>
+          <div class="prefs__cap prefs__cap--gap">浏览与布局</div>
+          <div class="prefs__card">
+            <div class="prefs__row">
+              <label class="prefs__label" for="prefs-ui.side.sideWidth">{{ sliderSpec('ui.side.sideWidth').label }}</label>
+              <el-slider
+                id="prefs-ui.side.sideWidth"
+                class="prefs__slider"
+                :min="sliderSpec('ui.side.sideWidth').min"
+                :max="sliderSpec('ui.side.sideWidth').max"
+                :step="sliderSpec('ui.side.sideWidth').step"
+                :model-value="numVal('ui.side.sideWidth')"
+                :show-tooltip="false"
+                @update:model-value="set('ui.side.sideWidth', $event)"
+              />
+              <span class="prefs__value">{{ numVal('ui.side.sideWidth') }}{{ sliderSpec('ui.side.sideWidth').unit }}</span>
+            </div>
+
+            <div class="prefs__row">
+              <span class="prefs__label">掌握度指示</span>
+              <el-switch
+                size="small"
+                :model-value="boolVal('ui.browse.showMastery', true)"
+                @update:model-value="set('ui.browse.showMastery', $event ? '1' : '0')"
+              />
+            </div>
           </div>
 
-          <div v-for="it in curItems" :key="it.configKey" class="prefs__row">
-            <label class="prefs__label" :for="`prefs-${it.configKey}`">{{ it.name }}</label>
-            <el-slider
-              :id="`prefs-${it.configKey}`"
-              class="prefs__slider"
-              :min="it.min"
-              :max="it.max"
-              :step="it.step"
-              :model-value="valueOf(it)"
-              :show-tooltip="false"
-              @update:model-value="set(it.configKey, $event)"
-            />
-            <span class="prefs__value">{{ valueOf(it) }}{{ it.unit }}</span>
+          <div class="prefs__cap prefs__cap--gap">正文排版</div>
+          <div class="prefs__card">
+            <div v-for="k in TYPO_SLIDER_KEYS" :key="k" class="prefs__row">
+              <label class="prefs__label" :for="`prefs-${k}`">{{ sliderSpec(k).label }}</label>
+              <el-slider
+                :id="`prefs-${k}`"
+                class="prefs__slider"
+                :min="sliderSpec(k).min"
+                :max="sliderSpec(k).max"
+                :step="sliderSpec(k).step"
+                :model-value="numVal(k)"
+                :show-tooltip="false"
+                @update:model-value="set(k, $event)"
+              />
+              <span class="prefs__value">{{ numVal(k) }}{{ sliderSpec(k).unit }}</span>
+            </div>
+
+            <div class="prefs__row">
+              <span class="prefs__label">代码折行</span>
+              <el-switch
+                size="small"
+                :model-value="boolVal('ui.detail.codeWrap', false)"
+                @update:model-value="set('ui.detail.codeWrap', $event ? '1' : '0')"
+              />
+            </div>
           </div>
 
-          <!-- 树还没到 / 没拿到时说什么：加载中与失败要分开（utils/uiPrefs.js 的
-               prefTreeState 是唯一出口），别让面板空着被当成"没有可调的项"。 -->
-          <div v-if="prefTreeState === 'loading'" class="prefs__empty kb-state-line">
-            <KbLoader size="sm" />
-            <span>加载中…</span>
-          </div>
-          <div v-else-if="prefTreeState === 'failed' && !curItems.length" class="prefs__empty">加载失败</div>
+          </el-scrollbar>
 
-          <!-- 「恢复系统默认」只重置**当前这一组**（在首页这组点它不该抹掉侧边栏宽度）。 -->
           <div class="prefs__foot">
-            <button type="button" class="quiet-btn" @click="resetCur">
+            <button type="button" class="quiet-btn" @click="resetAllUi">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
               恢复系统默认
             </button>
           </div>
-        </template>
+        </div>
 
-        <!-- ==================== AI 能力 ==================== -->
+        <!-- ==================== 2. AI 能力 ==================== -->
         <AiSettingsPanel v-else />
       </div>
     </div>
@@ -126,119 +137,94 @@
 /**
  * 设置弹窗（齿轮的唯一出口）：**分类目录 + 右区内容**。
  *
- * 2026-11-13 由 PrefsPanel（popover 形态的「界面设置」）改来，两个决定：
- *
- * 1. **齿轮 = 系统设置入口**，不只是界面设置 —— 后续扩展的设置都往目录（pages）里加，
- *    右区出内容，框架不动。
- * 2. **目录里的项一律出右区**：「界面」出右区、「AI 能力」也出右区（AiSettingsPanel）。
- *    曾经"界面直接显示、AI 单独弹窗"，用户判**割裂**；只有"编辑某条 API"的表单
- *    才是叠层弹窗（表单是动作不是分类）。
- *
- * **本组件管目录与「界面」右区**；每个分类自己的内容归各自的面板组件
- * （现在只有 AiSettingsPanel 一个）。加新分类 = pages 加一项 + 右区挂一个组件。
- *
- * 「界面」右区由**配置树**驱动（utils/uiPrefs.js），加一项滑块 = 树上加一行，
- * 这里一行不动。每一行都是滑块：尺寸类调 px、占比类调百分比（用户定的口径）。
+ * 2026-11-17 待办-1115 第8点终版收敛：
+ * 1. 左栏收敛为：界面 / AI 能力；
+ * 2. 滑块规格（label / min / max / step / unit / def）单一权威在 uiPrefs.js；
+ * 3. 无影子状态、无口水话描述，所有状态切换即时响应。
  */
 import { ref, computed } from 'vue'
 import { Setting } from '@element-plus/icons-vue'
-import { getUiPrefs, prefGroups, prefTreeState, resetUiPrefs, saveUiPrefs } from '../../utils/uiPrefs'
-import { themeList, currentTheme, setTheme, currentFont, setFont } from '../../utils/theme'
-import KbLoader from './KbLoader.vue'
+import { getUiPref, getPrefSpec, saveUiPrefs, resetPrefKeys } from '../../utils/uiPrefs'
+import { themeList, currentTheme, setTheme, currentFont, setFont, clearThemeLegacy } from '../../utils/theme'
 import AiSettingsPanel from '../../views/corecraft-web/AiSettingsPanel.vue'
 
-const props = defineProps({
-  // 显示哪几组（配置树上那一组的短名：侧边栏 side / 首页 home / …）。
-  groups: { type: Array, required: true }
-})
-
-/** 分类目录。加一类设置 = 这里加一项（右区挂对应组件）。 */
 const pages = [
-  { key: 'ui', name: '界面' },
+  { key: 'ui', name: '界面设置' },
   { key: 'ai', name: 'AI 能力' }
 ]
 
+const TYPO_SLIDER_KEYS = ['ui.detail.editorFs', 'ui.detail.lineHeight', 'ui.detail.paraGap']
+
+const UI_RESET_KEYS = [
+  'ui.theme',
+  'ui.font',
+  'ui.side.sideWidth',
+  'ui.browse.showMastery',
+  ...TYPO_SLIDER_KEYS,
+  'ui.detail.codeWrap'
+]
+
+function resetAllUi() {
+  clearThemeLegacy()
+  resetPrefKeys(UI_RESET_KEYS)
+}
+
 const visible = ref(false)
 const page = ref('ui')
-const prefs = ref(getUiPrefs())
-const active = ref(props.groups[0])
 
-/* 风格（utils/theme.js）：选中框**从生效值派生**——与 html[data-theme] 同一条
-   数据源，结构上不会再出现"视觉素雅、框停本色"（一次性 ref 快照会被写失败/
-   清库/重挂载击穿，2026-11-09 用户报过）。 */
 const theme = computed(() => currentTheme())
 function pickTheme(key) {
   setTheme(key)
 }
 
-/* 字体档（utils/theme.js）：同主题一条数据源（配置树生效值派生）。
-   preview = 各自的真实字体——名字即预览。 */
 const font = computed(() => currentFont())
 const fontOptions = [
-  { key: 'sans', name: '标准', preview: 'Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif' },
-  { key: 'serif', name: '衬线', preview: '"Noto Serif SC", Georgia, serif' }
+  { key: 'sans', name: '标准', sample: '文 Aa', hint: '现代无衬线', preview: 'Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif' },
+  { key: 'serif', name: '衬线', sample: '文 Aa', hint: '书卷衬线体', preview: '"Noto Serif SC", Georgia, serif' },
+  { key: 'mono', name: '等宽', sample: '文 01', hint: '工程等宽体', preview: '"JetBrains Mono", ui-monospace, "Cascadia Mono", "PingFang SC", sans-serif' }
 ]
 function pickFont(key) {
   setFont(key)
 }
 
-/** 配置树上要显示的那几组（树还没到的时候是空的，界面右区还没东西可画） */
-const shown = computed(() =>
-  props.groups.map((k) => prefGroups.value.find((g) => g.key === k)).filter(Boolean)
-)
-const cur = computed(() => shown.value.find((g) => g.key === active.value))
-
-/**
- * 当前这一组的项。**空数组兜底，不能让模板去读 `cur.items`**：
- * 树没加载出来时 `cur` 是 undefined（那一组不存在），
- * 模板里 `cur.items` 会直接抛错 —— **渲染抛错 = 整个 App 白屏**。
- */
-const curItems = computed(() => cur.value?.items || [])
-
-/** 存的值可能是没存过（= 用内置默认），显示时要落到具体值上 */
-function valueOf(item) {
-  return prefs.value[item.configKey] ?? item.defaultValue
+function sliderSpec(key) {
+  return getPrefSpec(key)
 }
 
-/**
- * 本地 state 跟着存档走的**唯一入口**：改完存档一律重读，不在这儿手工拼一份镜像
- * （存档里存了越界值时，面板显示的和下次刷新后显示的必须是同一个数）。
- */
-function sync() {
-  prefs.value = getUiPrefs()
+function numVal(key) {
+  const spec = getPrefSpec(key)
+  const v = getUiPref(key)
+  return v != null && v !== '' ? Number(v) : spec.defaultValue
+}
+
+function boolVal(key, def) {
+  const v = getUiPref(key)
+  if (v == null) return def
+  return v !== '0' && v !== 0 && v !== false
 }
 
 function set(configKey, v) {
   saveUiPrefs({ [configKey]: v })
-  sync()
-}
-
-/**
- * 「恢复系统默认」：**当前这一组**恢复成后端存的系统默认。
- *
- * ⚠️ **"默认"有两层**：后端的系统默认（管理员在「系统管理 → 系统配置」里改）
- * 和配置树上的内置默认。这个按钮恢复的是**前者** —— 后端没有这一项时
- * 才落到后者。所以文案写「恢复系统默认」而不是「恢复默认」。
- */
-async function resetCur() {
-  await resetUiPrefs([active.value])
-  sync()
 }
 </script>
 
 <style scoped>
 .settings {
   display: flex;
-  gap: var(--sp-13);
+  gap: var(--sp-11);
+  /* 固定弹窗内容区高度：切「界面设置 / AI 能力」外框尺寸完全不变 */
+  height: min(460px, 68vh);
 }
 
-/* ---------- 左：分类目录（扩展点） ---------- */
+/* ---------- 左：分类目录 ---------- */
 .settings__rail {
   flex: none;
-  width: 112px;
+  width: 108px;
+  padding-right: var(--sp-10);
+  border-right: 1px solid var(--cc-border);
   display: flex;
   flex-direction: column;
-  gap: var(--sp-2);
+  gap: var(--sp-3);
 }
 .settings__rail-btn {
   height: 34px;
@@ -250,6 +236,7 @@ async function resetCur() {
   color: var(--cc-text-2);
   text-align: left;
   cursor: pointer;
+  transition: background .15s ease, color .15s ease, box-shadow .15s ease;
 }
 .settings__rail-btn:hover {
   background: var(--cc-surface-2);
@@ -258,25 +245,45 @@ async function resetCur() {
   background: var(--cc-primary-soft);
   color: var(--cc-primary);
   font-weight: 600;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cc-primary) 18%, transparent);
 }
 
-/* ---------- 右：当前分类的内容。唯一的滚动容器 ----------
-   界面组（详情 8 项）和 AI 列表都可能高过弹窗 ⇒ 滚在右区里，
-   弹窗本身永远不超屏。min-height 保两页切换时不跳高。 */
+/* ---------- 右：内容区 ---------- */
 .settings__pane {
   flex: 1;
   min-width: 0;
-  min-height: min(380px, 62vh);
-  max-height: 62vh;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
+  height: 100%;
+}
+.settings__ui {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.settings__scroll {
+  flex: 1;
+  min-height: 0;
+}
+.settings__scroll :deep(.el-scrollbar__wrap) {
+  max-height: 100%;
+}
+.settings__scroll :deep(.el-scrollbar__view) {
+  padding: 2px var(--sp-10) var(--sp-6) 2px;
 }
 
-/* ---------- 风格小卡（微缩预览） ---------- */
 .prefs__cap {
   font-size: var(--text-xs);
+  font-weight: 500;
   color: var(--cc-text-3);
-  margin-bottom: var(--sp-8);
+  margin-bottom: var(--sp-6);
+}
+.prefs__cap--gap {
+  margin-top: var(--sp-12);
+}
+.prefs__card {
+  padding: var(--sp-7) var(--sp-11);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--cc-surface-2) 55%, transparent);
 }
 .prefs__swatches {
   display: flex;
@@ -290,16 +297,21 @@ async function resetCur() {
   border-radius: var(--radius-md);
   background: var(--cc-surface);
   cursor: pointer;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.prefs__swatch:hover {
+  border-color: var(--cc-border-strong);
 }
 .prefs__swatch.is-on {
-  border: 1.5px solid var(--cc-primary);
+  border-color: var(--cc-primary);
+  box-shadow: 0 0 0 1px var(--cc-primary);
 }
 .prefs__peek {
   display: block;
   position: relative;
-  height: 36px;
+  height: 34px;
   border: 1px solid var(--cc-border);
-  border-radius: 7px;
+  border-radius: 6px;
   overflow: hidden;
 }
 .prefs__peek-side {
@@ -321,14 +333,14 @@ async function resetCur() {
 .prefs__peek-chip {
   position: absolute;
   left: 15px;
-  bottom: 7px;
-  width: 16px;
-  height: 8px;
-  border-radius: 5px;
+  bottom: 6px;
+  width: 15px;
+  height: 7px;
+  border-radius: 4px;
 }
 .prefs__swatch-name {
   display: block;
-  margin-top: 6px;
+  margin-top: 5px;
   text-align: center;
   font-size: var(--text-xs);
   color: var(--cc-text-2);
@@ -337,17 +349,22 @@ async function resetCur() {
   color: var(--cc-primary);
   font-weight: 600;
 }
+.prefs__swatch-hint {
+  font-size: 11px;
+  color: var(--cc-text-3);
+  line-height: 1.2;
+}
 .prefs__tick {
   display: none;
   position: absolute;
-  top: 9px;
-  right: 9px;
+  top: 8px;
+  right: 8px;
   width: 15px;
   height: 15px;
   border-radius: 50%;
   background: var(--cc-primary);
-  color: #fff;
-  font-size: 10px;
+  color: var(--cc-btn-fg, #fff);
+  font-size: 9px;
   line-height: 15px;
   text-align: center;
 }
@@ -355,68 +372,57 @@ async function resetCur() {
   display: block;
 }
 
-/* ---------- 组切换：下划线 tabs ---------- */
-.prefs__tabs {
-  display: flex;
-  margin: var(--sp-12) 0 var(--sp-10);
-  border-bottom: 1px solid var(--cc-border);
-}
-.prefs__tab {
-  flex: 1;
-  position: relative;
-  height: 36px;
-  border: 0;
-  background: transparent;
-  font-size: var(--text-sm);
-  color: var(--cc-text-3);
-  cursor: pointer;
-}
-.prefs__tab.is-on {
-  color: var(--cc-primary);
-  font-weight: 600;
-}
-.prefs__tab.is-on::after {
-  content: "";
-  position: absolute;
-  left: 18%;
-  right: 18%;
-  bottom: -1px;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--cc-primary);
-}
-
-/* ---------- 滑块行（与原 PrefsPanel 同一套） ---------- */
+/* 设置项行（滑块 / 分段钮 / 开关共用同一左对齐标签栅格） */
 .prefs__row {
   display: flex;
   align-items: center;
   gap: var(--sp-8);
-  margin-bottom: var(--sp-10);
+  min-height: 32px;
+  margin-bottom: var(--sp-5);
+}
+.prefs__row:last-child {
+  margin-bottom: 0;
 }
 .prefs__label {
-  /* §4.8(c)：64px + nowrap + ellipsis —— 名字来自配置树，宁可截断也不折行 */
-  width: 64px;
+  width: 84px;
   flex-shrink: 0;
   font-size: var(--text-sm);
   color: var(--cc-text-2);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .prefs__slider {
   flex: 1;
   min-width: 0;
+  height: 24px;
+}
+.prefs__slider :deep(.el-slider__runway),
+.prefs__slider :deep(.el-slider__bar) {
+  height: 4px;
+}
+.prefs__slider :deep(.el-slider__button-wrapper) {
+  top: -16px;
+}
+.prefs__slider :deep(.el-slider__button) {
+  width: 14px;
+  height: 14px;
 }
 .prefs__value {
-  width: 44px;
+  width: 46px;
   flex-shrink: 0;
   text-align: right;
   font-size: var(--text-xs);
   color: var(--cc-text-4);
   font-variant-numeric: tabular-nums;
 }
+
 .prefs__foot {
-  margin-top: var(--sp-12);
+  flex: none;
+  display: flex;
+  align-items: center;
+  min-height: 30px;
+  margin-top: var(--sp-10);
+  padding-top: var(--sp-9);
+  border-top: 1px solid var(--cc-border);
 }
 .quiet-btn {
   display: inline-flex;
@@ -440,11 +446,6 @@ async function resetCur() {
   width: 13px;
   height: 13px;
 }
-.prefs__empty {
-  font-size: var(--text-sm);
-  color: var(--cc-text-3);
-}
-/* 字体档小卡：peek = 各自真实字体的「文 Aa」（名字即预览） */
 .prefs__peek-font {
   display: flex;
   align-items: center;

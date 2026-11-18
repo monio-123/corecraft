@@ -158,23 +158,30 @@ const PRESETS = [
     md: '```java\nList<String> list = new ArrayList<>();\n```'
   },
   {
-    id: 'mermaid',
-    name: 'mermaid 图',
-    // **图 + 源码都在**：上面是画出来的图，下面是还能改的源码。
-    // 这是 mermaid 渲染层唯一的免登录自测面 —— 出问题先来这里（别去详情页，
-    // 那条路要登录、还要后端那条 DB 活着）。
-    md: '字节码与跨平台机制：\n\n```mermaid\ngraph LR\n    A[Java 源文件 .java] -->|javac 编译| B[字节码 .class]\n    B -->|JVM on Windows| C[Windows 运行]\n    B -->|JVM on Linux| D[Linux 运行]\n    B -->|JVM on macOS| E[macOS 运行]\n```\n\n图下面就是源码，可以直接改。'
-  },
-  {
-    id: 'mermaid-class',
-    name: 'mermaid 类图',
-    // **类图（classDiagram）**：讲"谁包含谁 / 谁实现谁"时最贴切的那种图。
-    // ⚠️ **两个坑写在下面，改的时候别踩**（2026-10-28 实测 mermaid 12.2）：
-    //   ① `cssClass` 的类名列表**必须整体加引号**（`cssClass "A,B" 名`）；
-    //      写成流程图那套 `class A,B 名` 直接语法错 ⇒ 整张图都画不出来。
-    //   ② classDiagram 走 **elk 布局引擎**（比流程图的 dagre 大，首次要下 ~3.4MB）。
-    // 这条预设是**免登录自测面**：类图画不出来时先来这里，别去详情页。
-    md: '集合框架里 List 的位置：\n\n```mermaid\nclassDiagram\n    class Iterable["Iterable（迭代器）"] {\n        <<interface>>\n    }\n    class Collection["Collection（单列集合）"] {\n        <<interface>>\n    }\n    class List["List（有序,可重复）"] {\n        <<interface>>\n        +add(E e) boolean\n        +remove(Object o) boolean\n    }\n    class ArrayList["ArrayList（数组实现）"]\n    class LinkedList["LinkedList（链表实现）"]\n    Iterable <|-- Collection : 继承\n    Collection <|-- List : 继承\n    List <|.. ArrayList : 实现\n    List <|.. LinkedList : 实现\n    classDef iface fill:#F8D7DA,stroke:#C77C8A,color:#2b2b2b\n    classDef impl fill:#D6E4F7,stroke:#6C8EBF,color:#2b2b2b\n    cssClass "Iterable,Collection,List" iface\n    cssClass "ArrayList,LinkedList" impl\n```\n\n图下面就是源码，可以直接改。'
+    id: 'kbfig-all',
+    name: 'kbfig v2 全图型 (10 种)',
+    md: [
+      '### 1. 层级树（tree）',
+      '```kbfig\n{"type":"tree","title":"集合框架接口层次","root":{"t":"集合框架接口","tag":"两大体系","children":[{"t":"Collection","d":"单列数据根接口","children":[{"t":"List","d":"有序、可重复"},{"t":"Set","d":"无序、不可重复","tag":"SortedSet"},{"t":"Queue","d":"先进先出队列","tag":"Deque"}]},{"t":"Map","d":"键值对根接口","children":[{"t":"SortedMap","d":"按键排序","tag":"NavigableMap"}]}]}}\n```',
+      '### 2. 自由拓扑（graph）',
+      '```kbfig\n{"type":"graph","title":"ConcurrentHashMap putVal 写入分支","dir":"LR","nodes":[{"id":"a","label":"putVal 写入","kind":"step"},{"id":"b","label":"table 已初始化?","kind":"decision"},{"id":"c","label":"initTable CAS 立表","kind":"step"},{"id":"d","label":"目标桶为空?","kind":"decision"},{"id":"e","label":"casTabAt 无锁写入","kind":"step","hl":"ok"},{"id":"f","label":"桶头 hash 态","kind":"decision"},{"id":"g","label":"helpTransfer 协助扩容","kind":"step"},{"id":"h","label":"synchronized 锁头","sub":"链表 / 红黑树插入","kind":"step","hl":"warn"}],"edges":[{"from":"a","to":"b"},{"from":"b","to":"c","label":"否"},{"from":"b","to":"d","label":"是","hl":"ok"},{"from":"d","to":"e","label":"是","hl":"ok"},{"from":"d","to":"f","label":"否"},{"from":"f","to":"g","label":"MOVED","style":"dashed"},{"from":"f","to":"h","label":"正常","hl":"primary"}]}\n```',
+      '### 3. 短步横排（stages）',
+      '```kbfig\n{"type":"stages","title":"HashMap 扩容与 rehash 流程","steps":[{"t":"触发判定","d":"size > threshold"},{"t":"申请新数组","d":"容量翻倍","hl":true},{"t":"逐桶拆分","d":"hash & oldCap"},{"t":"回填新表","d":"低位原下标"},{"t":"更新阈值","d":"newCap × factor"}],"loop":"注：Java 8 尾插保持原链顺序"}\n```',
+      '### 4. 内存槽位（memory）',
+      '```kbfig\n{"type":"memory","title":"HashMap 桶数组 + 链表 + 红黑树挂载图","stack":[{"name":"map 引用","ref":"0x7f3a → 堆实例"}],"container":{"name":"堆内存 · Node<K,V>[] table","slots":[{"index":0,"val":"null"},{"index":1,"val":"桶位链表头","hl":"warn","chain":[{"t":"Node K1","d":"next → 下一节点"},{"t":"Node K2","d":"next → null"}]},{"index":2,"val":"红黑树根","hl":"ok","tree":{"root":"Root","left":"T1","right":"T2","note":"链表 ≥ 8 且容量 ≥ 64 时树化"}}]}} \n```',
+      '### 5. 时序交互（sequence）',
+      '```kbfig\n{"type":"sequence","title":"BlockingQueue put / take 阻塞与唤醒","participants":[{"id":"p","name":"生产者"},{"id":"q","name":"阻塞队列","hl":true},{"id":"c","name":"消费者"}],"messages":[{"from":"p","to":"q","text":"1. put(e) 队列已满","kind":"sync"},{"from":"q","to":"p","text":"2. 挂起等待 notFull","kind":"wait"},{"from":"c","to":"q","text":"3. take() 腾出空位","kind":"sync"},{"from":"q","to":"p","text":"4. signal() 唤醒","kind":"ok"}]}\n```',
+      '### 6. 演进里程碑（timeline）',
+      '```kbfig\n{"type":"timeline","title":"Java 演进（8 → 11 → 17 → 21）","events":[{"tag":"JDK 8","t":"Lambda 与 Stream","d":"函数式编程落地"},{"tag":"JDK 11 LTS","t":"var 与 HttpClient","d":"ZGC 实验"},{"tag":"JDK 17 LTS","t":"Sealed 与 Record","d":"代数数据类型"},{"tag":"JDK 21 LTS","t":"虚拟线程转正","d":"分代 ZGC","hl":true}]}\n```',
+      '### 7. 核心拆解（anatomy）',
+      '```kbfig\n{"type":"anatomy","title":"Java 数组对象构成","center":{"t":"数组对象实例","tag":"堆内存连续区","d":"int[] b = {5, 2, 8}"},"parts":[{"t":"栈上引用 b","d":"只存堆首地址"},{"t":"对象头 Header","d":"MarkWord + 类型指针"},{"t":"只读字段 length","d":"固定不变 = 3","hl":true},{"t":"连续槽位 b[0..2]","d":"O(1) 寻址读取"}]}\n```',
+      '### 8. 多维对比（matrix）',
+      '```kbfig\n{"type":"matrix","title":"Java 方法参数传递三种情形","cols":["形参重赋值","改对象属性","实参影响"],"rows":[{"name":"基本类型","cells":["改值副本","无对象","不受影响"]},{"name":"可变对象","cells":["改引用副本","改同一实例","变化可见"]},{"name":"String","cells":["改引用副本","final 不可变","不受影响"]}]}\n```',
+      '### 9. 分层包含（layers）',
+      '```kbfig\n{"type":"layers","title":"JVM 运行时数据区","groups":[{"name":"线程私有","note":"随线程生灭","items":[{"t":"程序计数器","d":"字节码行号"}]},{"name":"线程共享","note":"全进程一份","items":[{"t":"Java 堆","d":"GC 主战场","tags":["Eden 8","S0 1","S1 1","Old"]}]}]}\n```',
+      '### 10. 一一对应（pairs）',
+      '```kbfig\n{"type":"pairs","title":"SOLID 五原则","left":"原则","right":"解决的问题","rows":[{"l":"单一职责","r":"一个类只有一个变化理由"},{"l":"开闭原则","r":"加需求靠新增，不改已有代码"}]}\n```'
+    ].join('\n\n')
   }
 ]
 

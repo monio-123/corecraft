@@ -31,6 +31,7 @@
 import { computed } from 'vue'
 import { clampPercent } from '../../utils/progress'
 import { LEVEL_ORDER, levelWord, levelColor } from './masteryLevels'
+import { isMasteryShown } from '../../utils/uiPrefs'
 
 const props = defineProps({
   /** 目录三指标（store 的 getCategoryMastery）：
@@ -47,7 +48,7 @@ const assessedCount = computed(() => props.row?.assessedCount ?? 0)
 const eligibleCount = computed(() => props.row?.eligibleCount ?? 0)
 
 /** 有没有任何已检验条目 */
-const hasAny = computed(() => assessedCount.value > 0)
+const hasAny = computed(() => isMasteryShown() && assessedCount.value > 0)
 
 /**
  * 分布段。⚠️ **顺序固定**（弱 → 中 → 强）：概览条从左到右应该是一条

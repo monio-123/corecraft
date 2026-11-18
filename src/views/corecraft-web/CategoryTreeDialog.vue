@@ -74,30 +74,10 @@
 
     <!-- 第 2 步：规划。**目录 = 有下级的节点，知识点 = 叶子**，两件事都在这棵树里 -->
     <section v-else-if="at.skeleton" class="pane">
-      <!-- 规划中：**骨架屏**。点「生成规划」就切到这一步（不在第 1 步原地转圈）——
-           等待有了内容位置，主题/说明那些表单也自然不用逐个禁用。
-           「上一步」此时 = 中断这次调用（见 backFromPlan）。 -->
-      <div v-if="planning" class="skel">
-        <p class="skel__tip">正在规划「{{ topic || '这个主题' }}」的目录结构…</p>
-        <div
-          v-for="(w, i) in [88, 72, 80, 64, 84, 58]"
-          :key="i"
-          class="skel__row"
-          :style="{ width: w + '%', animationDelay: i * 0.12 + 's' }"
-        />
-        <!-- 秒数**一直显示**：等 20 秒和等 4 分钟，用户要看得出区别；
-             超过 90 秒就把"可以取消"说出来 —— 不然人只会以为卡死了。 -->
-        <p class="skel__eta">
-          已等 {{ planSeconds }} 秒<template v-if="planSeconds < 90"> · 一般 30~60 秒</template>
-          <template v-else> · 比平时久，可以点「取消」</template>
-        </p>
+      <div class="sum">
+        <span>{{ plan.dirCount }} 个目录</span>
+        <span v-if="plan.pointCount">· {{ plan.pointCount }} 条知识点</span>
       </div>
-
-      <template v-else>
-        <div class="sum">
-          <span>{{ plan.dirCount }} 个目录</span>
-          <span v-if="plan.pointCount">· {{ plan.pointCount }} 条知识点</span>
-        </div>
         <p v-if="plan.tooLong.length" class="warn">{{ plan.tooLong.length }} 个目录名超过 {{ MAX_NAME }} 字</p>
         <p v-if="plan.tooMany" class="warn">一次最多创建 {{ MAX_NODES }} 个目录，这批有 {{ plan.tooMany }} 个</p>
         <p v-if="planIssue" class="warn">{{ planIssue }}</p>
@@ -158,7 +138,6 @@
             </div>
           </div>
         </div>
-      </template>
     </section>
 
     <!-- 知识点那一步：pack 提交「刚建好的这一批」，points 提交「一个现成目录」 -->
@@ -175,9 +154,7 @@
     <template #footer>
       <div class="foot">
         <div class="foot__side">
-          <!-- 规划中：这一下就是**取消**（中断这次调用并回第 1 步）；已出结果则是普通返回。
-               不额外摆一个"停止"按钮 —— 同一个动作在同一位置，心智负担更小。 -->
-          <el-button v-if="at.skeleton" @click="backFromPlan">{{ planning ? '取消' : '上一步' }}</el-button>
+          <el-button v-if="at.skeleton" @click="step = 0">上一步</el-button>
         </div>
         <div class="foot__side foot__side--right">
           <!-- **模型和思考，每一步都在**：规划与正文各按当时的设置走（任务会把它们存进参数快照）。 -->
@@ -213,7 +190,7 @@
             v-if="at.skeleton"
             type="primary"
             :loading="building"
-            :disabled="planning || !canBuild"
+            :disabled="!canBuild"
             @click="confirmStep"
           >
             {{ building ? (planTask ? '确认中…' : '创建中…') : planTask ? '确认并生成' : '下一步' }}
@@ -271,14 +248,11 @@ import {
   importCategories,
   createTopic,
   refreshTopicIndexes,
-  ensureTopicTypesLoaded,
   getCategories,
   getChildCategories,
   categoryNameChain,
   getCategorySubtreeIds,
-  fetchTopicIndexFresh,
-  topicTypeIdByValue,
-  TOPIC_TYPE_LEARN
+  fetchTopicIndexFresh
 } from './useCorecraftWebStore'
 import {
   parseOutlineTree,
@@ -356,13 +330,6 @@ const text = ref('')
 const ROW_GUTTER = 50
 
 const generating = ref(false)
-/** 规划已经等了多久（秒）。骨架屏上要显示 —— "预计 30~60 秒"在等到 4 分钟时是句假话 */
-const planSeconds = ref(0)
-let planTick = null
-/** 规划中（**第 2 步的骨架屏**看它）：点「生成规划」立刻切到第 2 步，等待有内容位置 */
-const planning = ref(false)
-/** 规划这次调用的中断器：**只有规划可取消**（建结构已经在写库，取消了会留半成品） */
-let planAbort = null
 const building = ref(false)
 /**
  * 第 2 步顶部的提醒（现在只有一种来源：规划被截断、用的是半棵树）。
@@ -396,7 +363,7 @@ const pickEndpointId = ref(null)
 /** 解析 + 标记之后的树 */
 const marked = ref([])
 const collapsed = ref(new Set())
-const result = ref({ dirs: 0, points: 0, written: 0 })
+const result = ref({ dirs: 0, points: 0 })
 /**
  * **这一批的上下文**（建完结构后**从库里现取**的）：写正文那一步要用
  * —— 标题清单（模型能标的名字）、目录链接的合法集合、这批知识点。
@@ -500,10 +467,6 @@ async function loadGenPref() {
 }
 
 function reset() {
-  // 关掉弹窗再打开时，上一批的"规划中"不能残留（否则第 2 步一进来就是骨架屏）
-  planAbort?.abort()
-  planAbort = null
-  planning.value = false
   generating.value = false
   building.value = false
   buildProgress.value = { done: 0, total: 0 }
@@ -522,8 +485,6 @@ function reset() {
 }
 
 function close() {
-  // 关窗/关弹窗时把在途的规划掐掉：后台还在跑一次几十秒的调用，白烧额度
-  planAbort?.abort()
   emit('update:modelValue', false)
 }
 
@@ -611,6 +572,7 @@ async function generateOutline() {
     await createGenTask({
       type: 'theme',
       title: topic.value.trim(),
+      promptKey: 'ai.prompt.knowledge.point',
       params: JSON.stringify({
         endpointId: pickEndpointId.value,
         theme: topic.value.trim(),
@@ -631,20 +593,6 @@ async function generateOutline() {
   } finally {
     generating.value = false
   }
-}
-
-/**
- * 第 2 步的「上一步 / 取消」。
- *
- * <p>规划中 ⇒ **中断这次调用**（catch 里会回第 1 步）；已出结果 ⇒ 普通返回。
- * 同一个位置承担"取消"和"返回"，是因为它们**对用户是同一件事**：我不想看这个了。
- */
-function backFromPlan() {
-  if (planning.value) {
-    planAbort?.abort()
-    return
-  }
-  step.value = 0
 }
 
 /** 粘贴的树 → 骨架。**解析和"没认出"的判断都在 applyOutline 里**，这里不重复一遍 */
@@ -677,18 +625,16 @@ function splitIntents(nodes) {
  *
  * @param {string} raw 模型或用户给的 markdown 树
  */
-function applyOutline(raw, splitIntent = true, goStep = true) {
+function applyOutline(raw, splitIntent = true) {
   const forest = parseOutlineTree(raw)
   if (!forest.length) {
     ElMessage.error('没认出目录树')
-    //  AI 规划这条路上界面已经在第 2 步了 ⇒ 解析失败要退回第 1 步，别把人留在空骨架屏
-    if (!goStep) step.value = 0
     return
   }
   // AI 规划的输出行尾带「｜定位」，拆到节点上；粘贴的树不拆
   if (splitIntent) splitIntents(forest)
   marked.value = markOutline(forest, getCategories(), { id: 0 })
-  if (goStep) step.value = 1
+  step.value = 1
   collapseDefault()
 }
 
@@ -804,29 +750,17 @@ async function makeScope(dirIds) {
     topics,
     /** 目录全路径（"MySQL/1. 架构/1.1 连接"）—— 材料里的"目录"用它，
      *  模型才知道这条属于哪一片 */
-    pathOf: pathOfDir,
-    /** 材料里那份《全部知识点》清单（模型能标的名字就这些） */
-    allPoints: topics.map((t) => ({ dirPath: pathOfDir(t.categoryId), title: t.title }))
+    pathOf: pathOfDir
   }
-}
-
-/**
- * 「学习」这一档的类型 id。**没有就直接报错停**，不静默落回默认档
- * （落回去等于生成一批类型全错、还查不出是哪错的知识点）。
- *
- * <p>以前这里**不传 typeId** ⇒ `createTopic` 走"字典里排第一的那条" =「笔记」——
- * 一批教材式正文全被标成随手记，而且界面上完全看不出来。
- */
-async function ensureLearnTypeId() {
-  await ensureTopicTypesLoaded()
-  const typeId = topicTypeIdByValue(TOPIC_TYPE_LEARN)
-  if (typeId == null) throw new Error('知识点类型里没有「学习」这一档')
-  return typeId
 }
 
 /**
  * 建目录 + 落知识点**占位**（title 有、content 空）。**这一步只落结构**，
  * 写正文是**下一步**的事（那一步再选要不要标签 / 要不要知识点关联）。
+ *
+ * <p>⚠️ **typeId 2026-11-16 起不再传**（类型轴退役，见 useCorecraftWebStore「知识点类型（退役）」）：
+ * 原来这里调 `ensureLearnTypeId()` 取「学习」档 type_id 显式传给 createTopic，
+ * 类型概念已下线（不再按"出生地"分档）⇒ 那个函数连同调用一起删了。
  *
  * <p>**占位为什么也要落库**：① 用户要看到的是"目录**和知识点**"，不落库就没地方存标题；
  * ② 知识点之间的跳转靠**标题 → id**，标题先在库里，链接才有目标（正文晚点写不影响）。
@@ -962,7 +896,6 @@ async function build() {
   try {
     const rows = await importCategories(plan.value.dirs, 0)
     const ids = resolveDirIds(plan.value.dirs, rows, 0)
-    const typeId = await ensureLearnTypeId()
     // 进度按**知识点条数**算（目录是批量 import 的，一次调用；知识点才是逐条）
     const total = plan.value.points.length
     buildProgress.value = { done: 0, total }
@@ -976,7 +909,7 @@ async function build() {
       }
       // **content 传空串**：占位就是"还没写正文"。
       // （`updateTopic` 把 null 当"不修改"⇒ 只能写 ''；库里本来就有一条空正文的老数据，约定一致。）
-      await createTopic({ title: p.title, content: '', categoryId: cid, typeId }, { refresh: false })
+      await createTopic({ title: p.title, content: '', categoryId: cid }, { refresh: false })
       n += 1
       stepBuildProgress()
     }
@@ -1068,36 +1001,18 @@ async function submitAsTask() {
   submitting.value = true
   try {
     const buildSum = `创建目录 ${result.value.dirs} 个 · 知识点 ${result.value.points} 个`
-    // ⚠️ **两条路**（v2 单任务化）：
-    // ① **从后台规划接着来的**（`planTask` 有）⇒ 正文挂在**同一个任务**上（`continue`）
-    //    ⇒ 卡片上只有一张「生成主题」卡，三个节点：生成目录 → 确认 → 生成正文。
-    // ② **没有后台规划**（目录页「写知识点」/ 粘贴模式）⇒ 新建一个 `content` 任务。
-    if (props.planTask?.id) {
-      await continueGenTask(props.planTask.id, {
-        steps,
-        buildSummary: buildSum,
-        endpointId: pickEndpointId.value
-      })
-      ElMessage.success('已转到后台任务')
-    } else {
-      await createGenTask({
-        type: 'content',
-        // 标题里的"是什么"：pack 用主题名（粘贴模式没有主题输入 ⇒ 退到根节点名），
-        // points 用目录名。别让它变成千篇一律的"知识 · N 条"。
-        title: `${topic.value.trim() || marked.value[0]?.name || props.category?.name || '知识'} · ${steps.length} 条`,
-        promptKey: 'ai.prompt.knowledge.point',
-        // 参数快照：重跑要一模一样，就靠这一份
-        // ⚠️ **不再带 thinking**（2026-11-12）：思考由服务端按环节定（AiStagePolicy），
-        // 带了也被忽略；留着只会让人以为"界面那个开关还在起作用"。
-        // buildSummary 让任务卡上能显示「建结构」那一段做了多少事。
-        params: JSON.stringify({
-          endpointId: pickEndpointId.value,
-          buildSummary: buildSum
-        }),
-        steps
-      })
-      ElMessage.success('已转到后台任务')
-    }
+    // 本地树（粘贴模式 / 目录页「写知识点」）：后台任务走单任务 `content`。
+    await createGenTask({
+      type: 'content',
+      title: `${topic.value.trim() || marked.value[0]?.name || props.category?.name || '知识'} · ${steps.length} 条`,
+      promptKey: 'ai.prompt.knowledge.point',
+      params: JSON.stringify({
+        endpointId: pickEndpointId.value,
+        buildSummary: buildSum
+      }),
+      steps
+    })
+    ElMessage.success('已转到后台任务')
     // ⚠️ **任务列表立刻出现这张卡**（走统一出口，不靠父组件碰巧绑了 @done）。
     // `emit('done')` 那一路是给**目录树 / 知识点列表**刷新的（壳里那个回调管），
     // 它不保证刷任务列表 ⇒ 这里自己调一次统一出口。
@@ -1114,16 +1029,6 @@ async function submitAsTask() {
 </script>
 
 <style scoped>
-/* ---------- 字号口径（这个弹窗里只有三档）----------
-   18 弹窗标题（el-dialog 给的）
-   14 正文与控件（输入框 / 下拉 / 按钮 / tab）
-   12 标签与说明（label / hint）
-   以前是 13（label）+ 14（input）+ 12（small 下拉）混着来，同一屏三种大小、
-   控件高度还差 8px —— 就是"字忽大忽小"的来源。**控件一律 default 尺寸。 */
-.steps :deep(.el-step__arrow::before),
-.steps :deep(.el-step__arrow::after) {
-  border-color: var(--cc-border-strong);
-}
 .pane {
   min-height: 180px;
 }
@@ -1220,50 +1125,6 @@ async function submitAsTask() {
   font-size: var(--text-base);
   color: var(--cc-text-1);
 }
-.opts__row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-10);
-}
-/* 每个开关一张小卡片：勾选框 + 名字（第一行）+ 一句说明（第二行）。
-   **说明另起一行**，不是跟在名字后面 —— 弹窗就 640px 宽，一行放不下会顶出卡片。 */
-.opt {
-  flex: 1;
-  min-width: 240px;
-  height: auto;
-  margin: 0;
-  padding: var(--sp-9) var(--sp-11);
-  border: 1px solid var(--cc-border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--cc-surface);
-  align-items: flex-start;
-}
-.opt :deep(.el-checkbox__label) {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  padding-left: var(--sp-8);
-  line-height: 1.5;
-}
-.opt__name {
-  font-size: var(--text-md);
-  color: var(--cc-text-1);
-}
-.opt__hint {
-  font-size: var(--text-xs);
-  color: var(--cc-text-3);
-}
-/* 完成页：一个勾 + 一句话。**不用文字说"完成了"** */
-.donebox {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-10);
-}
-.donebox__icon {
-  font-size: 20px;
-  color: var(--cc-success);
-}
 .warn {
   margin: var(--sp-6) 0 0;
   font-size: var(--text-xs);
@@ -1317,43 +1178,6 @@ async function submitAsTask() {
   opacity: 0.5;
 }
 
-/* ---------- 规划中：骨架屏 ----------
-   点「生成规划」就切到这一步（不在第 1 步锁表单）。行宽左右不齐 + 依次错开的
-   扫光，读起来像"正在长出来的目录"，比一条居中的 spinner 更像"有内容在来"。 */
-.skel {
-  padding: var(--sp-6) 0;
-}
-.skel__tip {
-  margin: 0 0 var(--sp-12);
-  font-size: var(--text-md);
-  color: var(--cc-text-2);
-}
-.skel__row {
-  height: 14px;
-  margin-bottom: var(--sp-10);
-  border-radius: var(--radius-sm);
-  background: linear-gradient(
-    90deg,
-    var(--cc-surface-2) 25%,
-    var(--cc-surface-3, #eceff1) 37%,
-    var(--cc-surface-2) 63%
-  );
-  background-size: 400% 100%;
-  animation: skel-sweep 1.4s ease infinite;
-}
-@keyframes skel-sweep {
-  0% {
-    background-position: 100% 50%;
-  }
-  100% {
-    background-position: 0 50%;
-  }
-}
-.skel__eta {
-  margin: var(--sp-12) 0 0;
-  font-size: 12px;
-  color: var(--cc-text-4);
-}
 .row {
   display: flex;
   align-items: center;
@@ -1437,35 +1261,6 @@ async function submitAsTask() {
   margin: 0;
   font-size: var(--text-base);
   color: var(--cc-text-1);
-}
-.log {
-  margin-top: var(--sp-10);
-  max-height: 260px;
-  overflow-y: auto;
-}
-.log__row {
-  display: flex;
-  align-items: baseline;
-  gap: var(--sp-8);
-  padding: var(--sp-4) 0;
-  font-size: var(--text-sm);
-  color: var(--cc-text-2);
-  border-bottom: 1px solid var(--cc-border);
-}
-.log__dir {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.log__num {
-  color: var(--cc-text-3);
-  flex-shrink: 0;
-}
-.log__err {
-  color: var(--cc-danger);
-  flex-shrink: 0;
 }
 .done {
   margin: 0;

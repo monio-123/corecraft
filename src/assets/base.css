@@ -46,6 +46,11 @@
   --cc-warning: #d98a1f;
   --cc-danger: #e5484d;
   --cc-info: #8a9099;
+  /* 任务进行中语义色（浅色主题沿用主色，曜夜主题在 themes.css 中切为冷星蓝以拉开与琥珀金对比） */
+  --cc-task-running: var(--cc-primary);
+  --cc-task-running-soft: var(--cc-primary-soft);
+  --cc-task-running-border: var(--cc-primary-border);
+  --cc-task-running-fg: var(--cc-surface);
 
   /* 行内代码的**字色**（2026-11-09）：中性偏冷，**不是语义色**。
      ⚠️ 原来这里是硬编码 #c7254e —— 博客园 markdown 主题的行内代码色，
@@ -103,9 +108,7 @@
    *    用户原话："**只能统一调无法精确调，某个地方我很满意但是另外的地方不满意**"。
    *
    * **现在没有全局档位了。** 要调就按**维度**一个一个来，走 token：
-   * 组件里写 `var(--token)`，面板改的是 token 的**具体值**。
-   * 已经做好的第一组是**侧边栏**（宽度 + 密度，见 --side-* 和 utils/uiPrefs.js），
-   * 其余组按同样的方式一个个加。
+   * 组件里写 `var(--token)`，面板改的是 token 的**具体值**（如侧栏宽度 `--w-side`、正文字号 `--editor-fs` 等）。
    *
    * **字号不在其中**：它由**浏览器 Ctrl +/−** 管，默认就是最好看的。
    * 应用再套一层是同一件事做两遍，还打架（「我们的字变了、EP 的框没变」）。
@@ -226,15 +229,7 @@
   /* ⚠️ **拖拽落点浮层的尺寸 token（--w-drop / --h-drop）删了**（2026-11-05）：
      那棵浮层是「拖知识点进目录」时的落点树，知识点不再能拖 ⇒ 浮层没了 ⇒ token 没人读。 */
 
-  /* 侧边栏的松紧：面板上「左右」「上下」两个滑块各写一个值（见配置树上的
-     ui.side.sidePadX / ui.side.sidePadY）。**写的是具体值，不是一个乘数** —— 乘数会把所有东西重新
-     绑死，正是 #116 拆掉的那件事。
-     ⚠️ **上下滑块同时喂 --side-py 和 --side-gap**：行高由 --side-py 决定、行内元素
-     靠 --side-gap 分开，这两个是同一个"一行有多松"，分开调只会得到行内贴死、行外
-     还松着的怪状态。
-     ⚠️ **--side-list-gap（相邻两行之间的额外缝隙）故意不接调节项**，固定 1px：
-     它的量级和行内距不是一回事，跟着往松调会凭空多出一截空隙。要单独调的时候再
-     开一个旋钮，别把它塞进「上下」里当特例。 */
+  /* 侧边栏内边距与行距（已内聚为静态设计 token，不再暴露偏好滑块）。 */
   --side-px: var(--sp-10);
   --side-py: var(--sp-7);
   --side-gap: var(--sp-7);
@@ -501,6 +496,40 @@ body {
 }
 .el-dialog__headerbtn:hover .el-dialog__close {
   color: var(--cc-text-1);
+}
+
+/* 抽屉开合统一走 GPU 合成层（transform + opacity）：
+   ⚠️ Element Plus 原生 .el-drawer-fade-enter-from 写的是 background-color: transparent !important
+      + transition: all，会导致遮罩每一帧触发全屏 CPU Paint（打开掉帧的真凶）。
+      这里把遮罩 background-color 锁死，只对 opacity 做过渡；抽屉本体用 translateX(100%) 滑入 + contain 隔离。 */
+.el-overlay {
+  background-color: var(--el-overlay-color-lighter) !important;
+  will-change: opacity;
+}
+.el-drawer-fade-enter-active,
+.el-drawer-fade-leave-active {
+  transition: opacity 0.2s cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+.el-drawer-fade-enter-from,
+.el-drawer-fade-appear-from,
+.el-drawer-fade-leave-to {
+  opacity: 0 !important;
+  background-color: var(--el-overlay-color-lighter) !important;
+}
+.el-drawer.rtl,
+.el-drawer.ltr {
+  will-change: transform;
+  contain: layout style paint;
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+.el-drawer-fade-enter-from .el-drawer.rtl,
+.el-drawer-fade-appear-from .el-drawer.rtl,
+.el-drawer-fade-leave-to .el-drawer.rtl {
+  transform: translateX(100%);
+}
+/* 拖拽调宽期间关闭抽屉任何过渡，保证跟手零延迟 */
+body.is-col-resizing .el-drawer {
+  transition: none !important;
 }
 
 .el-message-box {

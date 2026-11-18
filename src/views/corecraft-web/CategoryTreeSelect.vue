@@ -8,7 +8,7 @@
     node-key="value"
     :placeholder="placeholder"
     :clearable="clearable"
-    check-strictly
+    :check-strictly="!leafOnly"
     @update:model-value="emit('update:modelValue', $event)"
   />
 </template>
@@ -89,6 +89,8 @@ const props = defineProps({
    * 清空没有语义；考试记录页的**筛选条**要它（清空 = 不限目录）。
    */
   clearable: { type: Boolean, default: false },
+  /** 默认只允许选中叶子目录（非叶子节点点击展开）；筛选树等需要选非叶子时传 false */
+  leafOnly: { type: Boolean, default: true },
   size: { type: String, default: 'default' }
 })
 const emit = defineEmits(['update:modelValue'])

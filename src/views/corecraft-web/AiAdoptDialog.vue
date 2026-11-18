@@ -7,7 +7,6 @@
   >
     <!-- 标题 -->
     <template v-if="field === 'title'">
-      <p class="adopt__now">现在：{{ topic?.title || '（空）' }}</p>
       <el-input v-model="draftTitle" />
     </template>
 
@@ -15,7 +14,6 @@
          做成一个选项而不是额外一个按钮：选它 = 建，不选它 = 改选已有的或不动。
          闸门在用户手上，模型炸不出目录。层级由树的缩进表达，label 不重复路径。 -->
     <template v-else-if="field === 'categoryId'">
-      <p class="adopt__now">现在：{{ currentCategoryName }}</p>
       <CategoryTreeSelect
         v-model="draftCategoryId"
         :categories="categories"
@@ -23,39 +21,17 @@
       />
     </template>
 
-    <!-- 目录和 organize 合成一处分支。
-         ⚠️ **标签那一块撤了**（2026-11-03 用户拍板：标签从页面上去掉，
-         后台逻辑暂时不去）：界面上不再显示/编辑标签，
-         但 **AI 提议的标签仍然照写**（`draftTags` 还在，`confirm` 里
-         `patch.tags` 那条路一行没动）—— 只是用户看不见。
-         ⚠️ 写进去的是全部标签，不是只有 AI 推荐的：updateTopic 是
-         deleteByTopicId 后重插（替换不是合并），只传新增的那几个会把用户原有的标签抹掉 -->
-    <template v-else-if="field === ORGANIZE_FIELD">
-      <div class="adopt__field">
-        <span class="adopt__label">标题</span>
-        <el-input v-model="draftTitle" />
-      </div>
-
-      <div class="adopt__field">
-        <span class="adopt__label">目录</span>
-        <p class="adopt__now">现在：{{ currentCategoryName }}</p>
-        <CategoryTreeSelect
-          v-model="draftCategoryId"
-          :categories="categories"
-          :new-category="parsed?.newCategory || null"
-        />
-      </div>
-    </template>
-
+    <!-- ⚠️ **organize（一次三个字段）那一支已删**（2026-11-16 D2 AI 归类退役）：
+         它是「补全这条知识：标题/目录/标签」那条引导问题的采纳界面 ——
+         那条问题连同它的配置（`ai.prompt.question.organize:categories,tags`）一起下线了。
+         留着它只剩一个**永远进不去的分支**（引导问题清单里已经没有它）。
+         剩下的两条（rename → 标题、pick_category → 目录）各自单字段，继续用。 -->
 
     <!-- 解析不出来。不是兜底：格式没对上说明 AI 没照 remark 的要求答，
-         硬凑出来的值写进库是垃圾，所以这里只把原文摆出来让人复制。
-         ⚠️ §4.11(m)：原来这句话是「这段回答没能解析成可采纳的值 —— AI 这次没按要求的格式回答。
-         下面是原文，可以复制走。」—— **连说三句且复述界面**。
-         ⇒ 压成两句：一句说结果，一句说能做什么。 -->
+         硬凑出来的值写进库是垃圾，所以这里只把原文摆出来让人复制。 -->
     <template v-else>
       <p class="adopt__warn">
-        回答没按约定格式，无法采纳。原文如下
+        未能提取结构化结果，原文如下
       </p>
       <pre class="adopt__raw">{{ turn?.answer }}</pre>
     </template>
@@ -83,7 +59,7 @@
  */
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { adoptFieldOf, parseAdopt, NEW_CATEGORY, ORGANIZE_FIELD } from './aiAdopt'
+import { adoptFieldOf, parseAdopt, NEW_CATEGORY } from './aiAdopt'
 import CategoryTreeSelect from './CategoryTreeSelect.vue'
 import { createCategory } from './useCorecraftWebStore'
 
@@ -113,10 +89,6 @@ const dialogTitle = computed(() => {
   const names = field.value.split('|').map((k) => FIELD_LABEL[k] || k)
   return `采纳到${names.join(' / ')}`
 })
-
-const currentCategoryName = computed(
-  () => props.categories.find((c) => c.id === props.topic?.categoryId)?.name || '未归类'
-)
 
 const draftTitle = ref('')
 const draftCategoryId = ref(null)
@@ -159,13 +131,6 @@ const canConfirm = computed(() => {
       return draftTitle.value.trim().length > 0
     case 'categoryId':
       return draftCategoryId.value != null
-    // organize 一次三个字段，**各自独立**：有一项有值就能确认。
-    // 目录没选**不拦**——patch 里没有 categoryId 就是"不动目录"，
-    // 跟"选了空目录等于把这条知识移回未归类"完全是两回事
-    case ORGANIZE_FIELD:
-      return draftTitle.value.trim().length > 0
-        || draftTags.value.length > 0
-        || draftCategoryId.value != null
     default:
       return false
   }
@@ -211,22 +176,8 @@ async function confirm() {
     } else {
       patch = { categoryId: draftCategoryId.value }
     }
-  } else if (field.value === ORGANIZE_FIELD) {
-    // 三段各自独立：**没有的字段不进 patch，updateTopic 就不会动它**。
-    // 用户只想要目录、把标题和标签改回原样，确认后也只动目录
-    patch = {}
-    if (draftTitle.value.trim()) patch.title = draftTitle.value.trim()
-    // ⚠️ 标签照写（后台逻辑保留），只是界面上没有那一格可改。
-    if (draftTags.value.length) patch.tags = [...draftTags.value]
-    if (draftCategoryId.value === NEW_CATEGORY) {
-      const id = await createNewCategoryId(p?.newCategory)
-      if (id === null) return
-      patch.categoryId = id
-    } else if (draftCategoryId.value != null) {
-      patch.categoryId = draftCategoryId.value
-    }
   }
-  // organize 的 patch 起步是 {}，三个字段全被清空时它仍然是空的——那就不该发生任何写入
+  // patch 起步是 {}，字段全被清空时它仍然是空的——那就不该发生任何写入
   if (!patch || !Object.keys(patch).length) return
   // 只发出去，成功提示由写入方在 await 之后再弹。失败提示走 axios 拦截器（它已经做了去重），
   // 在这里先弹"已采纳"会变成先报喜再报错。
@@ -236,11 +187,6 @@ async function confirm() {
 </script>
 
 <style scoped>
-.adopt__now {
-  margin-bottom: var(--sp-8);
-  color: var(--cc-text-3);
-  font-size: var(--text-xs);
-}
 .adopt__warn {
   margin-bottom: var(--sp-8);
   color: var(--el-color-warning);

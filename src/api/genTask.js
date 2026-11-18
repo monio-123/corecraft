@@ -98,16 +98,6 @@ export function removeGenTask(id) {
 }
 
 /**
- * **采纳 AI 归类的结果**（写库）。
- *
- * <p>⚠️ **这是唯一一处把 AI 归类的建议写进 kp_topic 的地方** ——
- * 跑任务的时候只存建议（`kp_gen_step.result`），一个字都不写库。
- *
- * <p>`items` 里传的是**采纳那一刻解析出来的目录 id**（不是 AI 原始的路径字符串）：
- * 任务跑完到人点采纳之间目录可能变了 ⇒ 传 id 才谈得上"按当下清单重新校验"。
- *
- * @param {{stepIds: number[], items: Array<{stepId:number, categoryId:number|null, title?:string, tags?:string[]}>}} data
+ * ⚠️ **AI 归类的采纳端点已删**（2026-11-16 D2 AI 归类退役）：
+ * 归类任务型、批量归类结果采纳整条链下线 ⇒ 这个端点没有后端对应路径了。
  */
-export function adoptClassify(data) {
-  return request.post('/kp/gen-task/classify/adopt', data)
-}

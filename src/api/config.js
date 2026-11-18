@@ -42,6 +42,13 @@ export function clearMyConfig(prefix) {
   return request.delete('/sys/config/mine', { params: { prefix } })
 }
 
+/**
+ * 精确删掉我自己的指定键覆盖（不误伤同前缀子键）。
+ */
+export function clearMyConfigKeys(keys) {
+  return request.delete('/sys/config/mine', { params: { keys: keys.join(',') } })
+}
+
 /** 管理端：查行（scope=system 看系统默认，scope=user 看各人的覆盖） */
 export function listConfig(params) {
   return request.get('/sys/config/list', { params })

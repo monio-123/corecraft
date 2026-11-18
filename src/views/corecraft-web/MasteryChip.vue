@@ -15,6 +15,7 @@
 <script setup>
 import { computed } from 'vue'
 import { levelWord, levelColor } from './masteryLevels'
+import { isMasteryShown } from '../../utils/uiPrefs'
 
 const props = defineProps({
   /** 档位词（后端下发）：待巩固 / 基本掌握 / 熟练 / 稳定掌握 / 待复测 */
@@ -26,7 +27,7 @@ const props = defineProps({
  * 判定仍然只有后端那一份（MasteryCalculator），短词映射在 `masteryLevels.js`
  * （和概览那份是同一张表，改一处两边跟）。
  */
-const word = computed(() => (props.level ? levelWord(props.level) : ''))
+const word = computed(() => (isMasteryShown() && props.level ? levelWord(props.level) : ''))
 
 /**
  * 颜色 = `masteryLevels` 的**唯一档位色源**（2026-11-14 统一：原来 chip 走 tone 类的

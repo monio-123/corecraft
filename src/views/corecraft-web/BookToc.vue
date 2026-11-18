@@ -26,9 +26,9 @@
       :active="active"
       :mode="mode"
       :collapse-below-depth="1"
-      @pick="(c) => emit('pick', c)"
+      :current="current"
+      @pick="(c, intent) => emit('pick', c, intent)"
       @pick-topic="(t) => emit('pick-topic', t)"
-      @mode-change="(m) => emit('mode-change', m)"
       @add="(c) => openCreate(c.id, c.name)"
       @rename="openRename"
       @points="openPoints"
@@ -37,9 +37,6 @@
            和首页点进去的卡片视图是同一套（筛选条 + 分页网格），这里不自制第二套。 -->
       <template v-if="$slots.cards" #cards>
         <slot name="cards" />
-      </template>
-      <template v-if="$slots.tools" #tools>
-        <slot name="tools" />
       </template>
     </CategoryTree>
 
@@ -83,6 +80,8 @@ import CategoryTreeDialog from './CategoryTreeDialog.vue'
 const props = defineProps({
   /** 当前这个目录（{ id, name, ... }）—— 树的根。 */
   category: { type: Object, required: true },
+  /** **当前目录 id**（2026-11-16 D7）：面包屑当前截 = 树里高亮那行 = 卡片内容源。 */
+  current: { type: Number, default: null },
   /**
    * 这一屏现在是不是"在眼前"（**由页面传下来**）。
    *
@@ -105,7 +104,7 @@ function onTreeDone() {
 
 // ⚠️ **`structure-done`**（2026-11-12）：目录「写知识点」这条路建完结构后，
 // 目录树和知识点列表都要刷 —— 以前这个弹窗的 @done 没人绑 ⇒ 这条路上建完树不刷新。
-const emit = defineEmits(['pick', 'pick-topic', 'mode-change', 'structure-done'])
+const emit = defineEmits(['pick', 'pick-topic', 'structure-done'])
 
 /**
  * 树的根 = 当前目录。**用 computed 包一层**：`items` 每次渲染都新建一个数组的话，

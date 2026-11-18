@@ -84,7 +84,6 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { excerptOf, updateTopic } from './useCorecraftWebStore'
-import { aiEnabled } from './useAi'
 import RowMenu from './RowMenu.vue'
 import TopicTitleInput from './TopicTitleInput.vue'
 import MasteryChip from './MasteryChip.vue'
@@ -102,7 +101,7 @@ const props = defineProps({
   selected: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['click', 'delete', 'categorize', 'aiOrganize', 'masteryScope'])
+const emit = defineEmits(['click', 'delete', 'categorize', 'masteryScope'])
 
 const router = useRouter()
 
@@ -155,9 +154,6 @@ function openInNewTab() {
 // 不然用户点进去才知道。
 const ITEMS = computed(() => {
   const items = [{ command: 'categorize', label: '归类到目录', icon: 'folder' }]
-  if (aiEnabled.value) {
-    items.push({ command: 'aiOrganize', label: 'AI 归类', icon: 'sparkle' })
-  }
   items.push({
     command: 'masteryScope',
     label: '掌握度设置',
@@ -172,8 +168,6 @@ const ITEMS = computed(() => {
 function onCommand(cmd) {
   if (cmd === 'categorize') {
     emit('categorize', props.topic)
-  } else if (cmd === 'aiOrganize') {
-    emit('aiOrganize', props.topic)
   } else if (cmd === 'masteryScope') {
     emit('masteryScope', props.topic)
   } else if (cmd === 'newTab') {

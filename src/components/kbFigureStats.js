@@ -42,7 +42,6 @@ export const figStats = {
   repaired: 0,
   truncated: 0,
   renderFail: 0,
-  mermaidFail: 0,
   types: {}
 }
 

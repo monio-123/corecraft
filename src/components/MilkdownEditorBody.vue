@@ -316,7 +316,7 @@ import { copyText } from '../utils/clipboard'
 import { uploadFile, fileUrl } from '../api/file'
 import { imageNodePlugin, imageResizeView } from './kbImageNode'
 import { fileNodePlugin, fileNodeView } from './kbFileNode'
-import { mermaidPlugin } from './kbMermaid'
+import { kbfigPlugin } from './kbFig'
 import { $applyToVisualLines } from './kbLineBlocks'
 import { fontSchema, remarkFontSpan, remarkFontSpanStringify, setFontCommand, clearFormattingCommand, FONT_SIZES, FONT_FAMILIES } from './kbFontMark'
 import { fixEmphasisTail } from '../utils/kbMarkdown'
@@ -1747,8 +1747,8 @@ const { get, loading } = useEditor((root) =>
     // ⚠️ 同样必须排在 commonmark 之后（$node 按 id 覆盖，后注册的赢）。
     .use(fileNodePlugin())
     .use(fileNodeView())
-    // mermaid 代码块渲染成图。**纯视图层**：不改 schema、不改 markdown 解析与回写。
-    .use(mermaidPlugin())
+    // kbfig 代码块渲染成图。**纯视图层**：不改 schema、不改 markdown 解析与回写。
+    .use(kbfigPlugin())
     // 通用交互能力：项目走"单独引入"模式没用 @milkdown/kit 聚合包，
     // history / clipboard 都装在 node_modules 但未 use——这一行补齐 undo/redo + markdown 粘贴解析。
     .use(history)

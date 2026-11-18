@@ -14,6 +14,7 @@
 <script setup>
 import { computed } from 'vue'
 import { clampPercent } from '../../utils/progress'
+import { isMasteryShown } from '../../utils/uiPrefs'
 
 const props = defineProps({
   /** 目录三指标（store 的 getCategoryMastery）：{eligibleCount, learnedCount, assessedCount, mastery} */
@@ -29,7 +30,7 @@ const props = defineProps({
  * ⚠️ **row 为 null（还没拉聚合）时也不画**：画一条空轨道等于告诉用户
  * "这个目录学得不好"，而真相是"还不知道"。
  */
-const show = computed(() => (props.row?.eligibleCount ?? 0) > 0)
+const show = computed(() => isMasteryShown() && (props.row?.eligibleCount ?? 0) > 0)
 
 const fill = computed(() => {
   const m = props.row?.mastery

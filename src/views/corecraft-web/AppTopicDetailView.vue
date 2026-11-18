@@ -74,7 +74,6 @@
               <KbSvgIcon name="download" />
               导出
             </button>
-            <TopicTypeSelect v-model="editTypeId" class="title-type" @change="saveType" />
           </template>
           <!-- 标题：无边框 input，点哪都能输，失焦即存。placeholder 是「请输入标题」
                不是「未命名」——标题本来就常是空的（createTopic 传 title: ''），
@@ -134,9 +133,11 @@
                 <!-- 正文检索的入口**不在这里**（2026-11-09 用户：「复用现有的搜索框」）：
                      在详情页时顶栏搜索框就是本文实时检索（框里还带 ↑↓ 与命中计数），
                      原来这个「在本文检索」按钮连同正文里那个独立检索栏整套撤了。 -->
-                <button v-if="aiEnabled" class="hact-btn" type="button" title="AI 问答" @click="askOpen = true">
-                  <KbSvgIcon name="sparkle" />
-                </button>
+                <KbTooltip v-if="aiEnabled" content="AI 助手">
+                  <button class="hact-btn" type="button" @click="askOpen = true">
+                    <KbSvgIcon name="sparkle" />
+                  </button>
+                </KbTooltip>
                 <!-- 大纲按钮的 .stop 不能省：文档级「点空白收起浮层」监听在 document 上，
                      不挡冒泡的话刚点开就被它收走（沿用 Dock 时代的教训） -->
                 <button
@@ -219,286 +220,42 @@
       <p>这条知识不存在</p>
     </div>
 
-    <!-- 对这条知识提问。**零写入**：答完一个字都不回写 kp_topic。
-         放右侧抽屉而不是正文下方：核心场景是「对着正文提问」，常驻在正文下面时
-         笔记一长就被推到很远，抽屉则正文还在视野里、对话自己滚。
-         覆盖式（modal）不压缩正文宽度，正文不会跟着重排跳动。 -->
-    <!-- :size 绑 JS 值而不是写死 420px —— 见 askWidth 的注释。EP 的 size 会拼 px
-         后缀，所以它读不到 CSS 变量，只能吃一个真数字。 -->
-    <el-drawer v-model="askOpen" direction="rtl" :size="`${askW}px`" :with-header="false" modal>
-      <div class="ask">
-        <!-- 拖动把手。**hover 才现形**：常驻一条竖线既占地方又说不清是干什么的，
-             换成箭头让形状自己说话——往左 = 往宽里拖。
-             左边贴抽屉边是直的、只圆右边，像一个嵌在边缘的拉手而不是浮在上面的一块。
-             平时 opacity 0 但仍吃指针事件（否则 hover 永远触发不了），
-             所以对话区左边距要给够 20px，见 .ask__body -->
-        <div
-          class="ask__grip"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="拖动调整问答框宽度，双击恢复默认"
-          @pointerdown="onGripDown"
-          @dblclick="resetAskWidth"
-        >
-          <el-icon class="ask__grip__icon"><ArrowLeft /></el-icon>
-        </div>
-        <!-- 头：**两种模式**。聊天态给一个「随堂测验」入口，测验态给一个「返回问答」——
-             标题跟着变，现在是什么模式一眼看得出来。 -->
-        <div class="kb-drawer__head">
-          <span class="kb-drawer__title">{{ quizOn ? '随堂测验' : 'AI 问答' }}</span>
-          <div class="kb-drawer__ops">
-            <button v-if="!quizOn" type="button" class="kb-text-btn" @click="openQuiz">
-              随堂测验
-            </button>
-            <button v-else type="button" class="kb-text-btn" @click="closeQuiz">返回问答</button>
-            <button type="button" class="kb-icon-btn" aria-label="关闭" @click="askOpen = false">
-              <el-icon><Close /></el-icon>
-            </button>
-          </div>
-        </div>
-
-        <div class="ask__body" ref="askBodyRef">
-          <!-- 随堂测验：考当前这条知识。**答题、判分、讲解用的是同一个答题器**
-               （考试页也是它）。点开先查锚（TODO-exam-lifecycle §三）：在答的续答、
-               考完的回看，只有没考过才出新卷。 -->
-          <template v-if="quizOn">
-            <div v-if="quizPhase === 'loading'" class="kb-center">
-              <KbLoader size="sm" />
-              <p>{{ quizLoading }}</p>
-            </div>
-            <!-- 出题任务在后台：在跑的显示进度（可随时离开），出好的给「作答」 -->
-            <div v-else-if="quizPhase === 'task'" class="kb-center">
-              <template v-if="quizTask && quizTask.status === 'awaiting'">
-                <p>题已出好</p>
-                <el-button size="small" @click="answerQuizTask()">作答</el-button>
-                <!-- ⚠️ 出题结果可能是「出不了题」（模型判断内容不够）——
-                     直接给「重新生成」出口，不用先碰壁再回头（2026-11-15） -->
-                <el-button size="small" @click="regenerateQuiz()">重新生成</el-button>
-              </template>
-              <template v-else>
-                <KbLoader size="sm" />
-                <p>正在出题… 可随时离开</p>
-              </template>
-            </div>
-            <div v-else-if="quizPhase === 'error'" class="kb-center">
-              <p class="kb-error" :class="{ 'is-quiet': quizQuiet }">{{ quizError }}</p>
-              <!-- ⚠️ **安静错误也要给出口**（2026-11-15 修死循环）：「出不了题」这类
-                   不给按钮 ⇒ 用户永远出不来。出题没产出 = 重新生成，不是干等。 -->
-              <el-button v-if="quizQuiet" size="small" @click="regenerateQuiz">重新生成</el-button>
-              <el-button v-else size="small" @click="openQuiz">重试</el-button>
-            </div>
-            <template v-else>
-              <!-- 答完了给「重做本卷 / 重新生成」（与考试页同一对词、同一对语义）；
-                   正文在出卷后改过 = 安静提示（不拦截，重新生成就在旁边）。 -->
-              <div v-if="quizRunnerPhase === 'done' || quizStale" class="quiz-ops">
-                <span v-if="quizStale" class="quiz-ops__stale">正文在出卷后改过</span>
-                <span class="quiz-ops__gap"></span>
-                <template v-if="quizRunnerPhase === 'done'">
-                  <el-button size="small" @click="redoQuiz">重做本卷</el-button>
-                  <el-button size="small" @click="regenerateQuiz">重新生成</el-button>
-                </template>
-              </div>
-              <ExamRunner
-                :initial-questions="quizQuestions"
-                :attempt-id="quizAttemptId"
-                :note="quizNote"
-                :plan="quizPlan"
-                @phase="quizRunnerPhase = $event"
-              />
-            </template>
-          </template>
-
-          <!-- 引导问题常驻在对话上方，**不是空态才出现**。它们是一键动作（一按就问），
-               不是"没话说时才给的选择题"——挂在 v-else-if 上意味着问一轮就没了，
-               想再用只能刷新页面重开。跟着对话一起滚，不占固定高度：
-               对话短的时候一直看得见，长了往上滚一截就有。
-
-               问题来自配置树上的「引导问题」那组，改问题在系统配置里改，不用发版。
-               拉不到就什么都不显示（后端返回空列表），不该为一个可有可无的列表报错。
-
-               ⚠️ **这一块和下面的对话区是两个独立的 v-if，不是 v-else-if**：
-               挂在同一条 else-if 链上时，引导问题会把对话区整个顶掉 ——
-               **问完看不到自己的问题和回答**（2026-11-04 修，之前一直是这样）。
-               测验态用 `!quizOn` 让位：那时候抽屉里是答题器，不是对话。 -->
-          <div v-if="!quizOn && guideQuestions.length" class="ask__guide">
-            <button
-              v-for="q in guideQuestions"
-              :key="q.key || q.label"
-              type="button"
-              class="ask__chip"
-              @click="askNow(q)"
-            >
-              {{ q.label }}
-            </button>
-          </div>
-
-          <!-- 一轮问答 = 一个 .turn：提问气泡 + 思考过程 + 回答 + 复制。
-               组内紧、组间松，一眼能看出哪句答哪句。 -->
-          <template v-if="!quizOn && messages.length">
-            <div v-for="(m, i) in messages" :key="i" class="turn">
-              <div class="bubble is-user">{{ m.question }}</div>
-
-              <!-- 提交给模型的东西。默认折着——大部分时候没人想看，但 AI 答得不对时
-                   这是唯一能核对"它到底看见了什么"的地方（附的目录清单对不对、
-                   任务描述是不是被人改歪了） -->
-              <details v-if="m.prompt" class="sent">
-                <summary>发送给 AI 的内容</summary>
-                <pre class="sent__body">{{ m.prompt }}</pre>
-              </details>
-
-              <!-- 思考过程。**只要这个框存在，它就是展开的**——`open` 是静态属性，
-                   不是绑定。之前试过 `:open="m.thinking"`（正文一到就收起），踩过一次：
-                   正文往往比思考短得多，思考刚展开就被合上，模型明明给了 reasoning_content、
-                   DOM 里也确实有内容，用户看到的却是"没有思考过程"——框一直在，内容也一直在，
-                   只有开合骗人。绑定 `:open="m.thinking || !!m.reasoning"` 也一样是废写法：
-                   那个条件和 v-if 完全相同，等于恒真，直接写成静态 open 就行。
-                   要看的人自己点 summary 合；不想看的人一开始就没点开过它。
-
-                   ⚠️ v-if 也不能写成 `m.reasoning` —— 第一帧 reasoning 到达之前它是空串，
-                   那样框根本不在 DOM 里，流式过程一个字都看不到。所以条件是 `thinking || reasoning`：
-                   流式期间（thinking=true）框就在、内容往里长。
-                   非思考模型（deepseek-flash 这类）结束时 reasoning 为空 → 框自动消失。 -->
-              <details v-if="m.thinking || m.reasoning" class="think" open>
-                <summary>思考过程</summary>
-                <div v-if="m.reasoning" class="think__body">{{ m.reasoning }}</div>
-                <div v-else class="think__waiting">正在思考…</div>
-              </details>
-
-              <!-- 流式活着的信号。**必须独立于上面的思考框**：非思考模型正文一到
-                   那个框就整个没了，计数器跟着一起没——恰好在最需要它的时候消失。
-                   数字往上爬 = 真在流；从 0 跳到全长 = 上游整段缓冲住了才给我们。 -->
-              <div v-if="m.received && !m.done" class="think__count">
-                正在生成… 已接收 {{ m.received }} 字
-              </div>
-
-              <!-- 回答：**按 markdown 渲染**（2026-11-05 用户定）。
-                   模型输出的是 markdown，直接 `{{ m.answer }}` 打印出来就是一堆
-                   `##` / `|` / `**` 符号 —— 用户看到的是**源码**，不是回答。
-                   渲染用的是**正文编辑器自己的解析器**（同一套 schema、同一套 toDOM）
-                   ⇒ 标题、列表、表格、代码块都是排好版的，和知识点正文一个样。
-                   出错时那行是纯文案（不是 markdown），照原样打印。 -->
-              <div v-if="m.answer" class="bubble is-ai" :class="{ 'is-error': m.error }">
-                <div v-if="m.html && !m.error" class="md-answer milkdown-editor-body">
-                  <div class="ProseMirror" v-html="m.html"></div>
-                </div>
-                <template v-else>{{ m.answer }}</template>
-              </div>
-              <div class="ask__ops">
-                <button
-                  v-if="m.answer && !m.error"
-                  type="button"
-                  class="kb-text-btn"
-                  @click="copyText(m.answer)"
-                >
-                  复制
-                </button>
-                <!-- 应用到正文：**这一轮交回来的东西能拿去改正文**，才给这个入口 ——
-                     ① 回答里带着【正文开始】/【正文结束】：AI 按约定交回了一份
-                        **改写后的整篇正文** ⇒ 应用 = 整篇替换（增/删/改任意组合都算）；
-                     ② 从正文里选了一段发起的那一轮（m.spot）：把这轮内容追加到选中段之后。
-                     两者都没有 ⇒ 没有"写到哪里"这回事 ⇒ 不给入口。
-                     追问也会继承同一个锚点，所以"不满意就让 AI 接着调、调好了再写"这条路径是通的。
-                     图标是「文档+对勾」：把这段内容确认进正文。 -->
-                <button
-                  v-if="m.answer && !m.error && (hasBodyMark(m.answer) || m.spot)"
-                  type="button"
-                  class="kb-text-btn"
-                  @click="openInsert(m, 'body')"
-                >
-                  <el-icon class="kb-text-btn__ico"><DocumentChecked /></el-icon>应用到正文
-                </button>
-                <!-- 应用为新的知识点：**不要求有选段** —— 新知识点自己就是去处。
-                     没有选段就没有"从哪儿来、往哪连"，那就不建链接，只建这一条。
-                     图标是「文档+加号」，跟上面那枚「文档+对勾」成一对。 -->
-                <button
-                  v-if="m.answer && !m.error"
-                  type="button"
-                  class="kb-text-btn"
-                  @click="openInsert(m, 'topic')"
-                >
-                  <el-icon class="kb-text-btn__ico"><DocumentAdd /></el-icon>应用为新的知识点
-                </button>
-                <!-- 采纳：只挂在引导问题那一轮（adoptFieldOf 对自己敲的问题返回 null）。
-                     自己敲的答案没有"该写进哪个字段"的语义，要把它写进正文是另一件事 -->
-                <button
-                  v-if="m.answer && !m.error && adoptFieldOf(m.questionKey)"
-                  type="button"
-                  class="kb-text-btn"
-                  @click="openAdopt(m)"
-                >
-                  用这个
-                </button>
-              </div>
-            </div>
-          </template>
-        </div>
-
-        <!-- 底部一个胶囊：左边是输入框，右下角依次是「用哪个 API」和发送/停止。
-             发送和停止是**同一个动作的两种状态**（不在流 = 问，在流 = 中断），
-             所以合成一个圆钮：两个并排的按钮会把"能按哪个"这个问题推给用户。
-             测验态没有这一条：那儿是答题器自己在管。 -->
-        <div v-if="!quizOn" class="ask__foot">
-          <div class="ask__composer">
-            <!-- ⚠️ 必须写 submitAsk()，不能写 submitAsk。裸传函数名时 Vue 会把 KeyboardEvent
-                 当第一个实参送进 submitAsk(questionKey = '') —— questionKey 就成了一个事件对象，
-                 JSON.stringify 出来是 {}，后端 Jackson 直接报
-                 "Cannot deserialize java.lang.String from Object value"，请求 46ms 就被拒。
-                 而引导问题那条路是 askNow(q) → submitAsk(q.key)，传的是真字符串，所以同一个页面
-                 上「点引导问题能出答案、手敲回车就报错」。看起来像两回事，其实是同一个函数。 -->
-            <!-- 无 placeholder：用户明确要的就是一个空白输入框。上面那四个引导问题
-                 常驻在对话顶部，已经是这块区域的主要入口，输入框只是个补充 -->
-            <input
-              v-model="askInput"
-              class="ask__input"
-              :disabled="asking"
-              @keyup.enter="submitAsk()"
-            />
-
-            <!-- 用哪个 API 调。存 localStorage（见 useAi），下拉里只列配全了的能用的 -->
-            <el-dropdown
-              trigger="click"
-              :persistent="ddKeepMounted"
-              @visible-change="onDropdownShow"
-              @command="useEndpoint"
-            >
-              <span class="ask__model">
-                {{ currentEndpoint ? currentEndpoint.name : '选 API' }}
-                <i class="ask__caret" />
-              </span>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item
-                    v-for="e in aiEndpoints"
-                    :key="e.id"
-                    :command="e.id"
-                    :disabled="!e.ready"
-                  >
-                    <!-- 只显示名字。原来是「名字 · 模型」两段，而名字本来就是用户自己起的、
-                         通常就照着模型名写的（"deepseek-flash · deepseek-flash"），
-                         同一句话在一行里出现两遍。模型名在设置页那行副标题里已经有了 -->
-                    {{ e.name }}
-                  </el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-
-            <button
-              type="button"
-              class="ask__send"
-              :class="{ 'is-stop': asking }"
-              :disabled="!asking && !canAsk"
-              :aria-label="asking ? '停止生成' : '提问'"
-              @click="asking ? cancelAsk() : submitAsk()"
-            >
-              <el-icon>
-                <VideoPause v-if="asking" />
-                <Top v-else />
-              </el-icon>
-            </button>
-          </div>
-        </div>
-      </div>
-    </el-drawer>
+    <TopicAskDrawer
+      v-model:open="askOpen"
+      v-model:ask-input="askInput"
+      :ask-w="askW"
+      :asking="asking"
+      :messages="messages"
+      :can-ask="canAsk"
+      :guide-questions="guideQuestions"
+      :current-endpoint="currentEndpoint"
+      :ai-endpoints="aiEndpoints"
+      :quiz-on="quizOn"
+      :quiz-phase="quizPhase"
+      :quiz-loading="quizLoading"
+      :quiz-questions="quizQuestions"
+      :quiz-plan="quizPlan"
+      :quiz-attempt-id="quizAttemptId"
+      :quiz-note="quizNote"
+      :quiz-error="quizError"
+      :quiz-quiet="quizQuiet"
+      :quiz-stale="quizStale"
+      :quiz-task="quizTask"
+      @body-ref="(el) => { askBodyRef = el }"
+      @grip-down="onGripDown"
+      @reset-width="resetAskWidth"
+      @submit-ask="submitAsk"
+      @ask-now="askNow"
+      @cancel-ask="cancelAsk"
+      @use-endpoint="useEndpoint"
+      @open-insert="openInsert"
+      @open-adopt="openAdopt"
+      @open-quiz="openQuiz"
+      @close-quiz="closeQuiz"
+      @answer-quiz-task="answerQuizTask()"
+      @redo-quiz="redoQuiz"
+      @regenerate-quiz="regenerateQuiz"
+    />
 
     <!-- 采纳预览。放在抽屉外面但还在这一层的 template 里：它针对的是抽屉里那一轮问答，
          关掉抽屉不该把一个已经打开的确认框一起带走 -->
@@ -549,48 +306,35 @@ defineOptions({ name: 'AppTopicDetail' })
 import { ref, computed, onMounted, onBeforeUnmount, onActivated, onDeactivated, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { useDropdownKeepMounted } from '../../utils/dropdown'
-import { ArrowLeft, Close, DocumentAdd, DocumentChecked, Top, VideoPause } from '@element-plus/icons-vue'
 import MilkdownEditor from '../../components/MilkdownEditor.vue'
 import { exportPdf, exportWord } from '../../utils/exportDoc'
 import { htmlOf } from '../../utils/kbDocHtml'
 import KbSvgIcon from '../../components/corecraft-web/KbSvgIcon.vue'
+import KbTooltip from '../../components/corecraft-web/KbTooltip.vue'
 import KbLoading from '../../components/corecraft-web/KbLoading.vue'
 import KbSkeletonDoc from '../../components/corecraft-web/KbSkeletonDoc.vue'
-import KbLoader from '../../components/corecraft-web/KbLoader.vue'
 import TopicOutline from './TopicOutline.vue'
 import TopicTitleInput from './TopicTitleInput.vue'
+import TopicAskDrawer from './TopicAskDrawer.vue'
 // ⚠️ **MasteryBadge / LearnedToggle 不再在这里**（2026-11-12）：
 //     掌握度搬到目录书（卡片档位签 + 书页概览条）；
 //     「标记已学」按钮整个取消（考一次就等于学过）。
 import AiAdoptDialog from './AiAdoptDialog.vue'
 import AiInsertDialog from './AiInsertDialog.vue'
-import ExamRunner from './ExamRunner.vue'
 // ⚠️ 出卷那几个函数（paperTaskPayload / consumePaperTask / loadExamSpec / typesBadNote）在
 // `useQuiz.js`（随堂测验自成一块）⇒ 这里不再直接引。
 import { useQuiz } from './useQuiz'
 import { useImmersive } from './useImmersive'
-import TopicTypeSelect from './TopicTypeSelect.vue'
 import {
   aiEnabled, useEndpoint, currentEndpoint, aiEndpoints
 } from './useAi'
 // ⚠️ 流式问答那套（`ask` / 引导问题 / 改写规范 / 答案渲染 / 抽屉宽度）
 // 搬进了 `useTopicAsk.js` ⇒ 这里不再直接引。
 import { useTopicAsk } from './useTopicAsk'
-import { adoptFieldOf } from './aiAdopt'
-import { hasBodyMark } from './aiEdit'
-import { copyText } from '../../utils/clipboard'
+import { useTopicBodyFind } from './useTopicBodyFind'
+import { useTopicInsert } from './useTopicInsert'
 import { toCategoryTree } from '../../utils/categoryTree'
-// AI 端点下拉的「首开保持挂载」（utils/dropdown.js）
-const { keepMounted: ddKeepMounted, onDropdownShow } = useDropdownKeepMounted()
-import { topicHref } from '../../utils/categoryNav'
-import { keywordFromRoute } from '../../utils/routeQuery'
-import {
-  fetchTopic, updateTopic, confirmDeleteTopic, resolveTags,
-  getCategories, createTopic, resolveTopicTypeId, openTopicCategoryId,
-  bodySearchKeyword, bodySearchHits, bodySearchJump,
-  fetchTopicIndexFresh, getCategorySubtreeIds, getCategoryPath, getTopicIndex, ensureCategoriesLoaded
-} from './useCorecraftWebStore'
+import { fetchTopic, updateTopic, confirmDeleteTopic, resolveTags, getCategories, openTopicCategoryId, fetchTopicIndexFresh, getCategorySubtreeIds, getCategoryPath, getTopicIndex, ensureCategoriesLoaded } from './useCorecraftWebStore'
 
 const route = useRoute()
 const router = useRouter()
@@ -850,114 +594,10 @@ let bodyTopChain = Promise.resolve()
  * <p>⚠️ 判据放在**本组件 setup 作用域**：HMR 重建的是编辑器子组件，详情页实例还在
  * ⇒ 账不会跟着编辑器一起丢；整页刷新则 setup 重跑、账归零 ⇒ 刷新后仍定位一次。
  */
-let lastLocatedKey = ''
-
-/**
- * 排一件事到「归顶之后」。
- *
- * <p>⚠️ **每一步都要兜住错**：链条是一串 promise，**中间任何一步抛错，
- * 后面排着的（定位）就再也不执行了** —— 而这个链条上排的恰恰是
- * 「归顶」「自动定位」这些**用户看得见的动作**（一个失败就"整条都没生效"，
- * 而界面上什么异常都看不到）。⇒ 每步都 catch 掉，让链条继续往下走。
- *
- * @param {Function} fn 要做的事
- * @returns {Promise} 这件事做完的 promise
- */
-function afterBodyTop(fn) {
-  bodyTopChain = bodyTopChain
-    .then(() => new Promise((resolve) => {
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
-    }))
-    .then(fn)
-    .catch(() => {})
-  return bodyTopChain
-}
-
-/**
- * 换知识 / keep-alive 切回：正文归顶。双 rAF 等 Milkdown 渲染完再量（nextTick 只保证
- *    Vue 的 DOM 更新完，**不保证浏览器已经算完布局**，Milkdown 还在异步起）。
- *    ⚠️ 只在「换了一条 / 切回来」时调，**不挂 watch(topic)** —— 自动保存也换 topic 快照，
- *    挂上去就是"每存一次把人拽回页顶"。 */
-function resetBodyTop() {
-  afterBodyTop(() => {
-    const pm = detailRef.value?.querySelector('.doc .ProseMirror')
-    if (pm) pm.scrollTop = 0
-    onBodyScroll()
-  })
-}
-/** 编辑器就绪：把进度监听挂到建出来的正文上（ProseMirror 是异步渲染的，onMounted 时还不在） */
-function onEditorReady() {
-  attachBodyScroll()
-  // 编辑器好了才谈得上加装饰（正文还没渲染时落不下去）
-  applyAutoLinks()
-  // 编辑器好了才谈得上高亮（正文还没渲染时落不下去）⇒ 这时补做自动定位。
-  // ⚠️ **必须在这里补**（2026-11-09 用户报「点进卡片后没有做自动定位」）：
-  // 首次进详情页时编辑器还没建好，load() 里那次必然落空 ⇒ 高亮一句都不画，
-  // 而界面上什么异常都看不出来（看着就是"搜索失灵了"）。
-  locateBodySearch()
-}
-
-/**
- * 导出 .md（工具栏「导出 → Markdown」）：正文由编辑器随事件带上，
- * 这里只管**文件名**（它知道这条知识叫什么）和落盘。纯前端，零后端。
- */
-function onExportMd(md) {
-  const blob = new Blob([md || ''], { type: 'text/markdown;charset=utf-8' })
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  // Windows 文件名禁用字符替换成下划线（标题里出现就存不下来）
-  a.download = `${(topic.value?.title || '知识').replace(/[\\/:*?"<>|]/g, '_')}.md`
-  a.click()
-  URL.revokeObjectURL(a.href)
-}
-
-/** 「导出」按钮：菜单由编辑器弹（它有原文），按钮位置由页面定 */
-const exportBtn = ref(null)
-function openExport() {
-  editorRef.value?.openExportMenu(exportBtn.value)
-}
-
-/**
- * 导出 PDF / Word（工具栏「导出」菜单，2026-11-16 真实现）。
- *
- * HTML 由**编辑器自己的 DOMSerializer** 产出（htmlOf，与对比预览 / AI 回答同源——
- * 自定义 nodeView 的渲染带着走，不重新解析）；PDF/Word 的包装在 utils/exportDoc.js。
- * 这里只管**文件名**。
- * ⚠️ **必须用 htmlOf(doc) 而不是 doc.innerHTML**：doc 是 ProseMirror 文档节点、
- * 没有 innerHTML ⇒ 拿它会得到空串 ⇒ 打印出一张白纸（2026-11-16 实踩）。
- */
-function onExportFile({ format }) {
-  const doc = editorRef.value?.docOf(editContent.value || '')
-  const html = htmlOf(doc)
-  if (!html) {
-    ElMessage.error('编辑器还没就绪，稍后再试')
-    return
-  }
-  const name = (topic.value?.title || '知识').replace(/[\\/:*?"<>|]/g, '_')
-  if (format === 'pdf') {
-    exportPdf(html, name)
-  } else if (format === 'word') {
-    exportWord(html, name)
-  }
-}
-onActivated(() => {
-  // keep-alive 切回：DOM 脱插再插回，元素引用过期，重挂一次；阅读位置按老规矩归顶
-  attachBodyScroll()
-  resetBodyTop()
-  // 切回来时编辑器是复用的实例 ⇒ @ready 不会再触发 ⇒ 装饰要重新推一遍
-  //（文档没变时是幂等的：同一个词表算出同一批位置）
-  applyAutoLinks()
-  // ⚠️ **切回时也要重新定位**（2026-11-09 用户报「点进卡片后没有做自动定位」）：
-  // keep-alive 复用实例 ⇒ 编辑器早就建好了 ⇒ `@ready` **不会再触发**
-  // ⇒ 只在 onEditorReady 里定位的话，「切走再切回」这条路径永远定位不了。
-  // 这里补一次（幂等：定位到第一处 = 同一个位置）。
-  locateBodySearch()
-})
 onDeactivated(() => {
   detachBodyScroll()
-  // 离开详情页 = 这次「进场」结束 ⇒ 下次再进来（哪怕同一条、同一个词）照旧自动定位。
-  // HMR 重建编辑器不会触发 deactivate ⇒ 账留着，正是上面那条判据要的效果。
-  lastLocatedKey = ''
+  // 离开详情页 = 这次「进场」结束 ⇒ 下次再进来照旧自动定位；HMR 不触发 deactivate ⇒ 账留着。
+  clearLocateTrack()
 })
 onBeforeUnmount(detachBodyScroll)
 
@@ -970,117 +610,11 @@ function onOutline(list) {
   }
 }
 
-// ============ 正文检索（2026-11-09） ============
-//
-// **顶栏搜索框就是本文的检索框**（用户：「复用现有的搜索框就行，那个向上或者下的跳
-// 也加在搜索框中就行」）—— 这里只留「词 → 编辑器」「↑↓ 命令 → gotoMatch」两件事，
-// 输入框和按钮都在壳（AppLayout）的顶栏里，命中计数报回 store 的 bodySearchHits。
-//
-// ⚠️ **原来正文里还有一个独立检索栏（BodySearchBar），整套删了**：它自持一份词
-// ⇒ 「搜过一个东西就删不掉了，不管怎么刷新，只要进新目录就回带上那个搜索」——
-// 词存了三处（URL `?q=`、顶栏框、独立栏），清一处清不掉另两处。
-// 现在**词只有一份**（顶栏框 ⇄ URL `?q=` ⇄ bodySearchKeyword），清了就是清了。
-//
-// ⚠️ **等编辑器就绪才定位**：编辑器没建好时正文还没渲染，高亮落不下去
-// ⇒ onEditorReady 再补一次（load 里那次可能白跑，函数幂等，跑两遍无害）。
-
-/**
- * 把词交给编辑器高亮，同步命中计数。
- *
- * @param {string} kw 检索词（空 = 清高亮）
- * @param {boolean} [gotoFirst] true = 定位到第一处命中（从列表页带词进来 / 换词）；
- *   打字时**不传** —— 边打字边跳会把正文滚得上下乱飞。
- */
-function applyBodySearch(kw, gotoFirst) {
-  const ed = editorRef.value
-  const n = ed ? ed.searchInBody(kw) : 0
-  bodySearchHits.value = { total: n, index: 0 }
-  if (gotoFirst && n > 0 && ed.gotoMatch(0)) {
-    bodySearchHits.value = { total: n, index: 1 }
-    return true
-  }
-  // 调用方靠这个返回值记「这次到底定位成没成」——没成就不记，
-  // 下次就绪信号还能再试（编辑器晚建好 / 命中还没渲染出来都属于这类）。
-  return false
-}
-
-/**
- * **检索词该是什么**：URL 的 `?q=` 是**唯一权威**（列表页那次搜索带过来的）。
- *
- * <p>⚠️ **不读 store 通道**（`bodySearchKeyword`）：那条通道的写方是壳的输入框，
- * 而壳的输入框初值又取自 URL ⇒ 两者本来同源，但**通道是双向的**（详情页写它、
- * 壳读它），用它当权威会绕一圈（URL → 壳 → 通道 → 详情页）⇒ 多一份可能不同步的真相。
- */
-function bodySearchKeywordOfRoute() {
-  return keywordFromRoute(route).trim()
-}
-
-/**
- * **正文里检索这个词并定位到第一处**（幂等）。
- *
- * <p>⚠️ **必须有"没成时再等等"这一步**（2026-11-09 用户报「点进卡片后没有做自动定位」）：
- * 详情页是 **keep-alive 复用**的、编辑器也是**复用**的 ⇒ 进详情页时：
- * - **首次进来**：编辑器还没建好（`loading` 还是 true）⇒ 这一步什么也做不了；
- * - **切进来**（复用实例）：编辑器早就好了 ⇒ 这一步立刻生效。
- * 原来只在这一处调一次 ⇒ 首次进来必然落空（症状：一点卡片进去，正文里明明有那个词，
- * 却一处都不高亮，**界面上看不出任何异常**）。
- * ⇒ **等编辑器就绪（@ready）再补一次**，两条路径都覆盖到。
- *
- * <p>⚠️ **定位排在「归顶」之后**（2026-11-09 用户报「点进去还是没有自动跳转」）：
- * 归顶是异步的（双 rAF），定位也是 ⇒ 两者都走 {@link afterBodyTop} 那条队列，
- * 顺序 = 代码里的顺序 ⇒ **归顶不会再把定位滚过去的位置抹回 0**。
- * （原来归顶先排队、定位立刻执行 ⇒ 归顶后落地 ⇒ 定位被吃掉。）
- */
-function locateBodySearch() {
-  const kw = bodySearchKeywordOfRoute()
-  if (!kw) return
-  const key = String(route.params.id) + '|' + kw
-  afterBodyTop(() => {
-    // 等编辑器就绪（首次进来时还没建好 ⇒ 这一步什么也做不了，
-    // 由 onEditorReady 补做一次）
-    if (!editorRef.value) return
-    // 队列里可能排了好几个（进场三条路径 / 编辑器被重建）⇒ 落地时再判一次：
-    // 已经滚过这一处就只把高亮补回去，**不抢用户的滚动位置**。
-    if (key === lastLocatedKey) {
-      applyBodySearch(kw, false)
-      return
-    }
-    if (applyBodySearch(kw, true)) lastLocatedKey = key
-  })
-}
-
-/** 顶栏搜索框里的字变了 ⇒ 实时在这篇正文里高亮（不打断打字，不跳）。 */
-watch(bodySearchKeyword, (kw) => {
-  // 详情页之外不响应（通道的写方本来就只在详情页开）
-  if (route.name !== 'AppTopicDetail') return
-  applyBodySearch(kw, false)
-})
-
-/** 跳到下一处命中（到底了回到第一处）。 */
-function jumpNext() {
-  const { total, index } = bodySearchHits.value
-  if (!total) return
-  // index = 显示值（0 = 还没定位）⇒ 下一处的 0 起位置就是它本身；
-  // 已在最后一处 ⇒ 回第一处（0 起位置 0）。
-  const next = index >= total ? 0 : index
-  if (editorRef.value?.gotoMatch(next)) bodySearchHits.value = { total, index: next + 1 }
-}
-
-/** 跳到上一处命中（到头了回到最后一处）。 */
-function jumpPrev() {
-  const { total, index } = bodySearchHits.value
-  if (!total) return
-  // 0 起位置：显示值 - 1；还没定位 / 在第一处 ⇒ 回最后一处。
-  const prev = index <= 1 ? total - 1 : index - 2
-  if (editorRef.value?.gotoMatch(prev)) bodySearchHits.value = { total, index: prev + 1 }
-}
-
-/** 顶栏 ↑↓ 按钮（或回车）下达的跳转命令 ⇒ 跳完把命令清掉（连点两次要跳两次）。 */
-watch(bodySearchJump, (dir) => {
-  if (!dir) return
-  if (dir === 'next') jumpNext()
-  else if (dir === 'prev') jumpPrev()
-  bodySearchJump.value = ''
+// ============ 正文检索（拆出到 useTopicBodyFind.js） ============
+const { applyBodySearch, locateBodySearch, clearLocateTrack } = useTopicBodyFind({
+  route,
+  editorRef,
+  afterBodyTop
 })
 
 /** 点大纲条目 → 滚到那个标题 */
@@ -1099,8 +633,6 @@ const editContent = ref('')
 // 字数（meta 行用）：去空白字符数。markdown 符号也算在内 —— 这是"这篇大概多长"的
 // 概览口径，不是统计报表，为它做一套 markdown 清洗不值得。
 const wordCount = computed(() => (editContent.value || '').replace(/\s/g, '').length)
-// 类型：本地草稿，saveType 落库。可能是悬空的旧 id，落库前用 resolveTopicTypeId 收口
-const editTypeId = ref(null)
 
 // 内容自动保存状态机：'idle'（不显示）| 'saving'（debounce 中 / 调用中）| 'saved'（保存成功，2s 后回 idle）
 const saveStatus = ref('idle')
@@ -1155,7 +687,6 @@ async function load() {
     // 外层改 v-model 不会更新 ProseMirror 的视图（见 MilkdownEditorBody 的注释）。
     // 第一次进来时编辑器还没建出来（editorRef 是 null）⇒ 不用换，它自己会用新值建出来。
     editorRef.value?.switchContent(t.content || '')
-    editTypeId.value = t.typeId ?? null
     // ⚠️ **换完正文要重算「够不够长值得画线」**（2026-11-10；2026-11-11 门槛收紧为「余量 > 一屏」）：`switchContent` 走 `suppressEmit`
     // ⇒ **不上报 `update:modelValue`** ⇒ `editContent` 不变 ⇒ 上面那条 watch 不会触发
     // ⇒ 不在这里补一次的话，**换知识点后进度线的显隐会停在上一条的状态**。
@@ -1229,11 +760,6 @@ watch(editContent, (newVal) => {
   }, 1500)
 })
 
-// 类型切换后立即落库。typeId 可能悬空（字典项被软删），先收口成清单里真实存在的 id
-async function saveType(id) {
-  if (!topic.value) return
-  await applyPatch({ typeId: resolveTopicTypeId(id) })
-}
 
 // ============ 对这条知识提问（AI，零写入） ============
 // 整套逻辑搬到了 `useTopicAsk.js`（2026-11-11 拆分）：抽屉宽度 / 流式问答 /
@@ -1298,13 +824,6 @@ watch(
   { immediate: true }
 )
 
-/** 答题器内部阶段（ready / grading / done）——答完了才给「重做本卷 / 重新生成」。
- *  抽屉一关就复位：重开时答题器挂载会重新报一次 phase，别拿上一场的 done 残值开门。 */
-const quizRunnerPhase = ref('ready')
-watch(quizOn, (on) => {
-  if (!on) quizRunnerPhase.value = 'ready'
-})
-
 const adoptOpen = ref(false)
 const adoptTurn = ref(null)
 // 包一层 computed 才是响应式的：getCategories() 只是读 categories.value，
@@ -1337,7 +856,6 @@ function syncTopicSnapshot(patch) {
   if (patch.title !== undefined) next.title = patch.title
   if (patch.content !== undefined) next.content = patch.content
   if (patch.categoryId !== undefined) next.categoryId = patch.categoryId
-  if (patch.typeId !== undefined) { next.typeId = patch.typeId; editTypeId.value = patch.typeId }
   // ⚠️ 标签仍然会**跟着 AI 采纳写进去**（后台逻辑保留），只是界面上不再显示/编辑它。
   // `resolveTags` 那个口子在 store 里，也保留着。
   if (patch.tags) next.tags = resolveTags(patch.tags)
@@ -1366,240 +884,32 @@ async function onAdoptConfirm(patch) {
   ElMessage.success('已采纳')
 }
 
-// ============ 选区提问 → 写入正文 ============
-// 链路：正文里选中一段 ⇒ 浮层里补一句问题 ⇒ 问答抽屉里问 ⇒ 答案下方「写入正文」
-//        ⇒ 左右对比确认框 ⇒ 确认后写进**选中段落之后**（另起一段）。
-//
-// **写库不在这一步**：写回编辑器后，编辑器照常上报 markdownUpdated
-// → v-model 变了 → 上面那条 1.5s 防抖的自动保存自己会跟上。
-// 走那一条链而不是这里直接 updateTopic，是为了**只有一条保存路径**
-// （正文本来就有自动保存，再单开一条就成了两处各写一遍）。
-
-/** 同样转发编辑器的"取一段块"（对比框的左栏用它） */
-const blocksInRange = (from, to) => editorRef.value?.blocksInRange(from, to) ?? []
-
-/**
- * 正文里选中一段后，浮层提交上来的东西。
- *
- * - text：选中的那段文字
- * - supplement：用户补的那句问题（可以为空）
- * - blockFrom / blockTo：选中段落所在的块区间（写入的锚点）
- * - blockText：那时候这段的纯文本（写之前要核对正文有没有被改过）
- */
-function onAskAi(payload) {
-  askOpen.value = true
-  // 测验态里没有对话区，这一轮问答会看不见 ⇒ 回到问答（测验本来就是内存里的一次性东西）
-  if (quizOn.value) closeQuiz()
-  submitAsk('', {
-    question: buildSpotQuestion(payload.text, payload.supplement),
-    spot: {
-      blockFrom: payload.blockFrom,
-      blockTo: payload.blockTo,
-      blockText: payload.blockText
-    }
-  })
-}
-
-/**
- * 选区提问的问法。
- *
- * **为什么把选中的原文塞进问题里**：后端只把整篇正文当上下文，
- * 不告诉模型"你看的是哪一段" —— 不点名，它会把整篇都解释一遍。
- *
- * ⚠️ **前缀不能说死"解释"**（2026-11-05 改）：
- * 用户在这一步可能说的不是"解释"，而是"把这段替换成更清晰的写法"。
- * 前缀里写死"请解释"，模型就会去解释 ⇒ 交回来的是一段话，不是可应用的新正文。
- * ⇒ **用户自己写了话，他的话就是这次的要求**，前缀只负责点明"是这一段"。
- * 没写（留空回车）⇒ 默认要解释这一段。
- */
-function buildSpotQuestion(text, supplement) {
-  const segment = String(text || '').trim()
-  const extra = String(supplement || '').trim()
-  if (extra) return `正文里的这一段：\n\n${segment}\n\n${extra}`
-  return `请解释正文里的这一段：\n\n${segment}`
-}
-
-// ---------- 「应用到正文 / 应用为新的知识点」的确认框 ----------
-const insertOpen = ref(false)
-/** 要应用的那段回答（markdown） */
-const insertAnswer = ref('')
-/** 写入锚点 */
-const insertSpot = ref(null)
-/** 'body' = 应用到正文；'topic' = 应用为新的知识点 */
-const insertMode = ref('body')
-/** **这一轮发给 AI 时用的正文本体**（改写模式左栏的"原文"就是它） */
-const insertBase = ref('')
-/** 正在建新知识点（落库那条链） */
-const insertSaving = ref(false)
-
-function openInsert(turn, mode = 'body') {
-  insertAnswer.value = turn.answer || ''
-  insertSpot.value = turn.spot || null
-  insertMode.value = mode
-  insertBase.value = turn.bodyAtAsk || ''
-  insertAdjustError.value = ''
-  insertAdjustTurn.value = null
-  insertOpen.value = true
-}
-
-/**
- * 确认应用。
- *
- * **三种动作**（由弹窗那一侧定 —— 它知道这一轮交回来的是"一份改写后的整篇正文"
- * 还是"一段解释"）：
- * - `replace`：**整篇替换**（AI 按约定交回了改写后的完整正文）
- * - `insert`：追加到选中段之后
- * - `topic`：建一条新知识点，并在原正文里留一条指向它的链接
- *
- * **两种"正文被改过"的拒绝**：
- * - `replace`：问完之后用户又编辑了正文 ⇒ 这份改写是基于旧正文的，
- *   写进去会把他的修改盖掉 ⇒ 让他重新问一次；
- * - `insert`：选区是"当时"选的，中间用户又编辑了正文 ⇒ 块位置会跟着正文变，
- *   写进去的东西可能落在错的地方 ⇒ 让他重新选一次（总比写歪了好）。
- *
- * @param {{action: string, content: string, title?: string}} payload 弹窗交出来的
- */
-function onInsertConfirm(payload = {}) {
-  const { action } = payload
-  const content = String(payload.content || '').trim()
-  if (!content) {
-    ElMessage.error('没写进去')
-    return
-  }
-  if (action === 'topic') {
-    createNewTopic(content, String(payload.title || '').trim())
-    return
-  }
-  if (action === 'replace') {
-    if (editContent.value !== insertBase.value) {
-      ElMessage.error('正文已经改过，请重新问一次')
-      return
-    }
-    if (!editorRef.value?.replaceContent(content)) {
-      ElMessage.error('没写进去')
-      return
-    }
-    insertOpen.value = false
-    return
-  }
-  const spot = insertSpot.value
-  // 没有锚点：追加这条路走不通（没有"写到哪里"这回事）
-  if (!spot) return
-  const now = blocksInRange(spot.blockFrom, spot.blockTo)
-    .map((b) => b.node.textContent)
-    .join('\n')
-  if (now !== spot.blockText) {
-    ElMessage.error('正文已经改过，请重新选中这一段')
-    return
-  }
-  if (!editorRef.value?.insertAfter(spot.blockFrom, spot.blockTo, content)) {
-    ElMessage.error('没写进去')
-    return
-  }
-  insertOpen.value = false
-}
-
-/**
- * 建一条新知识点，并在原正文里留一条指向它的链接。
- *
- * **目录 / 类型跟原知识点一致**（原知识点没归类 ⇒ 新的一条也是"待归类"）。
- *
- * **链接是单向的**（用户定的）：原正文选中段之后插一条指向新知识点的内链，
- * 新知识点那边不回指 —— 回指等于在新知识点的正文里塞一行"来源说明"，
- * 那是另一件事，不该顺手带进来。
- *
- * ⚠️ **失败不自己弹提示**：走的是 request.js 那套 axios 实例，
- * 全站唯一的错误提示出口在那里（见 request.js 的注释）⇒ 这里只回滚状态。
- */
-async function createNewTopic(content, title) {
-  insertSaving.value = true
-  try {
-    const created = await createTopic({
-      title,
-      content,
-      categoryId: topic.value?.categoryId ?? null,
-      typeId: topic.value?.typeId ?? null,
-      tags: []
-    })
-    const spot = insertSpot.value
-    if (spot && created?.id) {
-      editorRef.value?.insertAfter(
-        spot.blockFrom,
-        spot.blockTo,
-        `[${title}](${topicHref(created.id)})`
-      )
-    }
-    ElMessage.success('已创建')
-    insertOpen.value = false
-  } finally {
-    insertSaving.value = false
-  }
-}
-
-/** 确认框里那句「重新生成」正在跑 */
-const insertAdjusting = ref(false)
-/** 「重新生成」那一轮（它的 turn.html 就是右栏要显示的实时内容） */
-const insertAdjustTurn = ref(null)
-/** 重新生成失败的错误原文（零前缀直出） */
-const insertAdjustError = ref('')
-
-/**
- * 确认框里让 AI 再调一版（2026-11-05 用户定）。
- *
- * 走的是**问答主通道**（同一套 ask / history / 追问）⇒ 这一轮会进抽屉的历史，
- * 关掉弹窗就能看到"我让它改了什么、它改成了什么"。
- *
- * ⚠️ **必须带上当前这一版**（用户在确认框的编辑器里改过的那份）：
- * 历史里存的是 AI 的原版，不带上它等于让 AI 从头再写一遍，用户刚才的手工修改白费。
- *
- * ⚠️ **"正在生成"这个标志只能在真的发出去之后才置上**（2026-11-05 修的 bug）：
- * 上一版先置标志再调 submitAsk，而 submitAsk 在"上一轮还在流"时会**早退**
- * ⇒ 这一轮压根没发出去，标志永远没人复位 ⇒ 按钮转圈到天荒地老，
- * 右边的内容当然也不会变（用户看到的正是这个）。
- */
-function onInsertAdjust({ text, current }) {
-  if (insertAdjusting.value) return
-  const instruction = String(text || '').trim()
-  if (!instruction) return
-  insertAdjustError.value = ''
-  // **这一轮是不是"改写正文"**：回答里带着标记 ⇒ AI 交回的是一份改写后的整篇正文。
-  const rewrite = hasBodyMark(insertAnswer.value)
-  const started = submitAsk('', {
-    // 改写模式：那句话**就是**对正文的调整要求，按「可改写」约定发
-    // （要求 + 当前这一版正文 ⇒ 交回改写后的整篇正文）。
-    // 非改写模式：老规矩，让 AI 把**这条回答**重写一版。
-    question: rewrite
-      ? instruction
-      : `请按下面的要求重写上一条回答（保持原来的意思，只按要求调整，不要另起话题）：\n\n` +
-        `${instruction}\n\n【当前这一版】\n${String(current || '').trim()}`,
-    // 改写模式：**带上当前这一版**（上一版改写出来的正文）——
-    // 不带上它等于让 AI 从原文重写一遍，用户刚才的调整白费。
-    baseMd: rewrite ? String(current || '').trim() : undefined,
-    spot: insertSpot.value,
-    onStart: (turn) => {
-      // 这一轮就是"重新生成"的那一轮 ⇒ 它的 turn.html 是节流渲染好的实时内容，
-      // 右栏直接显示它（内容一点点长出来 = 看得见在动）。
-      insertAdjustTurn.value = turn
-    },
-    onDone: (turn) => {
-      insertAdjusting.value = false
-      insertAdjustTurn.value = null
-      if (turn.error) {
-        // 失败：**错误原文摆在这个弹窗里**。上一版失败只在抽屉里报错，
-        // 而抽屉被这个弹窗挡着 ⇒ 用户只看到"转圈转完了、内容没变"。
-        insertAdjustError.value = turn.answer || '生成失败'
-        return
-      }
-      // 出错的那一轮 answer 是报错文案 ⇒ 不能拿它去替换 diff 里的内容
-      insertAnswer.value = turn.answer
-    }
-  })
-  insertAdjusting.value = started
-  if (!started) {
-    // 上一轮还在流 ⇒ 这一轮根本没发出去（submitAsk 早退）
-    insertAdjustError.value = 'AI 还在生成'
-  }
-}
+// ============ 选区提问 → 写入正文（拆出到 useTopicInsert.js） ============
+const {
+  blocksInRange,
+  onAskAi,
+  insertOpen,
+  insertAnswer,
+  insertSpot,
+  insertMode,
+  insertBase,
+  insertSaving,
+  insertAdjusting,
+  insertAdjustTurn,
+  insertAdjustError,
+  openInsert,
+  onInsertConfirm,
+  onInsertAdjust,
+  resetInsertState
+} = useTopicInsert({
+  topic,
+  editContent,
+  editorRef,
+  askOpen,
+  quizOn,
+  closeQuiz,
+  submitAsk
+})
 
 // ⚠️ **详情页不再拉学习投影**（2026-11-12）：掌握度搬到**目录书**
 // （卡片右上角的档位签 + 书页顶部的概览条），这里既不显示掌握度、
@@ -1614,13 +924,8 @@ watch(() => topic.value?.id, () => {
   messages.value = []
   // 采纳框同理：它是拿上一条的回答去改这一条，不关的话点确认就把 A 的建议写进 B
   adoptOpen.value = false
-  // 写入正文的确认框同理：它装着上一条正文的锚点和上一条的回答。
-  // 不关的话，「应用到正文」会把 A 的解释写进 B。
-  // ⚠️ 「重新生成」那两个状态也要清：它们装的是**那一轮**的流式内容，
-  // 留着就会在下一条知识点的弹窗里显示上一条的东西。
-  insertOpen.value = false
-  insertAdjustTurn.value = null
-  insertAdjustError.value = ''
+  // 写入正文的确认框同理：装的是上一条正文锚点和流式重建状态，切换知识点时一并复位。
+  resetInsertState()
   // 大纲同理：它是**上一条**正文的标题结构。换一条知识就换一份大纲。
   // 不清的话，新编辑器还没就绪的那一瞬间（重建编辑器要等它渲染完），
   // 页面上挂的还是上一条的大纲 —— 用户看到的是"这条知识没有目录，却有大纲"。
@@ -1797,7 +1102,7 @@ onBeforeUnmount(() => {
      Dock 退役后那份底部让位（46+22）也一起撤了。 */
   flex: 1;
   min-height: 0;
-  /* 2026-11-11：版心封顶 + 居中（理由见上面那段）。 */
+  /* 2026-11-11：版心封顶 1200 + 居中（避免宽屏单行过长影响阅读）。 */
   width: 100%;
   max-width: 1200px;
   margin: 0 auto;
@@ -1982,11 +1287,8 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: var(--sp-8);
   margin-top: var(--sp-4);
-  /* 标题带 ↔ 正文的间距。⚠️ 这个变量原来归 .tags 行的 margin-bottom
-     （偏好项 ui.detail.detailTagsGap，"那行下面留多少"）——那一行收进标题行后
-     变量改落在这里，含义顺势变成"标题带下面留多少"：滑块还是同一个，
-     调的还是同一处呼吸，不给偏好面板留一根废的。 */
-  margin-bottom: var(--detail-tags-gap, var(--sp-13));
+  /* 标题带 ↔ 正文的间距（标准化 token，不再暴露冗余滑块） */
+  margin-bottom: var(--sp-13);
   font-size: var(--text-sm);
   color: var(--cc-text-2);
   font-variant-numeric: tabular-nums;
@@ -2075,359 +1377,6 @@ onBeforeUnmount(() => {
    组件渲染出来的，节点上不带 scoped 的 data-v 属性，从本页 scoped 样式里 :deep 过去
    匹配不可靠（实测没生效）。统一放在 MilkdownEditorBody 的全局样式块里，
    和它的高度规则（min-height 135 / max-height 80vh）写在一起——编辑器长什么样只有那一处说了算。 */
-
-/* ---------- 对这条知识提问（右侧抽屉） ---------- */
-.ask {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  /* 把手是 absolute 的定位基准。它自己往左探出一格 padding 去贴抽屉边界 */
-  position: relative;
-}
-/* 拖动把手。**占满抽屉内容区左边那一格空 padding**，所以贴在抽屉真正的左边界上，
-   而不是缩在内容左边 22px 的地方（原先 `left: 0` 是相对内容区起点，看着像"贴内容框"）。
-   left 和 width 都接 EP 自己的 token —— 它改 padding，这条自动跟着挪，不会脱节。
-   22px × 96px 的竖条：22px 宽正好是那一格的宽度，96px 长是为了好找，
-   命中区比之前（20×44）大了一倍多 */
-.ask__grip {
-  position: absolute;
-  left: calc(-1 * var(--el-drawer-padding-primary, 20px));
-  width: var(--el-drawer-padding-primary, 20px);
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 96px;
-  cursor: col-resize;
-  /* 不加这句，移动端/触控板拖动会被当成页面滚动 */
-  touch-action: none;
-  color: var(--cc-text-3);
-  background: var(--cc-surface-2);
-  border: 1px solid var(--cc-border);
-  /* 左边贴抽屉边是直的，只圆右边 */
-  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-.ask__grip__icon {
-  font-size: var(--text-base);
-}
-.ask__grip:hover,
-.ask__grip:active {
-  opacity: 1;
-  color: var(--cc-primary);
-  border-color: var(--cc-primary);
-}
-/* §4.10(j) 触屏兜底：把手常态 opacity:0，只靠 hover / :active 显现 ——
-   触屏没有 hover，而「看不见就没法点」，:active 那条永远轮不到触发
-   ⇒ 「AI 问答抽屉拉不宽」这件事在触屏上根本无法发现。
-   与 kb-editor.css 的 .kb-img__handle 同一个病、同一个药：hover:none 下常显半透明。
-   ⚠️ 写在本文件（而不是并进 kb-editor.css 那个 media 块）是因为 .ask__grip 的样式就定义在这里。 */
-@media (hover: none) {
-  .ask__grip { opacity: 0.5; }
-}
-.ask__body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  /* **左右不再额外给 padding**：抽屉内容区自己已经留了 --el-drawer-padding-primary（22px），
-     再叠一层就会比上方标题「AI 问答」和下方输入框都往右缩一截，看着是歪的。
-     左边那一格已经被拖动把手占了 */
-  padding: var(--sp-11) 0;
-  /* **容器查询的锚**。ExamRunner 里那条 `@container (max-width: 420px)` 靠它才分得清
-     自己是被塞进 320–1200px 的可拖抽屉里、还是待在 840px 封顶的考试页上 ——
-     抽屉宽度与视口无关，@media 判不出来（考试页那边由 `.exam__body` 挂同一条）。
-     ⚠️ inline-size containment 会让这一层成为 absolute/fixed 后代的包含块：
-     抽屉里目前只有纯文本气泡与 v-html 渲染的回答，没有这类后代
-     （.kb-img__handle、表格右键菜单都只活在可编辑的 Milkdown 里，不会出现在 v-html 中）。 */
-  container-type: inline-size;
-}
-/* 答完后的动作行（重做本卷 / 重新生成）+ 正文过期提示：中性、一行、不拦截。
-   与考试页顶栏那组是同一对词，形态跟着抽屉走（small 按钮）。 */
-.quiz-ops {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-8);
-  margin-bottom: var(--sp-10);
-}
-.quiz-ops__stale {
-  font-size: var(--text-xs);
-  color: var(--cc-text-3);
-}
-.quiz-ops__gap {
-  flex: 1;
-}
-.turn {
-  margin-bottom: var(--sp-14);
-}
-/* 组内（提问气泡 ↔ 思考 ↔ 回答）紧，组间松——这个疏密差就是"一轮问答"的视觉分组 */
-.turn > * + * {
-  margin-top: var(--sp-8);
-}
-/* 「发送给 AI 的内容」和「思考过程」是同一个控件的两种：都是折起来的一行标题 + 展开的正文，
-   共用一套 summary 样式（▸ / ▾），差别只在标题文案和正文的排版。 */
-.think,
-.sent {
-  font-size: var(--text-xs);
-  /* 比正文暗一档。这两块是"核对用的旁证"，不是对话内容——原先和正文同色，
-     折起来的那一行反而比回答还抢眼 */
-  color: var(--cc-text-4);
-}
-.think summary,
-.sent summary {
-  cursor: pointer;
-  list-style: none;
-  user-select: none;
-}
-.think summary::-webkit-details-marker,
-.sent summary::-webkit-details-marker {
-  display: none;
-}
-.think summary::before,
-.sent summary::before {
-  content: '▸ ';
-}
-.think[open] summary::before,
-.sent[open] summary::before {
-  content: '▾ ';
-}
-.think__body,
-.sent__body {
-  margin-top: var(--sp-6);
-  padding-left: var(--sp-10);
-  border-left: 2px solid var(--cc-border);
-  white-space: pre-wrap;
-  word-break: break-word;
-  line-height: 1.7;
-}
-/* 「正在思考…」是折叠块的正文，跟着折叠块一起弱。
-   「正在生成…已接收 N 字」是独立的实时信号——流式期间用户就盯着它，
-   弱到和折叠标题一样就等于没有，所以单独提一档。三层：正文 > 生成计数 > 折叠标题。
-   ⚠️ **这三层靠颜色分，不靠字号**：原先这两个都写 --text-2xs(11px)，比折叠标题的
-   --text-xs(12px) 还小 ⇒ 实际层次与上面这句话正好相反（计数最小）。
-   现在三者同为 12px，颜色依次 --cc-text-2 / -3 / -4；11px + text-4 也是"双低"
-   （字号掉出阶梯、对比度 1.9:1），一并收掉。 */
-.think__waiting {
-  margin-top: var(--sp-6);
-  padding-left: var(--sp-10);
-  color: var(--cc-text-3);
-  font-size: var(--text-xs);
-}
-.think__count {
-  margin-top: var(--sp-6);
-  padding-left: var(--sp-10);
-  color: var(--cc-text-2);
-  font-size: var(--text-xs);
-}
-/* 提交内容是**整段 messages**，比思考过程长得多，字号再小一号不然面板撑不住 */
-.sent__body {
-  font-family: var(--font-mono);
-  font-size: var(--text-2xs);
-  color: var(--cc-text-2);
-}
-.bubble {
-  max-width: 100%;
-  white-space: pre-wrap;
-  word-break: break-word;
-  line-height: 1.8;
-}
-.bubble.is-user {
-  max-width: 78%;
-  margin-left: auto;
-  padding: var(--sp-8) var(--sp-10);
-  font-size: var(--text-sm);
-  line-height: 1.6;
-  color: var(--cc-text-1);
-  background: var(--cc-surface-2);
-  border-radius: var(--radius-md) var(--radius-md) var(--sp-2)
-    var(--radius-md);
-}
-/* AI 回答不加任何容器。**试过加左侧竖线，撤掉了**：回答下面本来就跟着
-   「思考过程 / 发送给 AI 的内容」两块旁证（它们各有一条 border-left），
-   再来一条就变成三条竖线并排——用户那一侧是有底的灰气泡，AI 这侧用
-   「字号比正文大一点」就足够区分，加竖线是过度设计 */
-.bubble.is-ai {
-  font-size: var(--text-md);
-  color: var(--cc-text-1);
-}
-/* ---------- AI 回答：渲染后的 markdown ---------- */
-/* 借正文的壳（.milkdown-editor-body + .ProseMirror）⇒ 标题、列表、表格、代码块
-   全走**正文那套排版**，零 CSS 重复；另找一个 markdown 渲染器就是两套渲染。
-   ⚠️ **`:deep()` 是必须的**：v-html 进来的节点没有 scoped 的 data-v 属性，
-   不写 :deep 这条规则压根不生效（编辑器自己那几条会漏出来：135px 最小高度、
-   80vh 内滚、左右给折叠箭头留的白）。 */
-.md-answer :deep(.ProseMirror) {
-  min-height: 0;
-  max-height: none;
-  overflow: visible;
-  padding: 0;
-  /* 气泡是 pre-wrap（给纯文本用的），渲染出来的 HTML 不该继承它 */
-  white-space: normal;
-  font-size: var(--text-md);
-  line-height: 1.75;
-}
-/* 标题在正文里是"块级大标题"，在抽屉里得收一档 —— 抽屉窄，
-   正文那号的标题一行放不下几个字。 */
-/* §4.10(i)：原来只覆盖 h1-h3 ⇒ h4 吃到 kb-editor.css 的 `1.1em` = 15.4px，
-   **比 h1 的 14px 还大** ⇒ 层级反转；h5/h6（1em = 14px）与 h1-h3 同档 ⇒ 层级压平。
-   ⇒ 覆盖扩到 h1-h6 全部。 */
-.md-answer :deep(.ProseMirror h1),
-.md-answer :deep(.ProseMirror h2),
-.md-answer :deep(.ProseMirror h3),
-.md-answer :deep(.ProseMirror h4),
-.md-answer :deep(.ProseMirror h5),
-.md-answer :deep(.ProseMirror h6) {
-  font-size: var(--text-md);
-  margin-top: var(--sp-8);
-}
-.bubble.is-error {
-  /* §4.3(d)：删掉死 fallback。`var(--cc-danger, #f56c6c)` —— token 恒存在，
-     fallback 永不生效，**而且它指向的是 EP 的红**（#f56c6c 系）⇒ 同屏两种红。 */
-  color: var(--cc-danger);
-  font-size: var(--text-sm);
-}
-/* 「复制」「应用到正文」「应用为新的知识点」并排一行。形态完全一样（文字型次要按钮），
-   差别只在含义，所以只在这里给一组尺寸，不给它们各写一套变体。
-   **允许换行**：三个按钮 + 两个图标 + 七字标签，一行放不下就折，别把按钮挤扁。 */
-.ask__ops {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-2);
-  margin-top: var(--sp-4);
-}
-.ask__ops .kb-text-btn {
-  padding: 0 var(--sp-6);
-  font-size: var(--text-xs);
-}
-.ask__guide {
-  display: flex;
-  /* 横着排。原来是竖排一列六个，一列就是 300 多 px——抽屉才 800 出头，
-     光这一块就吃掉三分之一，正文没地方站 */
-  flex-wrap: wrap;
-  gap: var(--sp-4) var(--sp-6);
-  padding-top: var(--sp-8);
-  /* 常驻在对话上方之后，下面得有一道间距把它和第一轮问答分开。
-     `.turn > * + *` 管的是一轮内部和轮与轮之间，不含这个块 */
-  margin-bottom: var(--sp-6);
-}
-.ask__chip {
-  padding: var(--sp-6) var(--sp-10);
-  font-size: var(--text-sm);
-  color: var(--cc-text-2);
-  background: var(--cc-surface);
-  border: 1px solid var(--cc-border);
-  border-radius: var(--radius-xl);
-}
-.ask__chip:hover {
-  color: var(--cc-primary);
-  border-color: var(--cc-primary);
-}
-/* ---------- 抽屉头的操作区（随堂测验入口 / 返回问答 + 关闭） ---------- */
-.kb-drawer__ops {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: var(--sp-4);
-}
-/* ---------- 随堂测验：出题中 / 出题失败 ----------
- * 这两条在 `assets/kb.css`（`.kb-center` / `.kb-error`）——
- * 考试页用的是同一份，两边各写一遍会漂（原来图标字号就差 2px）。 */
-.ask__foot {
-  flex: none;
-  padding-top: var(--sp-10);
-  border-top: 1px solid var(--cc-border);
-}
-/* 一个胶囊：输入框 + 「用哪个 API」+ 发送/停止 全在右下角一行里。
-   焦点态挂在容器上（:focus-within）而不是输入框自己——输入框现在没有边框，
-   边框是胶囊的，边框跟着输入框走会出现"框里还套个框"。 */
-.ask__composer {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-6);
-  padding: var(--sp-4) var(--sp-4) var(--sp-4)
-    var(--sp-10);
-  background: var(--cc-surface-2);
-  border: 1px solid transparent;
-  border-radius: var(--radius-pill);
-  transition: var(--cc-transition);
-}
-.ask__composer:focus-within {
-  background: var(--cc-surface);
-  border-color: var(--cc-border);
-}
-.ask__model {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-4);
-  flex: none;
-  max-width: 140px;
-  height: var(--ctl-sm);
-  padding: 0 var(--sp-8);
-  font-size: var(--text-xs);
-  color: var(--cc-text-2);
-  border-radius: var(--radius-lg);
-  cursor: pointer;
-  outline: none;
-  white-space: nowrap;
-  overflow: hidden;
-}
-.ask__model:hover {
-  color: var(--cc-text-1);
-}
-.ask__caret {
-  display: inline-block;
-  width: 0;
-  height: 0;
-  margin-top: var(--sp-3);
-  border-left: 4px solid transparent;
-  border-right: 4px solid transparent;
-  border-top: 5px solid currentColor;
-}
-.ask__input {
-  flex: 1;
-  min-width: 0;
-  height: var(--ctl-sm);
-  /* 左边距由胶囊的 padding 给，这里必须是 0，否则文字和胶囊边缘之间多一层 */
-  padding: 0;
-  font-size: var(--text-sm);
-  color: var(--cc-text-1);
-  background: transparent;
-  border: none;
-  outline: none;
-}
-/* 发送 / 停止 是同一个钮的两种状态，不并排两个按钮：
-   并排等于把"现在该按哪个"这个问题推给用户，停用的那一个还要白占地方。 */
-.ask__send {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--ctl-sm);
-  height: var(--ctl-sm);
-  padding: 0;
-  font-size: var(--text-base);
-  color: var(--cc-surface);
-  background: var(--cc-primary);
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
-  transition: var(--cc-transition);
-}
-.ask__send:hover:not(:disabled) {
-  opacity: 0.86;
-}
-.ask__send:disabled {
-  color: var(--cc-text-4);
-  background: var(--cc-surface-3);
-  cursor: not-allowed;
-}
-/* 在流中时这个钮**不是"停用的发送"，是"正在生成、点这里中断"**，
-   所以图标用深色而不是跟着 disabled 一起变浅——一变浅就和上面那个空输入态撞脸了 */
-.ask__send.is-stop {
-  color: var(--cc-text-2);
-  background: var(--cc-surface-3);
-}
 
 /* ---------- 空 / 加载 ---------- */
 .state {

@@ -1,65 +1,81 @@
 <template>
   <div class="ai-panel">
-    <!-- 开关。关掉之后，首页 / 知识点详情 / 列表页里所有 AI 入口都不出现。
-         不写解释文案：「启用 AI」+ 一个开关已经说清了它是什么，
-         再补一段"关掉会怎样"是在给一个开关讲道理。 -->
-    <div class="switch-row">
-      <div class="switch-row__name">启用 AI</div>
-      <el-switch v-model="form.enabled" @change="onToggle" />
-    </div>
-
-    <!-- 配置只在开启时才有意义：关着还让用户填，是让人做一件当下用不上的事 -->
-    <template v-if="form.enabled">
+    <!-- ⚠️ **总开关已删除**（2026-11-16 D6）：那个开关同时管着交互类（问答）、
+         一次点击多次调用（生成/出卷）、零点击自主任务（命名）——三件不相干的事
+         绑在一起，关掉它三件一起变行为。现在 AI 入口**一律常显**，
+         没配好就在调用时报事实错误并引导到这里。
+         **急停 = 停用或删除某条 API**（列表行上就有）。 -->
       <!-- API 列表：一人多个，提问时选一个用。
            整行点击 = 选中当前 API；编辑 / 收起来是两个明确的按钮，
            不用"点名字编辑 + 点圈选中"两块区域——两个点击区挨着最容易点错。
            ⚠️ 滚动收在这层内框里，「新增 API」钉在框外常驻；一条都没有时不画框。 -->
-      <div v-if="aiEndpoints.length" class="list">
-        <div
-          v-for="e in aiEndpoints"
-          :key="e.id"
-          class="row"
-          :class="{ 'is-current': e.id === currentEndpointId }"
-          @click="useEndpoint(e.id)"
-        >
-          <span class="row__mark" />
-          <span class="row__text">
-            <span class="row__name">
-              {{ e.name }}
-              <span v-if="e.id === currentEndpointId" class="row__badge">当前</span>
-              <span v-if="!e.ready" class="row__badge is-warn">未配全</span>
-            </span>
-            <span class="row__sub">
-              <span class="row__sub-main">{{ e.model || '未填模型' }} · {{ hostOf(e.baseUrl) || '未填地址' }}</span>
-              <span
-                v-if="testOf(e.id)?.done"
-                class="row__sub-test"
-                :class="testOf(e.id).ok ? 'is-ok' : 'is-bad'"
-                :title="testOf(e.id).text"
-              >{{ testOf(e.id).text }}</span>
-            </span>
-          </span>
-          <span class="row__ops">
-            <button
-              type="button"
-              class="kb-text-btn kb-text-btn--test"
-              :class="{ 'kb-busy': testOf(e.id)?.loading }"
-              :disabled="testOf(e.id)?.loading"
-              @click.stop="testRow(e)"
+      <div class="ai-body">
+        <el-scrollbar v-if="aiEndpoints.length" class="list-scroll">
+          <div class="list">
+            <div
+              v-for="e in aiEndpoints"
+              :key="e.id"
+              class="row"
+              :class="{ 'is-current': e.id === currentEndpointId }"
+              @click="useEndpoint(e.id)"
             >
-              <KbLoader v-if="testOf(e.id)?.loading" size="sm" label="测试中" />
-              <template v-else>测试</template>
-            </button>
-            <button type="button" class="kb-text-btn" @click.stop="openEdit(e)">编辑</button>
-            <button type="button" class="kb-text-btn kb-text-btn--danger" @click.stop="remove(e)">删除</button>
-          </span>
-        </div>
+              <span class="row__mark" />
+              <span class="row__text">
+                <span class="row__name">{{ e.name }}</span>
+                <span v-if="e.id === currentEndpointId" class="row__badge">当前</span>
+                <span v-if="!e.ready" class="row__badge is-warn">未配全</span>
+                <span
+                  v-if="testOf(e.id)?.done"
+                  class="row__test"
+                  :class="testOf(e.id).ok ? 'is-ok' : 'is-bad'"
+                  :title="testOf(e.id).text"
+                >{{ testOf(e.id).text }}</span>
+              </span>
+              <span class="row__ops">
+                <KbTooltip content="测试连接" placement="top">
+                  <button
+                    type="button"
+                    class="kb-icon-btn kb-icon-btn--primary row__op"
+                    aria-label="测试连接"
+                    :disabled="testOf(e.id)?.loading"
+                    @click.stop="testRow(e)"
+                  >
+                    <KbLoader v-if="testOf(e.id)?.loading" size="sm" />
+                    <KbSvgIcon v-else name="pulse" />
+                  </button>
+                </KbTooltip>
+                <KbTooltip content="编辑" placement="top">
+                  <button
+                    type="button"
+                    class="kb-icon-btn row__op"
+                    aria-label="编辑"
+                    @click.stop="openEdit(e)"
+                  >
+                    <KbSvgIcon name="edit" />
+                  </button>
+                </KbTooltip>
+                <KbTooltip content="删除" placement="top">
+                  <button
+                    type="button"
+                    class="kb-icon-btn kb-icon-btn--danger row__op"
+                    aria-label="删除"
+                    @click.stop="remove(e)"
+                  >
+                    <KbSvgIcon name="trash" />
+                  </button>
+                </KbTooltip>
+              </span>
+            </div>
+          </div>
+        </el-scrollbar>
       </div>
 
-      <el-button class="ai-add" text type="primary" @click="openEdit(null)">
-        <el-icon><Plus /></el-icon>新增 API
-      </el-button>
-    </template>
+      <div class="ai-foot">
+        <button type="button" class="ai-add" @click="openEdit(null)">
+          <KbSvgIcon name="plus" />
+          <span>新增 API</span>
+        </button>
+      </div>
   </div>
 
   <!-- 新增 / 编辑同一个弹窗：字段完全一样，没必要分两个 -->
@@ -162,10 +178,11 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { confirmAction } from '../../utils/confirm'
-import { Plus } from '@element-plus/icons-vue'
 import KbLoader from '../../components/corecraft-web/KbLoader.vue'
+import KbSvgIcon from '../../components/corecraft-web/KbSvgIcon.vue'
+import KbTooltip from '../../components/corecraft-web/KbTooltip.vue'
 import {
-  ensureAiConfigLoaded, aiEndpoints, saveAiConfig,
+  ensureAiConfigLoaded, aiEndpoints,
   addAiEndpoint, editAiEndpoint, removeAiEndpoint, useEndpoint, currentEndpointId,
   aiVendors, ensureAiVendorsLoaded, refreshVendorModels,
   aiProtocols, ensureAiProtocolsLoaded, testAiEndpoint
@@ -174,7 +191,6 @@ import {
 /** 「其他」厂商的固定 code：字典里没有对应类型，所以不给它拉模型清单 */
 const OTHER_VENDOR = 'other'
 
-const form = ref({ enabled: false })
 const editing = ref(false)
 const editingId = ref(null)
 const draft = ref({ name: '', vendor: '', protocol: 'openai', baseUrl: '', model: '', apiKey: '', custom: '' })
@@ -182,15 +198,10 @@ const saving = ref(false)
 const refreshing = ref(false)
 
 onMounted(async () => {
-  const [configRes] = await Promise.all([
+  await Promise.all([
     ensureAiConfigLoaded(), ensureAiVendorsLoaded(), ensureAiProtocolsLoaded()
   ])
-  form.value = { enabled: configRes.config.enabled }
 })
-
-async function onToggle(enabled) {
-  await saveAiConfig({ enabled })
-}
 
 /** 当前选中的厂商（模型下拉的选项来自它） */
 const currentVendor = computed(() => aiVendors.value.find((v) => v.code === draft.value.vendor) || null)
@@ -357,145 +368,153 @@ async function remove(e) {
   await removeAiEndpoint(e.id)
   ElMessage.success('已删除')
 }
-
-function hostOf(url) {
-  if (!url) return ''
-  return url.replace(/^https?:\/\//, '').split('/')[0]
-}
 </script>
 
 <style scoped>
 .ai-panel {
   display: flex;
   flex-direction: column;
-  /* 高度链（2026-11-15）：右区（.settings__pane）是 max-height:62vh 的滚动容器、
-     高度随内容 ⇒ height:100% 接不上（列表一长按钮还是被卷走）。
-     面板**自己封同样的顶**：内容矮就贴内容，到 62vh 就停——开关和「新增 API」
-     钉住，中间的列表内框吃掉剩余高度自己滚，按钮永远可见。 */
-  max-height: 62vh;
+  /* 撑满 SettingsDialog 固定高度：切 tab 外框和底部栏位置完全不变 */
+  height: 100%;
 }
-/* flex 列里 el-button 默认 stretch ⇒ 文字被居中；新增按钮是行级动作，靠左。
-   钉在内框下方常驻（不跟着列表滚走）。 */
-.ai-add {
-  align-self: flex-start;
-  margin-top: var(--sp-6);
-}
-.switch-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-12);
-  padding: var(--sp-4) 0 var(--sp-10);
-  border-bottom: 1px solid var(--cc-border);
-  margin-bottom: var(--sp-12);
-}
-.switch-row__name {
-  font-size: var(--text-base);
-  color: var(--cc-text-1);
-}
-
-/* ---------- API 列表 ---------- */
-/* 滚动不在列表自己身上：右区（SettingsDialog 的 .settings__pane）是唯一的
-   滚动容器，这里只管行的排布。 */
-/* 列表 = **内框**（2026-11-15）：滚动条收在框里（原来右区整页滚，
-   「新增 API」按钮跟着被卷出视野）。框内是无框行（同左栏分类目录那套语言），
-   行间靠 hover 底色 / 选中软底区分，不再各画一圈描边。 */
-.list {
+.ai-body {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: var(--sp-2);
-  padding: var(--sp-2);
-  border: 1px solid var(--cc-border-card);
-  border-radius: var(--radius);
 }
-/* §4.4(b) 无框行的 hover 语言：surface-2 底（不是描边） */
+.list-scroll {
+  max-height: 100%;
+  border: 1px solid var(--cc-border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--cc-surface-2) 55%, transparent);
+}
+.list-scroll :deep(.el-scrollbar__wrap) {
+  max-height: 100%;
+}
+.ai-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  min-height: 30px;
+  margin-top: var(--sp-10);
+  padding-top: var(--sp-9);
+  border-top: 1px solid var(--cc-border);
+}
+.ai-add {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+  height: 30px;
+  padding: 0 var(--sp-10);
+  border: 1px dashed var(--cc-border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--cc-text-2);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: var(--cc-transition);
+}
+.ai-add:hover {
+  border-color: var(--cc-primary);
+  background: var(--cc-primary-soft);
+  color: var(--cc-primary);
+}
+/* ---------- API 列表 ---------- */
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-5);
+}
 .row {
   display: flex;
   align-items: center;
-  gap: var(--sp-10);
-  padding: var(--sp-10) var(--sp-10);
-  /* §4.4(d)：--cc-radius-sm(8px) 别名已删 ⇒ 28–34px 高的控件 → --radius-sm(6) */
+  gap: var(--sp-9);
+  padding: var(--sp-9) var(--sp-11);
   border-radius: var(--radius-sm);
   cursor: pointer;
+  transition: background .15s ease, box-shadow .15s ease;
 }
 .row:hover {
-  background: var(--cc-surface-2);
+  background: var(--cc-surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .06);
 }
-/* 选中 = 主色软底（同 .settings__rail-btn.is-on），空心圈变实心点 */
 .row.is-current {
-  background: var(--cc-primary-soft);
+  background: var(--cc-surface);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cc-primary) 42%, transparent), 0 1px 3px color-mix(in srgb, var(--cc-primary) 10%, transparent);
 }
-/* 选中指示：空心圈 → 实心点。不用 el-radio，一是自己画可控，
-   二是"点整行选中"本来就不需要一个真正的 input。 */
 .row__mark {
   flex: none;
-  width: 13px;
-  height: 13px;
+  width: 12px;
+  height: 12px;
   border: 1.5px solid var(--cc-border-strong);
   border-radius: 50%;
+  transition: border-color .15s ease, background .15s ease, box-shadow .15s ease;
 }
 .row.is-current .row__mark {
   border-color: var(--cc-primary);
   background: var(--cc-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cc-primary) 16%, transparent);
 }
 .row__text {
   flex: 1;
   min-width: 0;
-}
-.row__name {
   display: flex;
   align-items: center;
   gap: var(--sp-6);
-  font-size: var(--text-md);
-  color: var(--cc-text-1);
 }
-.row__badge {
-  padding: 0 var(--sp-6);
-  font-size: var(--text-2xs);
-  line-height: 16px;
-  color: var(--cc-surface);
-  background: var(--cc-primary);
-  border-radius: var(--radius-xs);
-}
-.row__badge.is-warn {
-  color: var(--cc-warning);
-  /* §4.3(d)：EP 的 --el-color-warning-light-9 → cc 的 --cc-warning-soft */
-  background: var(--cc-warning-soft);
-}
-/* 副标题行 = 主文字 + 测试结果。结果只在测过之后才出现，
-   **主文字让出宽度、行高不变**（不撑高行、列表不跳）。 */
-.row__sub {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-10);
-  margin-top: var(--sp-3);
-  font-size: var(--text-xs);
-  color: var(--cc-text-3);
-}
-.row__sub-main {
-  flex: 1;
+.row__name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--cc-text-1);
 }
-.row__sub-test {
+.row.is-current .row__name {
+  font-weight: 600;
+}
+.row__badge {
   flex: none;
-  /* 失败时上游原文很长：最多占四成，保住模型名 / 地址还能读。 */
-  max-width: 42%;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--cc-primary);
+  background: color-mix(in srgb, var(--cc-primary) 12%, transparent);
+  border-radius: 999px;
+}
+.row__badge.is-warn {
+  color: var(--cc-warning);
+  background: var(--cc-warning-soft);
+}
+.row__test {
+  min-width: 0;
+  max-width: 38%;
+  margin-left: auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: var(--text-xs);
 }
 .is-ok { color: var(--cc-success); }
 .is-bad { color: var(--cc-danger); }
 .row__ops {
   display: flex;
-  gap: var(--sp-2);
+  align-items: center;
+  gap: 2px;
   flex: none;
+}
+.row__op {
+  width: 26px;
+  height: 26px;
+  font-size: 15px;
+  opacity: .72;
+}
+.row:hover .row__op,
+.row__op:hover {
+  opacity: 1;
 }
 
 /* ---------- 弹窗里的几处布局 ---------- */
@@ -515,19 +534,6 @@ function hostOf(url) {
   min-width: 0;
 }
 
-/* ---------- 连通性测试的两处入口 ---------- */
-/* 三个文字按钮并排：给「测试」锁一个宽度，忙碌时换成 1em 加载图形也不横跳。
-   .kb-busy 是统一加载层里现成的按钮忙碌态（kb-loading.css），图形跟主题走。 */
-.kb-text-btn--test {
-  min-width: 4em;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-.kb-text-btn:disabled {
-  cursor: default;
-  opacity: .75;
-}
 /* 弹窗底部：左「测试连接 + 结果」，右「取消 / 保存」。
    结果 flex:1 吃掉剩余宽度，长错误原文 ellipsis + title 看全；footer 高度不变。 */
 .dlg-foot {

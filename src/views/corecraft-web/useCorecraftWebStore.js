@@ -10,7 +10,6 @@ import {
   importCategories as apiImportCategories,
   renameTag as apiRenameTag, deleteTag as apiDeleteTag
 } from '../../api/knowledge'
-import { getDictTypeList, getDictItemList } from '../../api/dict'
 import {
   getLearningTree as apiGetLearningTree,
   getMasteryLevels as apiGetMasteryLevels
@@ -134,16 +133,9 @@ const categoriesSlot = createLoadSlot()
  */
 export const categoriesState = categoriesSlot.state
 
-// 知识点类型缓存：[{ id, label, value }]，来自字典 sys_dict_type.code = 'kp_topic_type'。
-//
-// **字典是全局的**，所以每个用户天然都有默认档——不给它建独立主表正是因为这个。
-// kp_topic.typeId 存的是这里的 id（纯数字），不是 label 也不是 0/1/2：
-// 字典项增删排序都不影响任何代码，代码里也不存在"1 = 笔记"这种要同步维护的映射。
-//
-// **value 才是能写进代码的语义键**：label 是显示名（管理员可以改），
-// value 是机器名（note / learn）。代码要指名某一档时认 value，不认 label。
-const topicTypes = ref([])
-const topicTypesSlot = createLoadSlot()
+// 知识点类型缓存：**已随类型轴一起退役**（2026-11-16 D1）——
+// 原来的 `topicTypes` / `topicTypesSlot` 与它们的工具函数一并删除，理由见文件下方
+// 「知识点类型（退役）」那段。
 
 function normalizeCategory(c) {
   return {
@@ -169,11 +161,11 @@ onAuthChange(() => {
   resetSlot(allTagsSlot)
   categories.value = []
   resetSlot(categoriesSlot)
-  topicTypes.value = []
-  resetSlot(topicTypesSlot)
   // 学习数据也是账号级的：B 不能看到 A 的掌握度
   categoryMasteryMap.value = new Map()
   resetSlot(categoryMasterySlot)
+  topicLevelsMap.value = new Map()
+  resetSlot(topicLevelsSlot)
   // 数据换人了 ⇒ 视图手里那一页也是旧账号的 ⇒ 说一声，让它重拉。
   dataVersion.value++
 })
@@ -187,15 +179,6 @@ export const UNCATEGORIZED = 'uncategorized'
 /** 「全部」也不是目录，是另一种范围。同样用字符串哨兵（原来它只在列表页内部是个局部常量，
  *  范围计算收进 store 之后，它就成了范围的一种，值必须只有一份） */
 export const ALL = 'all'
-/** 知识点类型所在的字典编码。类型存字典而不是本地表——字典是全局的，每个用户都有默认档 */
-export const TOPIC_TYPE_DICT = 'kp_topic_type'
-/**
- * 「学习」档的字典 **value**（sys_dict_item.value）。
- *
- * <p>生成出来的知识点是系统整理过的学习内容 ⇒ 落这一档（不是随手记那一档）。
- * 认 value 不认 label：label 是显示名，管理员改个名代码就失效了。
- */
-export const TOPIC_TYPE_LEARN = 'learn'
 
 /**
  * 目录树往下走的**层数上限**。**只有这一份**。
@@ -241,11 +224,10 @@ function normalizeTopic(item) {
     content: item.content || '',
     parentTopicId: item.parentTopicId ?? null,
     categoryId: item.categoryId ?? null,
-    typeId: item.typeId ?? null,
     // ⚠️ **掌握度相关字段（2026-11-12）**：
-    //   masteryEnabled —— 后端**已解析**的最终判据（单条 > 类型 > 兜底），前端不自己判；
-    //   masteryOverride —— **原始**单条覆盖（null=跟随类型 / true=参与 / false=不参与），
-    //     和 masteryEnabled 分开带：两者在"明确关掉"和"跟随类型(而类型默认关)"时长得一样，
+    //   masteryEnabled —— 后端**已解析**的最终判据（单条覆盖 > 有无评估证据），前端不自己判；
+    //   masteryOverride —— **原始**单条覆盖（null=走默认 / true=参与 / false=不参与），
+    //     和 masteryEnabled 分开带：两者在"明确关掉"和"跟着默认"时长得一样，
     //     设置弹窗要靠 override 才分得清自己停在哪一档；
     //   masteryLevel   —— 后端算好的档位词；**null = 没有有效评估** ⇒ 卡片上完全不画标记。
     masteryEnabled: item.masteryEnabled ?? false,
@@ -269,9 +251,6 @@ function normalizeIndexEntry(item) {
     id: item.id,
     title: item.title || '',
     categoryId: item.categoryId ?? null,
-    typeId: item.typeId ?? null,
-    // 已解析的「是否参与掌握度」（后端判据，前端不自己判）
-    masteryEnabled: item.masteryEnabled ?? false,
     tags: parseJson(item.tags, []).map(decodeTag),
     hasContent: !!item.hasContent,
     createdAt: item.createTime || '',
@@ -444,7 +423,7 @@ export async function refreshTopicIndexes() {
  * <p>**不缓存**：当前页是**视图的事**（它知道自己在第几页、筛了什么）。
  * store 原来也缓存了一份（`topicPage`），可没人读它 ⇒ 反而每次改动都多打一次请求。
  *
- * @param {object} params { page, size, categoryIds, uncategorized, typeId, tag, keyword }
+ * @param {object} params { page, size, categoryIds, uncategorized, tag, keyword }
  * @returns {{records: Array, total: number}}
  */
 export async function loadTopicPage(params = {}) {
@@ -581,34 +560,36 @@ export async function refreshAfterTopicChange(tagsChanged) {
 }
 
 /**
- * 新建一条知识点。
+ * 新建一条知识点，**返回它的 id**（后端建完直接给 id）。
  *
  * @param {object} data 知识点内容
  * @param {{refresh?: boolean}} opts `refresh: false` = **建完不刷新缓存**。
  *        批量建（一次几十条）时用它：每建一条都全量拉一次列表，
  *        80 条就是 80 次请求，纯浪费。批量结束时自己刷一次。
- *        注意：不刷新时**返回 null**（新 id 是从刷新后的缓存里找出来的）。
+ *        注意：不刷新时**返回 null**（刷新后才有的那条 id 这里拿不到）。
  */
 export async function createTopic(
-  { title, content, tags, parentTopicId, categoryId, typeId },
+  { title, content, tags, parentTopicId, categoryId },
   { refresh = true } = {}
 ) {
-  const beforeIds = new Set(getTopicIndex().map((item) => item.id))
   const encoded = encodeTags(tags)
-  await apiCreateTopic({
+  const created = await apiCreateTopic({
     title: title || '',
     content: content || '',
     parentTopicId: parentTopicId || null,
+    // ⚠️ **不传 categoryId ⇒ 落「笔记」目录**（后端兜底，2026-11-16 D3）：
+    // 随手记要有家，而不是落进"待归类"那个债桶。
     categoryId: categoryId || null,
-    // 类型没传就用默认档（字典里排第一的那条）。后端 typeId 允许为空，
-    // 但录入路径永远给得出来——默认档一直存在
-    typeId: typeId ?? defaultTopicTypeId(),
     tags: encoded,
   })
-  if (!refresh) return null
+  const createdId = created?.data ?? null
+  if (!refresh) return createdId
   // 带标签建出来才会多出引用；不带标签建一条不碰 refCount
   await refreshAfterTopicChange(encoded.length > 0)
-  return getTopicIndex().find((item) => !beforeIds.has(item.id)) || null
+  // ⚠️ **以接口返回的 id 为准**（2026-11-16）：原来是从刷新后的索引里 diff 出来的
+  // （"多出来的那条"）——并发时可能 diff 到**别人刚建的那条**。
+  // 接口现在直接给 id ⇒ 不用猜了。
+  return createdId
 }
 
 /**
@@ -635,8 +616,6 @@ export async function updateTopic(id, patch, opts = {}) {
     content: patch.content,
     parentTopicId: patch.parentTopicId,
     categoryId,
-    // 没传 typeId = 不打算改它；后端那边也是这么判的（不像 categoryId 无条件写）
-    typeId: patch.typeId,
     tags: patch.tags ? encodeTags(patch.tags) : undefined,
   })
   // 批量改（生成完回填链接）时关掉刷新：每改一条都全量拉一次列表是纯浪费，
@@ -795,6 +774,8 @@ export function getCategoryMastery(categoryId) {
 export function invalidateCategoryMastery() {
   categoryMasteryMap.value = new Map()
   resetSlot(categoryMasterySlot)
+  topicLevelsMap.value = new Map()
+  resetSlot(topicLevelsSlot)
 }
 
 /**
@@ -845,76 +826,16 @@ export function invalidateLearningData() {
 // ⇒ 删除。标签数据的真实消费方只剩 `ensureAllTagsLoaded` / `renameTag` /
 // `confirmDeleteTag`（后台逻辑暂时不去），它们读的是 `allTags` 缓存本身，不需要这个出口。
 
-// ==================== 知识点类型 ====================
-
-/** 类型清单。字典是全局的，懒加载一次就够 */
-export function getTopicTypes() {
-  return topicTypes.value
-}
-
-export async function ensureTopicTypesLoaded(force = false) {
-  await loadOnce(topicTypesSlot, force, async (isCurrent) => {
-    // 字典编码 → 字典类型 id。取的是 sys_dict_type 那张表的行，不是硬编码的数字。
-    const typeRes = await getDictTypeList({ code: TOPIC_TYPE_DICT })
-    const dictType = (typeRes?.data || [])[0]
-    if (!dictType) {
-      // **不上锁**：这次查不到就当没发生过，下一个调用方会重试
-      // （返回 undefined = "这次没拿到"，状态停在 failed，下次还能试）。
-      //
-      // 原来这里是 `topicTypes.value = []; topicTypesLoaded = true`——把"这一次没查到"
-      // 存成了"字典里就是没有类型"这个结论。于是上一行的短路生效，之后所有调用
-      // 都直接返回那个空数组，永远不重试，只有整页刷新才能恢复。症状是"类型下拉
-      // 忽然空了，刷新一下又好"，看起来像随机，其实是被缓存住的失败。
-      //
-      // 另外三个缓存（topics / categories / allTags）本来就只在真拿到数据时置 true，
-      // 只有这一份反着来——口径统一，别给它开特例。
-      return undefined
-    }
-    const itemRes = await getDictItemList({ dictTypeId: dictType.id })
-    const next = (itemRes?.data || [])
-      .filter((i) => i.enabled)
-      .map((i) => ({ id: i.id, label: i.label, value: i.value }))
-    // 只有最新发起的那次才落缓存（见 lazyLoad 的「版本号」）
-    if (isCurrent()) topicTypes.value = next
-    return next
-  })
-  return topicTypes.value
-}
-
-/**
- * 「默认档」= 清单里排第一的那条。**不靠 is_default 标记列**：
- * 排第一是可查可判的（一条 SELECT 就知道），而 NULL / 标记位那种"靠约定猜"的隐式
- * 状态最后都会变成 bug。新建知识点默认选它，它改名也还是默认——"它是默认档"
- * 和它叫什么名字无关。
- */
-export function defaultTopicTypeId() {
-  return topicTypes.value[0]?.id ?? null
-}
-
-/**
- * 按字典项的 **value** 找类型 id。找不到返回 null（**不回落成默认档**）。
- *
- * <p>回落会骗人：调用方要的是"就是这一档"，回落到默认档等于静默给出另一档，
- * 界面上看不出来、数据是错的。要么拿到那一档，要么明确知道没有。
- */
-export function topicTypeIdByValue(value) {
-  return topicTypes.value.find((t) => t.value === value)?.id ?? null
-}
-
-/**
- * 把知识点上可能悬空的 typeId 收口成清单里真实存在的 id。
- * 字典项是**软删**的，后台删掉一条之后，引用它的知识点 typeId 就指向一个查不出来的行。
- * 界面上不能因此显示一个空白或裸数字——统一当"排第一的那档"。
- */
-export function resolveTopicTypeId(typeId) {
-  if (typeId != null && topicTypes.value.some((t) => t.id === typeId)) return typeId
-  return defaultTopicTypeId()
-}
-
-export function getTopicTypeLabel(typeId) {
-  const hit = topicTypes.value.find((t) => t.id === resolveTopicTypeId(typeId))
-  return hit?.label || ''
-}
+// ==================== 知识点类型（2026-11-16 退役） ====================
+//
+// **类型轴整条下线**（知识模型定稿 D1）：字典 `kp_topic_type`（笔记/学习）不再参与任何判定，
+// 前端这一族工具（类型清单 / 默认档 / 按 value 找 id / 收口 / 显示名）与它的缓存一起删掉。
+//
+// 为什么它不该存在：一条手动写成体系内容的笔记，类型还是「笔记」——
+// **出生证明不会跟着内容长大**，于是「它算不算学习内容」永远问不准。
+// 判据回到**位置**（在不在书里）与**证据**（有没有被检验过），见 masterScope 口径。
+//
+// ⚠️ 后端 `kp_topic.type_id` 列**保留不读**（迁移要用它筛笔记型存量），清理轮再删列。
 
 export async function ensureAllTagsLoaded(force = false) {
   await loadOnce(allTagsSlot, force, async (isCurrent) => {
@@ -1119,48 +1040,43 @@ export function scopeMatcher(scope) {
 }
 
 /**
- * 深度优先的**前序**扁平行：[{ kind: 'cat', c, depth } | { kind: 'topic', t, depth }]，
- * 拖拽浮树直接 v-for 这一份。
+ * 深度优先的**前序**扁平行：[{ kind: 'cat', c, depth } | { kind: 'topic', t, depth }]。
  *
  * 必须是前序——父节点后面紧跟自己的子树。要是"先把本层列完再把子目录组接在后面"
  * （层序），「计算机网络」会夹在「JAVA」和「JAVA 的子目录」中间，缩进再准也读不出
  * 父子关系，看起来就像三个平级目录。
  *
- * `withTopics` 把**知识点也摊成叶子行**（浏览模式用，拖拽落点模式不要）：
- * 知识点挂在哪一级就在哪一级出现，**排在同级的子目录前面** ——
- * 「总览」是挂在父目录上的知识点，于是它和自己的子目录并排，一眼看得见。
- * 拖拽落点模式不给：那里每一行都是可投放的目录，多出来的叶子行只会挡住命中检测。
+ * ⚠️ **知识点行 2026-11-17 回树**（用户：「把目录树中的显示知识点给加回来」）：
+ * 挂在哪一级就在哪一级出现，**排在同级的子目录前面**（同目录第一条就是它的总览）。
+ * 树看结构与清单、卡片看内容——两处都见，浏览和阅读各走各的门。
  *
  * seen + 层数上限双重防环，数据被改坏出现环时不会把渲染卡死。
  */
-export function flattenCategoryTree(roots, { withTopics = false } = {}) {
+export function hasDirectTopics(categoryId) {
+  if (categoryId == null) return false
+  for (const t of getFullTopicIndex()) {
+    if (t.categoryId === categoryId) return true
+  }
+  return false
+}
+
+export function flattenCategoryTree(roots) {
   const rows = []
   const seen = new Set()
-  // 知识点按目录分组：**一次遍历建表**，别在每个目录上全量扫一遍知识点
-  const byCat = withTopics ? topicsByCategory() : new Map()
+  const byCat = topicsByCategory()
   const walk = (list, depth) => {
     if (depth > MAX_TREE_DEPTH) return
     for (const c of list) {
       if (seen.has(c.id)) continue
       seen.add(c.id)
       rows.push({ kind: 'cat', c, depth })
-      // ⚠️ **直挂知识点在前、子目录在后**（2026-11-10 用户：「这里展示的一个目录的总览
-      // 应该放在这个目录下的第一个 而不是放在子目录之后」）。
-      //
-      // <p>之前是反过来的（子目录在前、总览在整张卡片身的末尾，像"本章小结"）——
-      // 那是 2026-11-08 复刻 book-bak 老稿时的判断，现在按用户要求改成
-      // **「这个目录的第一条就是它的总览」**：读一本书的目录时，
-      // 「这一章讲什么」的总览就该紧跟在章标题后面，而不是翻到最后才看到。
-      //
-      // <p>⚠️ **前序不变式不破**：父行仍在自己所有后代（子目录**和**知识点）之前，
-      // `branchyIds` / `ancestorIds` / `visibleRows` 都只依赖这一点 ⇒
-      // 把知识点提到子目录之前不影响它们（知识点是叶子，提到自己父行后面仍然是前序）。
-      // ⚠️ `branchyIds` 的判据是"下一行更深" ⇒ 直挂知识点在子目录之前时，
-      // 章行后面紧跟的是知识点行（depth 更大）⇒ 章**仍然**算"有下级"、仍有箭头（与现状一致）。
-      for (const t of byCat.get(c.id) || []) {
-        rows.push({ kind: 'topic', t, depth: depth + 1 })
+      const children = getChildCategories(c.id)
+      if (children.length === 0) {
+        for (const t of byCat.get(c.id) || []) {
+          rows.push({ kind: 'topic', t, depth: depth + 1 })
+        }
       }
-      walk(getChildCategories(c.id), depth + 1)
+      walk(children, depth + 1)
     }
   }
   walk(roots, 0)
@@ -1171,27 +1087,10 @@ export function flattenCategoryTree(roots, { withTopics = false } = {}) {
  * 直挂在各目录下的知识点：{ [categoryId]: [topic] }。
  *
  * <p>**只认直挂**：挂在子目录下的知识点在子目录那一层出现一次，不会重复出现两遍。
- *
- * <p>顺序分两档（2026-11-03）—— **两类内容的"顺序"根本不是一回事**：
- * - **学习类**（AI 生成的教材内容）→ **id 升序** = 生成顺序 = 教材的讲解顺序。
- *   「5.3 HTTP」那 10 条按 id 排出来正好是「报文格式 → 请求方法 → 首部字段 → 长连接 →
- *   Cookie → 同源策略 → 缓存 → HTTP/2 → HTTP/3 → HPACK」，**正是教材序**
- *   （模型是按讲解顺序落库的，create_time 逐秒递增）。倒过来排 = 把整本书倒着展示。
- * - **笔记类**（随手记）→ **id 降序** = 最近记的在前。笔记没有教材序，
- *   它是一条**时间流** ⇒ 跟学习内容共用一个序就是错的。
- *
- * <p>两组**不混排**：学习组在前（它是主线），笔记组在后（是补充）。
- *
- * <p>⚠️ **判据用字典项的 value**（`learn`），不写死 id —— id 是数据，换环境就变。
- * 找不到「学习」这一档就**全当笔记**（保守：笔记是默认档）。
+ * <p>顺序：**id 升序** = 创建顺序 = 教材的讲解顺序（倒过来排 = 把整本书倒着展示）。
  */
 function topicsByCategory() {
   const byCat = new Map()
-  const learnId = topicTypeIdByValue(TOPIC_TYPE_LEARN)
-  // ⚠️ **用全集索引**（不是搜索索引）：树的知识点行是"这本书里全部的知识点"。
-  // 用搜索索引的话，搜索态下树上就只剩命中的那些 ⇒ **树被过滤了**
-  // （用户 2026-11-05：「展示的树就要是完整的啊 你把目录数据过滤了
-  // 然后加个命中栏的意义在哪？」）。
   for (const t of getFullTopicIndex()) {
     if (t.categoryId == null) continue
     const list = byCat.get(t.categoryId)
@@ -1199,12 +1098,7 @@ function topicsByCategory() {
     else byCat.set(t.categoryId, [t])
   }
   for (const list of byCat.values()) {
-    list.sort((a, b) => {
-      const aLearn = learnId != null && a.typeId === learnId
-      const bLearn = learnId != null && b.typeId === learnId
-      if (aLearn !== bLearn) return aLearn ? -1 : 1 // 学习组在前
-      return aLearn ? a.id - b.id : b.id - a.id // 学习升序（教材序）/ 笔记降序（最近在前）
-    })
+    list.sort((a, b) => a.id - b.id)
   }
   return byCat
 }
@@ -1305,6 +1199,34 @@ const uncategorizedTotal = computed(() => {
 
 export function getUncategorizedCount() {
   return uncategorizedTotal.value
+}
+
+/**
+ * **「笔记」目录**（随手记的家，2026-11-16 D3）。
+ *
+ * <p>⚠️ **按名字找，不按标记找**：后端建这个目录时用的是同一个名字（它是"懒建"的，
+ * 没有预置行、也没有 builtin 标记列）。用户改了名 → 这里就找不到 ⇒
+ * 首页那张卡退化成"0 条"，点进去是全部列表 —— **降级但不报错**。
+ *
+ * <p>⚠️ **只在顶层找**：它必须是顶层（自己的家不进任何书）。
+ */
+export const NOTES_CATEGORY_NAME = '笔记'
+
+export function getNotesCategory() {
+  return getCategories().find(
+    (c) => c.parentId === ROOT_CATEGORY && c.name === NOTES_CATEGORY_NAME
+  ) || null
+}
+
+/** 「笔记」目录里的条数（首页那张卡用） */
+export function getNotesCount() {
+  const notes = getNotesCategory()
+  if (!notes) return 0
+  let n = 0
+  for (const t of topicIndex.value.values()) {
+    if (t.categoryId === notes.id) n++
+  }
+  return n
 }
 
 /**

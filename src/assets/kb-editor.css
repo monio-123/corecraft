@@ -76,13 +76,6 @@
   margin: 0 var(--sp-2);
   background: var(--cc-border);
 }
-.md-toolbar .el-button.md-btn-tail {
-  color: var(--cc-primary);
-}
-.md-toolbar .el-button.md-btn-tail:hover {
-  background: var(--cc-primary-soft);
-  color: var(--cc-primary);
-}
 /* 导入的隐藏 input：只借它弹系统文件选择器，永远不显示 */
 .md-import-input {
   display: none;
@@ -136,21 +129,8 @@
      不跟着字号放大 —— 不然正文和标题之间会隔一条越来越宽的空。 */
   --kb-fold-gap: 6px;
 
-  /* 正文列**左右各留多少**（左右一样）。
-     默认 34px = 正文字号 14px 时的「H1 那个 1em 箭头 + 缝」。
-
-     ⚠️ **2026-10-24 起这里是固定值，不再跟字号自动缩放**：
-     偏好面板「正文白边」那一项的**内置默认就是 34px**
-     （`uiPrefs.js` 的 `ui.detail.detailTextInset.def`）——
-     CSS 兜底写另一个数（以前是 `calc(2em + 缝)`）的话，
-     面板显示的默认值和实际渲染对不上，字号一调大就露馅。
-     **现在两个地方写的是同一个数** ⇒ 改一处要改另一处。
-     要跟着字号一起放大 ⇒ 拖面板上那个滑块（它是绝对 px，自己管）。
-
-     ⚠️ **它和「顶栏下 / 正文上方 / 正文左右」不是一回事**（那三项 2026-10-21
-     已经写死、不再可配置了）：白边是**文字离框边那条缝**，而那三项是**框自己的内距**。
-     文字离框边的总距离 = 框内距 + 白边 —— 白边这一项还要能调，所以留在这儿。 */
-  --kb-gutter: var(--detail-text-inset, 34px);
+  /* 正文白边：正文列左右各留多少（默认 34px = 正文字号 14px 时的「H1 那个 1em 箭头 + 缝」）。 */
+  --kb-gutter: 34px;
 
   /* 正文字号定在这一层：ProseMirror 的字号（以前写在 .ProseMirror 上——
      同一件事只能有一处），标题的 em 比例也以它为基准。 */
@@ -181,10 +161,6 @@
    首尾不加：第一段的 margin 会把正文从框顶推开，最后一段的会在框底多留一截。 */
 .milkdown-editor-body .ProseMirror > p {
   margin-bottom: var(--kb-para-gap, 12px);
-  /* **段首缩进**（中文排版习惯，语雀那样）。只给顶层段落：列表项、表格单元格、
-     代码块、引用块里的段落各有各的排版，一并缩进会打架。
-     默认 0（不缩进）—— 技术笔记居多，缩进不是刚需，想要的人自己在面板里拉。 */
-  text-indent: var(--kb-para-indent, 0);
 }
 .milkdown-editor-body .ProseMirror > p:last-child {
   margin-bottom: 0;
@@ -448,6 +424,8 @@
   /* §4.11(a)：同上面的行内 code → 0.92em（随 --editor-fs 联动） */
   font-size: 0.92em;
   line-height: 1.7;
+  white-space: var(--code-white-space, pre);
+  word-break: break-all;
 }
 /* ============================================================
  * 代码块画图：mermaid（```mermaid）与结构化图（```kbfig）
@@ -465,12 +443,12 @@
  * ============================================================ */
 
 /* 容器：右上角的开关要定位 ⇒ relative */
-.milkdown-editor-body .ProseMirror :is(.kb-mermaid, .kbfig) {
+.milkdown-editor-body .ProseMirror .kbfig {
   margin: var(--kb-para-gap, 12px) 0;
   position: relative;
 }
-/* 右上角的「源码」开关：默认只留一个很淡的入口（读者看图，作者改字） */
-.milkdown-editor-body .ProseMirror :is(.kb-mermaid__srcbtn, .kbfig__srcbtn) {
+/* 右上角的「源码」开关：常态隐藏，悬停或展开源码时才淡入 */
+.milkdown-editor-body .ProseMirror .kbfig__srcbtn {
   position: absolute;
   top: calc(var(--sp-10) + 4px);
   right: var(--sp-11);
@@ -483,46 +461,50 @@
   border: 1px solid var(--cc-border);
   border-radius: 999px;
   cursor: pointer;
-  opacity: 0.45;
+  opacity: 0;
+  pointer-events: none;
   transition: opacity 0.15s, color 0.15s, border-color 0.15s;
 }
-/* 悬停 / 源码已展开 ⇒ 按钮显形 */
-.milkdown-editor-body .ProseMirror :is(.kb-mermaid__srcbtn, .kbfig__srcbtn):hover,
-.milkdown-editor-body .ProseMirror :is(.kb-mermaid, .kbfig).is-src-open
-  :is(.kb-mermaid__srcbtn, .kbfig__srcbtn) {
+.milkdown-editor-body .ProseMirror .kbfig:hover .kbfig__srcbtn,
+.milkdown-editor-body .ProseMirror .kbfig.is-src-open .kbfig__srcbtn {
   opacity: 1;
+  pointer-events: auto;
+}
+.milkdown-editor-body .ProseMirror .kbfig__srcbtn:hover,
+.milkdown-editor-body .ProseMirror .kbfig.is-src-open .kbfig__srcbtn {
   color: var(--cc-primary);
   border-color: color-mix(in srgb, var(--cc-primary) 40%, transparent);
 }
+@media (hover: none) {
+  .milkdown-editor-body .ProseMirror .kbfig__srcbtn {
+    opacity: 0.65;
+    pointer-events: auto;
+  }
+}
 /* 图区 */
-.milkdown-editor-body .ProseMirror :is(.kb-mermaid__fig, .kbfig__fig) {
+.milkdown-editor-body .ProseMirror .kbfig__fig {
   padding: var(--sp-10) var(--sp-11);
   background: var(--cc-surface-2);
   border-radius: var(--radius);
   overflow-x: auto;
 }
-/* 画不出来的时候**要说出来**（源码还在下面，可以改） */
-.milkdown-editor-body .ProseMirror :is(.kb-mermaid__canvas, .kbfig__canvas).is-error {
+.milkdown-editor-body .ProseMirror .kbfig__canvas.is-error {
   color: var(--cc-danger);
   font-size: var(--text-sm);
 }
 
-/* ---------- 图之上的一行：类型标签 + 图名（两条通道共用同一份 DOM） ---------- */
-/* padding-right 是给右上角「源码」开关让位 —— 不写长标题会压到按钮上 */
-.milkdown-editor-body .ProseMirror :is(.kbfig__head, .kb-mermaid__head) {
+/* ---------- 图之上的一行：类型标签 + 图名 ---------- */
+.milkdown-editor-body .ProseMirror .kbfig__head {
   display: flex;
   align-items: baseline;
   gap: var(--sp-7);
   margin-bottom: var(--sp-8);
   padding-right: 52px;
 }
-/* 这一行什么都没有 ⇒ 整行不占高度（没名字的图不该白多 8px，看着像排版错位） */
-.milkdown-editor-body .ProseMirror :is(.kbfig__head, .kb-mermaid__head).is-empty {
+.milkdown-editor-body .ProseMirror .kbfig__head.is-empty {
   display: none;
 }
-/* 类型标签：带边框 + 字距 ⇒ 读起来是「标签」而不是正文。
-   颜色压到 text-3：它说明这张图是什么，**图名才是这条知识的内容** */
-.milkdown-editor-body .ProseMirror :is(.kbfig__kind, .kb-mermaid__kind) {
+.milkdown-editor-body .ProseMirror .kbfig__kind {
   flex: none;
   padding: 0 var(--sp-6);
   font-size: 0.68em;
@@ -533,40 +515,28 @@
   border-radius: 999px;
   white-space: nowrap;
 }
-/* 源码：图下面那一段，弱化成虚线框；**默认收起** */
-.milkdown-editor-body .ProseMirror :is(.kb-mermaid__src, .kbfig__src) {
+.milkdown-editor-body .ProseMirror .kbfig__kind.is-empty {
+  display: none;
+}
+.milkdown-editor-body .ProseMirror .kbfig__src {
   margin: var(--sp-6) 0 0;
   padding: var(--sp-8) var(--sp-10);
   background: transparent;
   border: 1px dashed var(--cc-border);
-  /* §4.11(a)：原来是 var(--text-2xs)(11px) 固定值，同病 ⇒ 0.8em（相对父级） */
   font-size: 0.8em;
   line-height: 1.6;
   display: none;
 }
-/* 点开关 ⇒ 摊开源码 */
-.milkdown-editor-body .ProseMirror :is(.kb-mermaid, .kbfig).is-src-open
-  :is(.kb-mermaid__src, .kbfig__src) {
+.milkdown-editor-body .ProseMirror .kbfig.is-src-open .kbfig__src {
   display: block;
 }
-.milkdown-editor-body .ProseMirror :is(.kb-mermaid__src, .kbfig__src) code {
-  /* §4.11(a)：同上，0.8em 而不是固定的 11px */
+.milkdown-editor-body .ProseMirror .kbfig__src code {
   font-size: 0.8em;
   color: var(--cc-text-3);
 }
 
-/* ---------- 只属于 mermaid 的：画出来的 SVG ---------- */
-.milkdown-editor-body .ProseMirror .kb-mermaid__fig svg {
-  display: block;
-  margin: 0 auto;
-  max-width: 100%;
-  height: auto;
-}
-
-/* ---------- 只属于 kbfig 的 ---------- */
-/* 图名：和类型标签同一行（在 `.kbfig__head` 里），所以只管字号与颜色，
-   下距和「给按钮让位」都在 head 上 —— 那里两条通道共用一份 */
-.milkdown-editor-body .ProseMirror :is(.kbfig__title, .kb-mermaid__title) {
+/* 图名 */
+.milkdown-editor-body .ProseMirror .kbfig__title {
   font-family: var(--font-display, var(--font-body));
   font-size: 0.94em;
   font-weight: 600;
@@ -893,7 +863,7 @@
   height: 20px;
   border-radius: 50%;
   background: var(--cc-primary);
-  color: #fff;
+  color: var(--cc-btn-fg, #fff);
   /* ⚠️ 居中靠 flex，**不能靠 line-height**：全局是 border-box，20px 高减掉
      上下 2px 边框只剩 16px 内容区，再写 line-height:20px 行盒就往下溢 2px
      ⇒ 数字看着偏下（原实现 line-height:18px + height:18px 就是这个毛病）。 */
@@ -1025,6 +995,502 @@
     padding: var(--sp-5) 0 0;
   }
   .milkdown-editor-body .ProseMirror .kbfig__pr { padding: 0 0 var(--sp-5); }
+}
+
+.milkdown-editor-body .ProseMirror .kbfig__rnote {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.72em;
+  color: var(--cc-text-3);
+}
+.milkdown-editor-body .ProseMirror .kbfig__loop {
+  margin-top: var(--sp-6);
+  padding: var(--sp-4) var(--sp-8);
+  border: 1px dashed color-mix(in srgb, var(--cc-primary) 38%, var(--cc-border));
+  border-radius: var(--radius-xs);
+  font-size: 0.76em;
+  color: var(--cc-primary);
+  text-align: center;
+  background: color-mix(in srgb, var(--cc-primary) 5%, transparent);
+}
+
+/* tree：层级树 */
+.milkdown-editor-body .ProseMirror .kbtree__node {
+  position: relative;
+}
+.milkdown-editor-body .ProseMirror .kbtree__card {
+  padding: var(--sp-5) var(--sp-8);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--radius-xs);
+  background: var(--cc-surface);
+}
+.milkdown-editor-body .ProseMirror .kbtree__node.is-root > .kbtree__card {
+  border-color: color-mix(in srgb, var(--cc-primary) 42%, var(--cc-border));
+  background: color-mix(in srgb, var(--cc-primary) 7%, var(--cc-surface));
+}
+.milkdown-editor-body .ProseMirror .kbtree__head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+  flex-wrap: wrap;
+}
+.milkdown-editor-body .ProseMirror .kbtree__t {
+  font-size: 0.85em;
+  font-weight: 600;
+  color: var(--cc-text-1);
+}
+.milkdown-editor-body .ProseMirror .kbtree__tag {
+  padding: 0 6px;
+  font-size: 0.68em;
+  line-height: 1.6;
+  border-radius: 999px;
+  color: var(--cc-primary);
+  background: color-mix(in srgb, var(--cc-primary) 10%, transparent);
+}
+.milkdown-editor-body .ProseMirror .kbtree__d {
+  margin-top: 2px;
+  font-size: 0.75em;
+  color: var(--cc-text-3);
+  line-height: 1.45;
+}
+.milkdown-editor-body .ProseMirror .kbtree__kids {
+  margin: var(--sp-5) 0 0 var(--sp-10);
+  padding-left: var(--sp-10);
+  border-left: 1px solid var(--cc-border-strong);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+.milkdown-editor-body .ProseMirror .kbtree__kids > .kbtree__node::before {
+  content: "";
+  position: absolute;
+  left: calc(-1 * var(--sp-10));
+  top: 14px;
+  width: var(--sp-10);
+  height: 1px;
+  background: var(--cc-border-strong);
+}
+
+/* anatomy：核心拆解 */
+.milkdown-editor-body .ProseMirror .kbanat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-8);
+}
+.milkdown-editor-body .ProseMirror .kbanat__center {
+  padding: var(--sp-7) var(--sp-10);
+  border: 1.5px solid color-mix(in srgb, var(--cc-primary) 48%, var(--cc-border));
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--cc-primary) 8%, var(--cc-surface));
+  text-align: center;
+}
+.milkdown-editor-body .ProseMirror .kbanat__head {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+}
+.milkdown-editor-body .ProseMirror .kbanat__ct {
+  font-size: 0.9em;
+  font-weight: 700;
+  color: var(--cc-text-1);
+}
+.milkdown-editor-body .ProseMirror .kbanat__tag {
+  padding: 0 6px;
+  font-size: 0.68em;
+  line-height: 1.6;
+  border-radius: 999px;
+  color: var(--cc-primary);
+  background: color-mix(in srgb, var(--cc-primary) 12%, transparent);
+}
+.milkdown-editor-body .ProseMirror .kbanat__cd {
+  margin-top: 2px;
+  font-size: 0.76em;
+  color: var(--cc-text-3);
+}
+.milkdown-editor-body .ProseMirror .kbanat__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: var(--sp-6);
+}
+.milkdown-editor-body .ProseMirror .kbanat__part {
+  padding: var(--sp-6) var(--sp-8);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--radius-xs);
+  background: var(--cc-surface);
+}
+.milkdown-editor-body .ProseMirror .kbanat__part.is-hl {
+  border-color: color-mix(in srgb, var(--cc-primary) 45%, var(--cc-border));
+  border-left-width: 3px;
+}
+.milkdown-editor-body .ProseMirror .kbanat__pt {
+  font-size: 0.83em;
+  font-weight: 600;
+  color: var(--cc-text-1);
+}
+.milkdown-editor-body .ProseMirror .kbanat__pd {
+  margin-top: 2px;
+  font-size: 0.74em;
+  color: var(--cc-text-3);
+  line-height: 1.45;
+}
+
+/* matrix：对比矩阵 */
+.milkdown-editor-body .ProseMirror .kbmat {
+  overflow-x: auto;
+}
+.milkdown-editor-body .ProseMirror .kbmat__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8em;
+}
+.milkdown-editor-body .ProseMirror .kbmat__th,
+.milkdown-editor-body .ProseMirror .kbmat__rn,
+.milkdown-editor-body .ProseMirror .kbmat__td {
+  padding: var(--sp-5) var(--sp-7);
+  border-bottom: 1px solid var(--cc-border);
+  text-align: left;
+  vertical-align: top;
+}
+.milkdown-editor-body .ProseMirror .kbmat__th {
+  font-weight: 600;
+  color: var(--cc-text-2);
+  background: color-mix(in srgb, var(--cc-primary) 5%, var(--cc-surface));
+  border-bottom-color: var(--cc-border-strong);
+}
+.milkdown-editor-body .ProseMirror .kbmat__rn {
+  font-weight: 600;
+  color: var(--cc-text-1);
+  white-space: nowrap;
+}
+.milkdown-editor-body .ProseMirror .kbmat__td {
+  color: var(--cc-text-2);
+  line-height: 1.45;
+}
+.milkdown-editor-body .ProseMirror .kbmat__pill {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.88em;
+  font-weight: 600;
+}
+.milkdown-editor-body .ProseMirror .kbmat__pill.is-ok {
+  color: var(--cc-success, #16a34a);
+  background: var(--cc-success-soft, rgba(22, 163, 74, 0.12));
+}
+.milkdown-editor-body .ProseMirror .kbmat__pill.is-warn {
+  color: var(--cc-warning);
+  background: var(--cc-warning-soft, rgba(217, 119, 6, 0.12));
+}
+
+/* layers 强调层 */
+.milkdown-editor-body .ProseMirror .kbfig__group.is-hl {
+  border-color: color-mix(in srgb, var(--cc-primary) 42%, var(--cc-border));
+  background: color-mix(in srgb, var(--cc-primary) 5%, var(--cc-surface));
+}
+
+/* stages 横排步序流（<=5 步无侧翼） */
+.milkdown-editor-body .ProseMirror .kbfig__hflow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: var(--sp-6);
+  position: relative;
+}
+.milkdown-editor-body .ProseMirror .kbfig__hstep {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--sp-5);
+  position: relative;
+}
+.milkdown-editor-body .ProseMirror .kbfig__htop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  position: relative;
+}
+.milkdown-editor-body .ProseMirror .kbfig__htop::before {
+  content: "";
+  position: absolute;
+  left: -4px;
+  right: -4px;
+  top: 50%;
+  height: 1px;
+  background: var(--cc-border-strong);
+  z-index: 0;
+}
+.milkdown-editor-body .ProseMirror .kbfig__hstep:first-child .kbfig__htop::before { left: 50%; }
+.milkdown-editor-body .ProseMirror .kbfig__hstep:last-child .kbfig__htop::before { right: 50%; }
+.milkdown-editor-body .ProseMirror .kbfig__hnum {
+  position: relative;
+  z-index: 1;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--cc-text-2);
+  background: var(--cc-surface);
+  border: 1px solid var(--cc-border-strong);
+}
+.milkdown-editor-body .ProseMirror .kbfig__hstep.is-hl .kbfig__hnum {
+  background: var(--cc-primary);
+  color: var(--cc-btn-fg, #fff);
+  border-color: var(--cc-primary);
+  box-shadow: 0 0 0 3px var(--cc-primary-ring);
+}
+.milkdown-editor-body .ProseMirror .kbfig__hbody {
+  width: 100%;
+  padding: var(--sp-6) var(--sp-7);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--radius-xs);
+  background: var(--cc-surface);
+}
+.milkdown-editor-body .ProseMirror .kbfig__hstep.is-hl .kbfig__hbody {
+  border-color: var(--cc-primary);
+  background: color-mix(in srgb, var(--cc-primary) 7%, var(--cc-surface));
+}
+.milkdown-editor-body .ProseMirror .kbfig__ht {
+  font-size: 0.82em;
+  font-weight: 600;
+  color: var(--cc-text-1);
+}
+.milkdown-editor-body .ProseMirror .kbfig__hd {
+  margin-top: 2px;
+  font-size: 0.72em;
+  color: var(--cc-text-3);
+  line-height: 1.45;
+}
+
+/* tree / sequence / graph SVG 滚动容器 */
+.milkdown-editor-body .ProseMirror .kbtree-scroll,
+.milkdown-editor-body .ProseMirror .kbseq-scroll,
+.milkdown-editor-body .ProseMirror .kbgraph-scroll {
+  overflow-x: auto;
+  text-align: center;
+}
+.milkdown-editor-body .ProseMirror .kbtree-svg,
+.milkdown-editor-body .ProseMirror .kbseq-svg,
+.milkdown-editor-body .ProseMirror .kbgraph-svg {
+  display: inline-block;
+  max-width: 100%;
+  height: auto;
+  font-family: var(--font-body);
+}
+
+/* memory：内存槽位与指针 */
+.milkdown-editor-body .ProseMirror .kbmem {
+  display: flex;
+  gap: var(--sp-10);
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.milkdown-editor-body .ProseMirror .kbmem__stack {
+  flex: 0 0 150px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+.milkdown-editor-body .ProseMirror .kbmem__heap {
+  flex: 1 1 320px;
+  min-width: 0;
+  padding: var(--sp-7) var(--sp-8);
+  border: 1px dashed color-mix(in srgb, var(--cc-primary) 35%, var(--cc-border));
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--cc-primary) 3%, var(--cc-surface));
+}
+.milkdown-editor-body .ProseMirror .kbmem__cap {
+  font-size: 0.72em;
+  font-weight: 600;
+  color: var(--cc-text-3);
+  margin-bottom: var(--sp-5);
+}
+.milkdown-editor-body .ProseMirror .kbmem__scard {
+  padding: var(--sp-6) var(--sp-8);
+  border: 1px solid var(--cc-primary-border);
+  border-radius: var(--radius-xs);
+  background: var(--cc-surface);
+}
+.milkdown-editor-body .ProseMirror .kbmem__sname {
+  font-size: 0.8em;
+  font-weight: 600;
+  color: var(--cc-text-1);
+}
+.milkdown-editor-body .ProseMirror .kbmem__sref {
+  font-size: 0.72em;
+  color: var(--cc-primary);
+  margin-top: 2px;
+  font-family: var(--font-num, monospace);
+}
+.milkdown-editor-body .ProseMirror .kbmem__slots {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.milkdown-editor-body .ProseMirror .kbmem__srow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+  flex-wrap: wrap;
+}
+.milkdown-editor-body .ProseMirror .kbmem__slot {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+  padding: var(--sp-4) var(--sp-8);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--radius-xs);
+  background: var(--cc-surface);
+  font-size: 0.78em;
+}
+.milkdown-editor-body .ProseMirror .kbmem__slot.is-warn {
+  border-color: var(--cc-warning);
+  background: var(--cc-warning-soft, rgba(217, 119, 6, 0.1));
+}
+.milkdown-editor-body .ProseMirror .kbmem__slot.is-ok {
+  border-color: var(--cc-success, #34a853);
+  background: var(--cc-success-soft, rgba(52, 168, 83, 0.1));
+}
+.milkdown-editor-body .ProseMirror .kbmem__slot.is-primary {
+  border-color: var(--cc-primary);
+  background: var(--cc-primary-soft);
+}
+.milkdown-editor-body .ProseMirror .kbmem__idx {
+  font-family: var(--font-num, monospace);
+  color: var(--cc-text-3);
+}
+.milkdown-editor-body .ProseMirror .kbmem__val {
+  font-weight: 600;
+  color: var(--cc-text-1);
+}
+.milkdown-editor-body .ProseMirror .kbmem__chain,
+.milkdown-editor-body .ProseMirror .kbmem__treebox {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-5);
+  flex-wrap: wrap;
+}
+.milkdown-editor-body .ProseMirror .kbmem__arrow {
+  color: var(--cc-primary);
+  font-weight: 600;
+  font-size: 0.85em;
+}
+.milkdown-editor-body .ProseMirror .kbmem__node {
+  padding: var(--sp-3) var(--sp-7);
+  border: 1px solid var(--cc-border-strong);
+  border-radius: var(--radius-xs);
+  background: var(--cc-surface);
+}
+.milkdown-editor-body .ProseMirror .kbmem__nt {
+  font-size: 0.76em;
+  font-weight: 600;
+  color: var(--cc-text-1);
+}
+.milkdown-editor-body .ProseMirror .kbmem__nd {
+  font-size: 0.68em;
+  color: var(--cc-text-3);
+}
+.milkdown-editor-body .ProseMirror .kbmem__tmini {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.milkdown-editor-body .ProseMirror .kbmem__tkids {
+  display: flex;
+  gap: 6px;
+}
+.milkdown-editor-body .ProseMirror .kbmem__tnode {
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--cc-border-strong);
+  background: var(--cc-surface);
+  font-size: 0.72em;
+  color: var(--cc-text-1);
+}
+.milkdown-editor-body .ProseMirror .kbmem__tnode.is-root {
+  border-color: var(--cc-primary);
+  color: var(--cc-primary);
+  font-weight: 600;
+}
+.milkdown-editor-body .ProseMirror .kbmem__tnote {
+  padding: var(--sp-4) var(--sp-7);
+  border: 1px solid var(--cc-danger, #e5484d);
+  background: var(--cc-danger-soft, rgba(229, 72, 77, 0.1));
+  color: var(--cc-text-2);
+  border-radius: var(--radius-xs);
+  font-size: 0.72em;
+}
+
+/* timeline：演进里程碑 */
+.milkdown-editor-body .ProseMirror .kbtl__track {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: var(--sp-7);
+}
+.milkdown-editor-body .ProseMirror .kbtl__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+.milkdown-editor-body .ProseMirror .kbtl__top {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+}
+.milkdown-editor-body .ProseMirror .kbtl__tag {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.72em;
+  font-weight: 600;
+  color: var(--cc-text-2);
+  background: var(--cc-surface);
+  border: 1px solid var(--cc-border-strong);
+}
+.milkdown-editor-body .ProseMirror .kbtl__item.is-hl .kbtl__tag {
+  background: var(--cc-primary);
+  color: var(--cc-btn-fg, #fff);
+  border-color: var(--cc-primary);
+}
+.milkdown-editor-body .ProseMirror .kbtl__dot {
+  flex: 1;
+  height: 1px;
+  background: var(--cc-border-strong);
+}
+.milkdown-editor-body .ProseMirror .kbtl__card {
+  flex: 1;
+  padding: var(--sp-6) var(--sp-8);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--radius-xs);
+  background: var(--cc-surface);
+}
+.milkdown-editor-body .ProseMirror .kbtl__item.is-hl .kbtl__card {
+  border-color: var(--cc-primary-border);
+  background: color-mix(in srgb, var(--cc-primary) 5%, var(--cc-surface));
+}
+.milkdown-editor-body .ProseMirror .kbtl__t {
+  font-size: 0.82em;
+  font-weight: 600;
+  color: var(--cc-text-1);
+}
+.milkdown-editor-body .ProseMirror .kbtl__d {
+  margin-top: 2px;
+  font-size: 0.72em;
+  color: var(--cc-text-3);
+  line-height: 1.45;
+}
+
+@media (max-width: 640px) {
+  .milkdown-editor-body .ProseMirror .kbfig__hflow {
+    grid-template-columns: 1fr;
+  }
+  .milkdown-editor-body .ProseMirror .kbfig__htop::before {
+    display: none;
+  }
 }
 /* 引用块：原文条款 + 「注意 / 易错 / 经验」提示块共用这一个块（2026-11-09 升级）。
    原来只有一条 2px 灰竖线、没有底色 —— 在纸色正文里几乎看不出边界，
@@ -1645,7 +2111,6 @@
      h1 1.8em/700 · h2 1.43em/700 · h3 1.25em/600 · h4 1.1em/600 · h5-h6 1em/600
    ⚠️ **em 的基准是父级字号**（= 正文字号）⇒ 用户把正文调大，标题等比跟着放大，
      层次比例永远不变。
-   ⚠️ **--kb-head-scale 是乘数**，偏好面板拖它 = 整体调标题的大小（不改层级比例）。
    ⚠️ **默认值写在 var() 的兜底里，不在这里声明**：自定义属性在**声明它的地方**
      就被算成具体值 —— 这里写一句 `--kb-line-height: 1.8`，偏好面板写在 <html>
      行内的那份会被**它盖住**、滑块怎么拖都不生效。所以一律 `var(--kb-x, 默认值)`。
@@ -1658,42 +2123,42 @@
      页面级标题（详情页的 .title）是 700，编辑器里的 h1 是 800 ⇒ 同一条内容的标题
      在两个地方粗细不一样。**页面级标题 800 过重** ⇒ 两处统一 700。 */
 .milkdown-editor-body .ProseMirror h1 {
-  font-size: calc(1.8em * var(--kb-head-scale, 1));
+  font-size: 1.8em;
   font-weight: 700;
   line-height: 1.35;
-  margin-top: calc(var(--kb-head-gap, 20px) * 1.8);
-  margin-bottom: calc(var(--kb-head-gap, 20px) * 0.6);
+  margin-top: 36px;
+  margin-bottom: 12px;
 }
 .milkdown-editor-body .ProseMirror h2 {
-  font-size: calc(1.43em * var(--kb-head-scale, 1));
+  font-size: 1.43em;
   font-weight: 700;
   line-height: 1.4;
-  margin-top: calc(var(--kb-head-gap, 20px) * 1.4);
-  margin-bottom: calc(var(--kb-head-gap, 20px) * 0.5);
+  margin-top: 28px;
+  margin-bottom: 10px;
 }
 .milkdown-editor-body .ProseMirror h3 {
-  font-size: calc(1.25em * var(--kb-head-scale, 1));
+  font-size: 1.25em;
   font-weight: 600;
   line-height: 1.45;
-  margin-top: calc(var(--kb-head-gap, 20px) * 1.1);
-  margin-bottom: calc(var(--kb-head-gap, 20px) * 0.45);
+  margin-top: 22px;
+  margin-bottom: 9px;
 }
 .milkdown-editor-body .ProseMirror h4 {
-  font-size: calc(1.1em * var(--kb-head-scale, 1));
+  font-size: 1.1em;
   font-weight: 600;
   line-height: 1.5;
-  margin-top: calc(var(--kb-head-gap, 20px) * 0.9);
-  margin-bottom: calc(var(--kb-head-gap, 20px) * 0.4);
+  margin-top: 18px;
+  margin-bottom: 8px;
 }
 .milkdown-editor-body .ProseMirror h5,
 .milkdown-editor-body .ProseMirror h6 {
-  font-size: calc(1em * var(--kb-head-scale, 1));
+  font-size: 1em;
   font-weight: 600;
   line-height: 1.5;
   /* 五级以下没什么层级了，用次一档的颜色标一下"到这儿已经是最细的" */
   color: var(--cc-text-2);
-  margin-top: calc(var(--kb-head-gap, 20px) * 0.8);
-  margin-bottom: calc(var(--kb-head-gap, 20px) * 0.35);
+  margin-top: 16px;
+  margin-bottom: 7px;
 }
 
 /* 被折叠掉的那段内容 */

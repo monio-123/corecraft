@@ -15,6 +15,7 @@
         v-model="categoryFilter"
         class="rec-filter rec-filter--cat"
         :categories="allCategories"
+        :leaf-only="false"
         placeholder="全部目录"
         clearable
       />

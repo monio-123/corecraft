@@ -16,7 +16,11 @@
  * @param {number|string} categoryId 目录 id
  * @returns {{path:string,query:object}} vue-router 的 location 对象
  */
-import { canUseTree } from './viewPref'
+
+/** 一级目录（parentId 为空或 0）作为书入口走 ?tree= */
+export function canUseTree(category) {
+  return Boolean(category && !category.parentId)
+}
 
 /**
  * 「跳到某个目录的卡片视图」的地址。

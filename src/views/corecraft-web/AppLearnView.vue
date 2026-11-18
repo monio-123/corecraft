@@ -12,83 +12,32 @@
          ⚠️ **面包屑 2026-11-08 移到 AppLayout 顶栏**（用户：「把下方那个 一级目录 ->
          二级目录 、、、的那个索引页移动到上面去 就在这个一级目录名字之后」）
          ⇒ 这一行只剩筛选条，"我在哪"由顶栏那条「一级目录/二级目录/…」回答。 -->
-    <!-- 独立卡片视图页（？category=）的筛选行：**同一套 TopicFilters**
-         （和树卡片模式标题行里的那个是同一个组件——2026-11-08「不要维护两套」）。 -->
-    <div v-if="!isBookPage" class="cc-toprow">
+    <!-- 卡片视图顶部净空，仅「待归类」屏保留批量工具条 -->
+    <div v-if="!isBookPage && showBatch && (pageRecords.length > 0 || batchMode)" class="cc-toprow">
       <TopicFilters
-        :time-range="timeRange"
-        :type-filter="typeFilter"
-        :ranges="filterRanges"
-        :types="filterTypes"
-        :organize-count="showOrganize ? scopedTopics.length : 0"
-        :exam-count="showExam ? examScope.length : 0"
-        :organizing="submitting"
         :show-batch="showBatch"
         :batch-mode="batchMode"
         :batch-count="selectedTopics.length"
         :page-count="pageRecords.length"
         :all-selected="allSelected"
-        @pick-range="pickRange"
-        @pick-type="pickType"
-        @organize="openBatchOrganize"
-        @exam="openExam"
         @toggle-batch="toggleBatch"
         @select-all="selectAllOnPage"
         @batch-categorize="onBatchCategorize"
-        @batch-organize="onBatchOrganize"
         @batch-delete="onBatchDelete"
       />
     </div>
 
-    <!-- 树视图：**一个一级目录的整棵目录树**。
-         点目录名 ⇒ 进那个目录的**卡片视图**（子树平铺）；点知识点叶子 ⇒ 进详情。
-         ⚠️ 一级目录永远不会平铺全部 —— 一级目录是「一本书」，平铺出来是把整本书抖一遍。
-
-         ⚠️ **`v-show` 而不是 `v-if`**（2026-11-04）：树 → 卡片视图是**同一个路由**
-         （`?tree=` ⇄ `?category=`）⇒ 组件不会被销毁，但 `v-if="renderTree"` 会把
-         `BookToc` 整个**销毁重建** ⇒ 树里记住的「刚才点的是哪一行」（`lastSpot`）
-         和「哪些目录是收着的」（`collapsed`）**全丢了** ⇒ 返回时恢复不了。
-         `v-show` 只藏不销毁 ⇒ 树一直活着，返回时它还记得。 -->
     <BookToc
       v-if="renderTree"
       v-show="isBookPage"
       :category="treeViewRoot"
+      :current="currentId"
       :active="pageActive && isBookPage && !treeCards"
       :mode="treeCards ? 'cards' : 'tree'"
-      @mode-change="onTreeMode"
       @pick="onTreePick"
       @pick-topic="goDetail"
       @structure-done="onTreeStructureDone"
-    >
-      <!-- 树+卡片模式：**同一套 TopicFilters**（2026-11-08 用户：
-           「所有卡片的视图都是同一个 我不要维护两套」）—— 和独立卡片视图页
-           （面包屑行）用的是同一个组件，改一处两边同步。 -->
-      <template v-if="treeCards" #tools>
-        <TopicFilters
-          :time-range="timeRange"
-          :type-filter="typeFilter"
-          :ranges="filterRanges"
-          :types="filterTypes"
-          :organize-count="showOrganize ? scopedTopics.length : 0"
-          :exam-count="showExam ? examScope.length : 0"
-          :organizing="submitting"
-          :show-batch="showBatch"
-          :batch-mode="batchMode"
-          :batch-count="selectedTopics.length"
-          :page-count="pageRecords.length"
-          :all-selected="allSelected"
-          @pick-range="pickRange"
-          @pick-type="pickType"
-          @organize="openBatchOrganize"
-          @exam="openExam"
-          @toggle-batch="toggleBatch"
-          @select-all="selectAllOnPage"
-          @batch-categorize="onBatchCategorize"
-          @batch-organize="onBatchOrganize"
-          @batch-delete="onBatchDelete"
-        />
-      </template>
-    </BookToc>
+    />
 
     <template v-if="!isBookPage || treeCards">
       <!-- 平铺。**网格形态**（没有选中目录）：这里显示的是当前筛选条件下的知识点。
@@ -136,7 +85,6 @@
               @click="onCardClick(t)"
               @delete="handleDelete"
               @categorize="onCategorize"
-              @ai-organize="onAiOrganize"
               @mastery-scope="onMasteryScope"
             />
           </div>
@@ -163,17 +111,8 @@
       </div>
     </template>
 
-    <!-- AI 归类：**一个**弹窗实例，两个入口。
-         ① 筛选条上的「AI 归类 N」= 批量（待归类那一屏的全部）；
-         ② 卡片「⋯ → AI 归类」= 单条（2026-11-11 新增，复用同一个弹窗，零新交互）。
-         ⚠️ **两者共用这一个弹窗**，不是各挂一个 —— 弹窗只有一份实现
-         （AiOrganizeDialog），差别只是传进来的 topics 是"一批"还是"一条"。
-         ⚠️ **批量模式勾选后的「AI 归类」不走这个弹窗**（走后台任务，见 openBatchOrganize）。 -->
-    <AiOrganizeDialog
-      v-model="organizeOpen"
-      :topics="organizeTopics"
-      :categories="allCategories"
-    />
+    <!-- ⚠️ **AI 归类弹窗已删**（2026-11-16 D2 AI 归类退役）：全树自动分类这条能力下线 ⇒
+         归类改为**手动**（卡片「⋯ → 归类到目录」/ 批量「归类到目录」都还在）。 -->
 
     <!-- 手动归类：**一个**弹窗实例（不是每张卡各挂一个）。
          卡片只发 `categorize` 事件（见 TopicCard 的 ITEMS）——
@@ -208,22 +147,18 @@
 defineOptions({ name: 'CorecraftWebAppLearn' })
 import { ref, computed, onMounted, onActivated, onDeactivated, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import {
   ensureTopicIndexLoaded, ensureCategoriesLoaded,
-  loadTopicPage, getTopicIndex, getCategory, getCategories, scopeMatcher,
+  loadTopicPage, getTopicIndex, getCategory, getCategories,
   getCategorySubtreeIds, getDataVersion, getCategoryCountMap,
   getChildCategories, getCategoryPath, ROOT_CATEGORY, categoryScopeFromQuery,
   confirmDeleteTopic, confirmDeleteTopics, UNCATEGORIZED, ALL,
-  getTopicTypes, getTopicTypeLabel, resolveTopicTypeId,
   getCategoryMastery, ensureCategoryMasteryLoaded,
-  refreshTopicIndexes, bumpDataVersion
+  refreshTopicIndexes, bumpDataVersion, getFullTopicIndex
 } from './useCorecraftWebStore'
-import { aiEnabled, endpointProblem, ensureAiConfigLoaded } from './useAi'
-import { openExamTab } from './exam'
 import { keywordFromRoute, rangeFromRoute } from '../../utils/routeQuery'
-import { TIME_RANGES, DEFAULT_RANGE, rangeBounds, withinRange, isRangeKind } from '../../utils/timeRange'
-import { canUseTree, viewOf, setView, VIEW_CARD, VIEW_TREE } from '../../utils/viewPref'
+import { rangeBounds } from '../../utils/timeRange'
+import { canUseTree } from '../../utils/categoryNav'
 import { visibleRootCategoriesOf } from '../../utils/categoryTree'
 import {
   searchModeFromRoute, searchScopeOf, isCatMode, matchNameFromRoute, SEARCH_MODE_CAT
@@ -234,11 +169,8 @@ import KbSkeletonCard from '../../components/corecraft-web/KbSkeletonCard.vue'
 import BookToc from './BookToc.vue'
 import TopicCard from './TopicCard.vue'
 import MasteryOverview from './MasteryOverview.vue'
-import AiOrganizeDialog from './AiOrganizeDialog.vue'
 import CategorizeDialog from './CategorizeDialog.vue'
 import MasteryScopeDialog from './MasteryScopeDialog.vue'
-import { submitClassifyTask } from './classifyTask'
-import { genTaskCreated } from './useGenTasks'
 
 const route = useRoute()
 const router = useRouter()
@@ -262,26 +194,6 @@ const onLearnRoute = computed(() => route.name === 'AppLearn')
 // ⚠️ **为什么改**：详情页要能还原"这次搜索的命中集"（浮条上的「第 3/52 个」和 ↑↓
 // 跳的那一条，得是**用户在卡片列表里看到的同一条**）⇒ 命中集得连类型条件一起还原。
 // 类型筛选只有这一个入口（列表页那个下拉）⇒ 进 URL 不会多出第二个写方。
-// 顺带的好处：**刷新页面类型筛选不再丢**（和目录 / 时间范围一个待遇）。
-//
-// ⚠️ **真相源是 URL**（和目录、时间范围一个做法）：不抄一份本地 ref ——
-// 抄一份就是"两处可写"，而同步只靠 watch（watch 只在 URL 真变了时才跑）⇒
-// 会出现"选了「学习」之后选不回「笔记」"这类症状。
-const typeFilter = computed(() => {
-  const t = route.query.type
-  if (t == null || t === '') return null
-  const id = Number(t)
-  return Number.isFinite(id) ? id : null
-})
-const topicTypes = computed(() => getTopicTypes())
-const typeFilterLabel = computed(() => (typeFilter.value ? getTopicTypeLabel(typeFilter.value) : ''))
-
-function pickType(id) {
-  router.replace({
-    path: route.path,
-    query: { ...route.query, type: id == null ? undefined : id }
-  })
-}
 
 // 目录筛选的真相源是 URL。
 //
@@ -364,15 +276,6 @@ const timeRange = computed(() => rangeFromRoute(route))
 /** 当前时间窗的起止（不限时间 = null）。 */
 const timeBounds = computed(() => rangeBounds(timeRange.value))
 
-function pickRange(kind) {
-  const next = isRangeKind(kind) ? kind : DEFAULT_RANGE
-  // 不限时间就是"不带 range 参数"（vue-router 会把 undefined 的 query 删掉）
-  router.replace({
-    path: route.path,
-    query: { ...route.query, range: next === DEFAULT_RANGE ? undefined : next }
-  })
-}
-
 /**
  * **结构索引**（全集，不含正文）：分面计数、考试范围、目录树都用它。
  *
@@ -428,7 +331,10 @@ function buildPageParams() {
   if (categoryFilter.value === UNCATEGORIZED) {
     params.uncategorized = true
   } else if (categoryFilter.value !== ALL) {
-    params.categoryIds = [...getCategorySubtreeIds(categoryFilter.value)].join(',')
+    const targetId = isBookPage.value && currentId.value != null ? currentId.value : categoryFilter.value
+    params.categoryIds = [...getCategorySubtreeIds(targetId)].join(',')
+    // 书页看卡片按目录树顺序 + id 升序（与书中讲解顺序一致），全局列表保持最新在前
+    if (isBookPage.value) params.sort = 'asc'
   }
   // **时间范围必须在服务端**：分页是服务端做的，前端筛完再发就没有分页可言。
   // 起止由前端按本地时区算好（utils/timeRange.js）⇒ 和后端、和分面数字同一口径。
@@ -437,7 +343,6 @@ function buildPageParams() {
     params.createdFrom = bounds.from
     params.createdTo = bounds.to
   }
-  if (typeFilter.value != null) params.typeId = typeFilter.value
   // ⚠️ **不再发 `tag`**：标签筛选这个维度已经从界面上下线了（2026-11-03）。
   // 后端那个参数**还认**（接口没动）—— 留着不冲突，前端不发就是了。
   return params
@@ -607,24 +512,6 @@ function matchCategory(t) {
 // 结构索引就是"当前关键词下的全集"（正文只有服务端能搜），
 // 本地再判一次的话索引里没有正文，会把正文命中的那几条全滤掉。
 
-/**
- * 这条知识点的**类型档**（收口后的真实 id）。
- *
- * <p>typeId 可能悬空（字典项被软删）⇒ 统一当默认档。
- * **只有这一处**：筛选（matchType）和类型下拉上的数字（typeCountMap）
- * 问的是同一句话，各写一遍的话，字典一改就有一处对不上
- * （症状是"下拉里有数、点进去没有"）。
- */
-function typeIdOf(t) {
-  return resolveTopicTypeId(t.typeId)
-}
-
-// 类型筛选。**普通函数**（原来是个 computed）。
-// ⚠️ 那个 computed 的理由（「目录页的树要跟着筛选重摊」）**已经不成立** ——
-// 树视图画的是**结构**（目录 + 知识点叶子），它不吃类型筛选，从来没有问过这个谓词。
-// ⇒ 留着 computed 只是多一层包装；响应式由**消费方**保证（`topicsInScope` 本身是
-// computed，它在求值时读 `typeFilter.value` ⇒ 依赖照样被记上）。
-const matchType = (t) => typeFilter.value == null || typeIdOf(t) === typeFilter.value
 
 // ==================== 两种形态：书页（标题行 + 内容盒子）/ 网格 ====================
 
@@ -691,64 +578,37 @@ watch(
 )
 
 /**
+ * 这个目录的**直属**知识点条数（2026-11-16 D7：卡片 = 当前目录的直属，不递归）。
+ * 「直属」这个口径只此一份：卡片取数（buildPageParams）和分段显隐都问它。
+ */
+function directCountOf(id) {
+  if (id == null) return 0
+  let n = 0
+  for (const t of getFullTopicIndex()) if (t.categoryId === id) n++
+  return n
+}
+
+/** 当前目录（没选 ⇒ 书根——书根的直属就是「便签层」）。 */
+const currentId = computed(() => currentCatId.value ?? treeViewRoot.value?.id ?? null)
+/** 书里有没有子目录（没有 ⇒ 树没得画，「目录树」段不渲染、直接落卡片）。 */
+const hasTreeBox = computed(() =>
+  treeViewRoot.value != null && getChildCategories(treeViewRoot.value.id).length > 0
+)
+const currentIsLeafWithDirect = computed(() =>
+  currentId.value != null && directCountOf(currentId.value) > 0 && getChildCategories(currentId.value).length === 0
+)
+
+/**
  * **内容盒子放什么**：卡片（true）还是树的正文（false）。
- *
- * <p>⚠️ 这是"形态"的**第二层**（第一层是 {@link isBookPage}：这一屏有没有标题行）——
- * 两件事分开之后，"从树里点进子目录"就不再是"换一个页面"，而是**同一页换内容盒子**。
- *
- * <p>三档判据，优先级从高到低：
- * 1. **`?category=`** ⇒ 卡片：点目录名 = 看这个目录的内容（原语义不变，
- *    这也是"进目录"与"看结构"的分界）；
- * 2. **`?view=`** ⇒ 用户在这次会话里点过分段切换，以 URL 为准；
- * 3. 都没有 ⇒ 跟**这本书的偏好**（`ui.view.category.<id>`，树顶分段切换写的那份）——
- *    2026-11-09 用户：「这个配置还是要保留」。
- *
- * <p>列表的拉取跟着它走（树模式下不拉 —— 列表那条查询要读正文，白等几秒）。
  */
 const treeCards = computed(() => {
   if (!isBookPage.value) return false
-  if (currentCatId.value != null) return true
+  if (!hasTreeBox.value) return true
   const v = route.query.view
   if (v === 'cards') return true
   if (v === 'tree') return false
-  return treeViewRoot.value ? viewOf(treeViewRoot.value) === VIEW_CARD : false
+  return currentIsLeafWithDirect.value
 })
-
-/**
- * 标题行分段切换：改地址（`?view=cards` ⇄ 删掉），其余筛选原样保留。
- *
- * <p>⚠️ **切回「目录树」要清掉 `?category=`**：那个参数的含义是"正在看这个目录的内容"
- * （见 {@link treeCards} 第 1 条），留着它的话切了也还是卡片 —— 按钮按下去像坏的。
- * 清掉之后回到**整本书的树**，位置由 `CategoryTree` 的返回定位负责。
- */
-function onTreeMode(next) {
-  // **哪本书以标题行正在显示的那本为准**（`?category=` 进来时 `treeViewRootId` 是空的 /
-  // 上一次那本，现算的 `treeViewRoot` 才对 —— 见上面 ②）。
-  const id = treeViewRoot.value?.id ?? treeViewRootId.value
-  // **配置保留**：切换写「我的覆盖」（ui.view.category.<id>）——这套"记住每本书用
-  // 树还是卡片"的记忆原本由侧边栏切换写入（按钮 2026-11-08 删了 ⇒ 写入口失踪、
-  // 老偏好被冻结在卡片档"没法恢复"）⇒ 现在由树顶分段切换接管，语义不变。
-  if (id) setView(id, next === 'cards' ? VIEW_CARD : VIEW_TREE)
-  router.push({
-    query: {
-      ...route.query,
-      tree: id,
-      view: next === 'cards' ? 'cards' : undefined,
-      category: next === 'cards' ? route.query.category : undefined
-    }
-  })
-}
-
-// ==================== TopicFilters 的展示数据（全站唯一一套筛选的喂料口） ====================
-
-/** 时间档 + 条数（给 TopicFilters 的弹层行）。 */
-const filterRanges = computed(() =>
-  TIME_RANGES.map((r) => ({ ...r, count: rangeCounts.value.get(r.kind) || 0 }))
-)
-/** 类型 + 条数。 */
-const filterTypes = computed(() =>
-  topicTypes.value.map((t) => ({ ...t, count: typeCountMap.value.get(t.id) || 0 }))
-)
 
 /**
  * **侧边栏那一列**（命中的书）—— 与侧边栏用的是**同一份**判据
@@ -842,198 +702,9 @@ const renderTree = computed(() => treeViewRoot.value != null)
  * - 类型下拉里每一项：`{ time: 当前时间窗, type: 候选类型 }`
  * - 当前筛选出的全集：`{ time: 当前时间窗 }`
  *
- * @param {{time?: {from:string,to:string}|null, type?: ((t:any)=>boolean)|null}} dims
- *        `time` 不给 = 不按时间筛；`type` 不给 = 用**当前选中的类型**。
+ * @param {{time?: {from:string,to:string}|null}} dims
+ *        `time` 不给 = 不按时间筛。
  */
-function topicsInScope({ time, type } = {}) {
-  return allTopics.value.filter(
-    (t) =>
-      withinRange(t.createdAt, time) &&
-      matchCategory(t) &&
-      (type ? type(t) : matchType(t))
-  )
-}
-
-/**
- * 时间下拉里每一项的条数：**排除时间这一维自己**，只用其它维度已生效的条件去数
- * （和下面的分面计数同一条规矩）。
- */
-const rangeCounts = computed(() => {
-  const out = new Map()
-  for (const r of TIME_RANGES) out.set(r.kind, topicsInScope({ time: rangeBounds(r.kind) }).length)
-  return out
-})
-
-// 原子谓词就是上面那两个（`matchCategory` / `matchType`）：
-// 算哪个维度的数字，就挑**除它以外**的那几个交给 `topicsInScope`。
-// **不含关键词**：关键词已经在服务端应用了（索引就是"关键词下的全集"）。
-
-// ⚠️ **这里原来还有一个 `uncategorizedCount`**（「待归类」药丸上的那个数字）。
-// 药丸删了之后它没有消费方 ⇒ 一并删掉（别留一个"算一遍没人看"的 computed）。
-
-// 类型下拉每项的数字
-const typeCountMap = computed(() => {
-  const counts = new Map()
-  for (const ty of topicTypes.value) {
-    counts.set(ty.id, topicsInScope({
-      time: timeBounds.value,
-      type: (t) => typeIdOf(t) === ty.id
-    }).length)
-  }
-  return counts
-})
-
-/**
- * 当前筛选条件下的**全集**（结构索引那份）：目录 ∧ 类型 ∧ 时间。
- *
- * <p>它是"这一屏筛出来的所有条目"，不是"这一页显示的那几条"——
- * 考试要考的是全部，AI 归类要处理的是全部，分面计数要数的也是全部。
- */
-const scopedTopics = computed(() => topicsInScope({ time: timeBounds.value }))
-
-// ==================== 命中清单（浮条用） ====================
-//
-// ⚠️ **这一整段搬走了**（2026-11-05 用户：「对于卡片栏来说 这个搜索直接做过滤就行了
-// 不用那个命中多少个的框 … 点击上下都不知道在往哪里跳」）：
-// - **正文那档**：纯过滤 ⇒ 命中什么只剩什么 ⇒ **没有命中栏**，卡片也**不标蓝**
-//   （一屏全是命中的卡片，再标一遍等于没标）。
-// - **目录那档**：命中栏**住在目录树里**（CategoryTree）—— 清单、游标、↑↓ 都在那一处，
-//   树才知道"哪一行是命中的、怎么滚过去"。
-// ⇒ 这一页只剩**树给不给画**的判断（treeViewRoot），不再有命中状态。
-
-// ==================== 考试 ====================
-
-/**
- * 能考的那些：**当前筛选结果里排除未归类的，再排除还没写正文的**。
- *
- * <p>未归类不是目录、也不许考（用户 2026-10-23 定）；它是筛选条上的一个固定桶，
- * 里面是没整理过的东西（还混着一条 3 万字的垃圾）。
- *
- * <p>⚠️ **没写正文的也不许考**（2026-10-26）：送模型的材料是「标题 + 正文」，
- * 占位只有标题没有正文 ⇒ 模型无料出题（空题、少题或胡编）。
- * 判据只有一条：**正文非空**（前后端同一口径，后端那条在 `KpTopicServiceImpl`）。
- */
-const examScope = computed(() =>
-  scopedTopics.value.filter((t) => t.categoryId != null && t.hasContent)
-)
-
-/** 考试入口的显示条件：有东西可考（和「AI 归类」一样，AI 关了就不画这个按钮） */
-const showExam = computed(() => aiEnabled.value && examScope.value.length > 0)
-
-/**
- * 去考试：**在当前浏览器开一个新标签页**。
- *
- * <p>范围 = 当前筛选出来的那些（见 `examScope`）。名字带过去，考试页顶栏显示它。
- *
- * <p>URL 怎么拼、弹窗被拦了怎么办，都在 `exam.js` 的 `openExamTab` 里。
- */
-function openExam() {
-  if (!examScope.value.length) return
-  const name = currentCategoryId.value ? getCategory(currentCategoryId.value)?.name || '' : '全部'
-  openExamTab(
-    examScope.value.map((t) => t.id),
-    name,
-    `list-${categoryFilter.value}`,
-    currentCategoryId.value
-  )
-}
-
-
-// ==================== AI 归类 ====================
-
-const organizeOpen = ref(false)
-
-/**
- * 单条 AI 归类：**这一条**（卡片「⋯ → AI 归类」发过来的）。
- * null = 没在走单条那条路。
- */
-const organizeOne = ref(null)
-
-/**
- * 弹窗里要处理的那一批。
- *
- * <p>⚠️ **只有单条这条路会开这个弹窗**（批量走后台任务了，见 openBatchOrganize）：
- * 所以这里**只有一种取法** —— 把那一条**包装成数组**。
- * 弹窗那边只认"一批"，传一条进去就是单条模式 ⇒ **零新交互**。
- */
-const organizeTopics = computed(() =>
-  organizeOne.value ? [organizeOne.value] : []
-)
-
-/**
- * 卡片「⋯ → AI 归类」：**复用**这个弹窗处理这一条（2026-11-11）。
- *
- * <p>为什么不做新交互（轻量气泡之类）：那要新做一套 UI，而现成的
- * AiOrganizeDialog 已经是"逐条预览 → 勾掉不要的 → 采纳"这个形态了，
- * 传一条进去就是单条模式 ⇒ **零新代码**。
- */
-function onAiOrganize(t) {
-  organizeOne.value = t
-  organizeOpen.value = true
-}
-
-/** 提交中（批量任务提交按钮转圈，避免重复提交） */
-const submitting = ref(false)
-
-/**
- * AI 归类的**批量**入口（两个来源共用一个函数）。
- *
- * <p>⚠️ **批量走后台任务，单条走同步弹窗**（2026-11-11 定稿）：
- * - 批量：几十条起步，同步弹窗是 N 次串行请求，关页面就断、还没进度 ⇒
- *   提交成**后台任务**，在任务中心看进度、看结果、挑着采纳；
- * - 单条：一次往返的事，弹窗里当场看、当场采纳更顺手（**复用现成的
- *   AiOrganizeDialog，零新交互**——这是定稿里明确要求的）。
- *
- * <p>**两个来源**：① 筛选条上那个「AI 归类 N」= 这一屏的全部（默认参数）；
- * ② 批量模式勾选之后的「AI 归类」= 勾上的那几条（传参）。两者走**同一条**后台任务，
- * 差别只在列表内容 —— 不为"勾选的批量"再造第二条提交路径。
- *
- * <p>⚠️ **提交前先清 `organizeOne`**：上一个动作若是单条归类，它还留在那儿 ⇒
- * 弹窗会以为这次也是单条 ⇒ 批量入口只处理一条，而界面上写着「AI 归类 18」
- * ——**入口说的和做的不一样**。
- *
- * <p>返回值 = **这批准没批出去**（`true` = 任务已建）。调用方靠它决定要不要清勾选：
- * 成功才清（勾完的意义已经兑现），失败（没配端点 / 请求失败）**留着让用户直接重试**，
- * 别逼他重新勾一遍 —— 和「删除」那条 `if (done)` 同一个口径。
- */
-async function openBatchOrganize(list = scopedTopics.value) {
-  organizeOne.value = null
-  if (!list.length) return false
-  // ⚠️ **先确保 AI 配置已加载**：判据要看 `aiEndpoints`（哪些端点配全了），
-  // 而它是异步拉的 ⇒ 配置没到就判会得出"一个都没配"的**假结论**。
-  // `ensureAiConfigLoaded` 是幂等的（已加载就直接返回），这里不产生额外请求。
-  await ensureAiConfigLoaded()
-  // ⚠️ **再判「能不能调」**：没有能用的端点就别提交了。
-  // 这一道不是多余的 —— 后端也会拦，但后端拦的代价是**任务已经建了**，
-  // 用户在任务中心里看到的是「部分完成 · 100 条失败」，压根不知道根因。
-  // ⚠️ **判据只有一份**（`useAi#endpointProblem`），和 `ask()`、和后端
-  // `requireReady` 同一个口径 —— 三处各判一次的话，早晚有一处漏。
-  const problem = endpointProblem()
-  if (problem) {
-    ElMessage.warning(problem)
-    return false
-  }
-  submitting.value = true
-  try {
-    await submitClassifyTask(list)
-    // ⚠️ 文案全站统一（2026-11-15 用户第 4 条）：所有后台任务入口只说这一句
-    ElMessage.success('已转到后台任务')
-    // ⚠️ **走统一出口**（2026-11-12）：任务列表是另一份缓存（useGenTasks），
-    // 原来这里调的是 `refreshGenTasks()` —— 它有"在途去重"，
-    // 上一拍还没回来时会**复用那一拍**（那一拍是新任务建之前发的）⇒
-    // 新任务要刷新页面才看得到。现在统一出口会**等在途那拍回来再发一次新的**。
-    await genTaskCreated()
-    return true
-  } catch {
-    // ⚠️ **不在这儿再弹一次**：请求走的是 request 实例，
-    // 错误提示已经由它的响应拦截器统一弹了（那是全站唯一的提示出口）。
-    // 这里再弹就是同一个失败弹两条、内容还不一样。
-    return false
-  } finally {
-    submitting.value = false
-  }
-}
-
 /** 手动归类弹窗：开着没有 / 归的是哪一条。 */
 const categorizeOpen = ref(false)
 const categorizeTopic = ref(null)
@@ -1045,13 +716,6 @@ const categorizeTopic = ref(null)
  */
 const isUncategorized = computed(() => categoryFilter.value === UNCATEGORIZED)
 
-/**
- * AI 入口一律 `v-if` 不画禁用按钮：关闭的语义是"这个功能对他不存在"，不是"它坏了"。
- * 另外两个条件：得正在「待归类」这一屏（别的屏上这个按钮没有意义），而且确实有东西可归。
- */
-const showOrganize = computed(
-  () => aiEnabled.value && isUncategorized.value && scopedTopics.value.length > 0
-)
 
 /**
  * 批量入口**只在待归类屏**（2026-11-11 用户："批量操作只在待归类里面显示这个按钮"）。
@@ -1187,10 +851,25 @@ async function onTreeStructureDone() {
   bumpDataVersion()
 }
 
-function onTreePick(c) {
+/**
+ * 点一行目录 = **设为当前 + 外层定视图**（2026-11-16 D7）：
+ * 叶子且有直属 ⇒ 直接进卡片（看内容）；否则 ⇒ 树（开合已经在树里发生了）。
+ *
+ * <p>⚠️ **写显式 `?view=`**：点进行为是确定性的（不跟偏好跑）——
+ * 同一行点两次看到的必须是同一个盒子。
+ */
+function onTreePick(c, intent) {
+  // 点击意图由树说了算（2026-11-17）：'tree' = 这一下是展开；'cards' = 这一下是进内容。
+  // 没有直属内容时卡片段不存在 ⇒ 夹回树（view 解析那一层也会兜）。
+  const view = intent === 'cards' && directCountOf(c.id) > 0 ? 'cards' : 'tree'
   router.push({
     path: route.path,
-    query: { ...route.query, tree: treeViewRoot.value?.id, category: c.id }
+    query: {
+      ...route.query,
+      tree: treeViewRoot.value?.id,
+      category: c.id,
+      view
+    }
   })
 }
 
@@ -1206,7 +885,7 @@ function onTreePick(c) {
 //   批量是"清理待归类堆积"这个场景的动作，摆到别的屏上就是噪声。
 //
 // ⚠️ 三个动作**没有一个是新逻辑**：归类复用 CategorizeDialog（加了个"多条"形态）、
-// AI 归类复用 openBatchOrganize（它本来就收一个列表）、删除复用 store 的删除流。
+// 删除复用 store 的删除流。
 // 这一轮新写的只有"选哪些"这件事本身。
 
 const batchMode = ref(false)
@@ -1303,19 +982,6 @@ function onCategorized() {
   if (batchMode.value) clearSelection()
 }
 
-/**
- * 批量 · AI 归类：**复用**批量的那条路（后台任务），只是把"全部"换成"勾上的"。
- * ⚠️ **提交成功就清勾选**（2026-11-13 用户："提交了之后这个勾选就应该去掉了"）：
- * 这批准已经交给后台任务了，勾还挂着会让工具条一直显示「已选 2 条」，
- * 看着像"没提交成功 / 还能再点一次"，点下去就是同一批重复建任务。
- * 和「归类到目录」「删除」同一收尾：**动作兑现了就清，批量模式不退**（可能接着挑下一批）。
- */
-async function onBatchOrganize() {
-  if (!selectedTopics.value.length) return
-  const done = await openBatchOrganize(selectedTopics.value)
-  if (done) clearSelection()
-}
-
 /** 批量 · 删除：确认框写明条数，删完清空勾选（卡片已经被刷掉了）。 */
 async function onBatchDelete() {
   if (!selectedTopics.value.length) return
@@ -1409,16 +1075,16 @@ watch(getDataVersion, () => {
  * 视图切换**不改变请求参数**（`buildPageParams` 只读词/范围/时间/类型）⇒ 它触发重拉
  * 从来就不是"必须"，只是"顺手"。切到卡片时按 {@link pageLoadedKey} 判断能不能直接复用。
  */
-watch([categoryFilter, typeFilter, keyword, timeRange, searchMode], (now, was) => {
+watch([categoryFilter, keyword, timeRange, searchMode], (now, was) => {
   // ⚠️ 关键词是**直接从 URL 读**的 ⇒ 离开这一页时它会变成空
   //（详情页虽然带着 `?q=` 过来，但**这一页已经不在路由上**了）。
   // 那一瞬间**不是**"用户清了搜索词"，是"这一页暂时不在眼前" ⇒ 不在这儿发请求。
   if (!onLearnRoute.value) return
   // ⚠️ **只有档变了、而两边都没词 ⇒ 空操作**：没词就没有"命中集"，
   // 档位只是"下一搜用哪档"（列表那条查询要读正文，实测 4416ms，白拉一次很贵）。
-  const kw = String(now[2] || '').trim()
-  const oldKw = String(was && was[2] || '').trim()
-  if (now[4] !== (was && was[4]) && !kw && !oldKw) return
+  const kw = String(now[1] || '').trim()
+  const oldKw = String(was && was[1] || '').trim()
+  if (now[3] !== (was && was[3]) && !kw && !oldKw) return
   page.value = 1
   ensureTopicIndexLoaded(false, keyword.value, searchScope.value)
   loadPage()
@@ -1458,13 +1124,11 @@ onMounted(refresh)
 .learn.learn {
   display: flex;
   flex-direction: column;
-  /* 偏好面板的「上下」（utils/uiPrefs.js 的 LEARN_GAP）。筛选条 / 标签面板 / 卡片区
-     这几个区块之间的距离，用户可直接拖。 */
-  gap: var(--learn-gap, var(--sp-12));
+  gap: var(--sp-12);
   width: 100%;
   max-width: 1160px;                       /* .main__inner 的 max-width */
   margin: 0 auto;                          /* （.app-content > * 已有 auto，这里写明不依赖它） */
-  padding: var(--learn-pad-y, 22px) var(--learn-pad-x, 44px) 60px;   /* .main__inner 的 34/44/60 */
+  padding: 22px 44px 60px;
 }
 
 /* 录入（原 .composer 六条规则）：录入框已统一收到首页，这里跟着删。
@@ -1505,8 +1169,7 @@ onMounted(refresh)
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--w-grid), 1fr));
-  /* 偏好面板的「卡片间距」（LEARN_GRID_GAP）。 */
-  gap: var(--learn-grid-gap, var(--sp-11));
+  gap: var(--sp-11);
 }
 
 /* 加载中的同构骨架网格：与真实卡片网格**同一套栅格与间距**

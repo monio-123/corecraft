@@ -1,5 +1,5 @@
 <template>
-  <RowMenu title="目录操作" :items="ITEMS" :btn-class="btnClass" @command="onCommand" />
+  <RowMenu title="目录操作" :items="items" :btn-class="btnClass" @command="onCommand" />
 </template>
 
 <script setup>
@@ -7,13 +7,19 @@
  * 目录行右侧的「⋯」：全站目录行唯一的操作入口。壳（外观/旋转/点击拦截）在 RowMenu 里，
  * 这里只留目录自己的逻辑。
  *
- * 之前每行右侧要按"有没有下级"在「›」和「＋」之间二选一，弹层里又是另一套「＋ －」，
- * 同一个意思写了两遍还写得不一样——而且二选一还把"给已有子目录的一级目录再建一个兄弟"
- * 这条路整个关掉了（侧边栏给 › 的时候就没有 ＋，弹层里又没有这一级自己）。
- * 收成一个菜单之后，行上不再有任何"该显示哪个图标"的判断。
+ * 目录分枝与叶子承载严格互斥：
+ * - 已有子目录（非叶子）不显示「写知识点」；
+ * - 已有直属知识点（承载叶子）不显示「新增子目录」。
  */
+import { computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import RowMenu from './RowMenu.vue'
 import { confirmDeleteCategory } from './categoryDeleteDialog'
+import {
+  getChildCategories, hasDirectTopics, getCategorySubtreeIds,
+  getCategoryPath, getFullTopicIndex
+} from './useCorecraftWebStore'
+import { openExamTab } from './exam'
 
 const props = defineProps({
   category: { type: Object, required: true },
@@ -22,26 +28,56 @@ const props = defineProps({
 })
 const emit = defineEmits(['add', 'points', 'rename', 'removed'])
 
-// 菜单项写死成常量而不是在 onCommand 里比字符串：加一项只要动这一个数组，
-// 加错 command 名会在模板里就暴露（选项和分支对不上），不会变成"点了没反应"。
-//
-// ⚠️ 这里**没有**「考试」项：考试入口在**列表页的筛选条**上（范围 = 当前筛选出来的那些，
-// 用户 2026-10-23 定）。放在目录行上会让"考这个目录"和"考当前筛选"变成两件事。
-const ITEMS = [
-  { command: 'add', label: '新增子目录', icon: 'plus' },
-  { command: 'points', label: '写知识点', icon: 'edit' },
-  { command: 'rename', label: '重命名', icon: 'text' },
-  { command: 'delete', label: '删除目录', icon: 'trash', tone: 'danger', divided: true }
-]
+const route = useRoute()
+const router = useRouter()
+
+/** 该目录子树内所有知识点 / 已写正文（可考）知识点 */
+const subtreeStats = computed(() => {
+  const id = props.category?.id
+  if (id == null) return { total: 0, examIds: [] }
+  const ids = getCategorySubtreeIds(id)
+  let total = 0
+  const examIds = []
+  for (const t of getFullTopicIndex()) {
+    if (t.categoryId != null && ids.has(t.categoryId)) {
+      total += 1
+      if (t.hasContent) examIds.push(t.id)
+    }
+  }
+  return { total, examIds }
+})
+
+const items = computed(() => {
+  const id = props.category?.id
+  const hasChildren = id != null && getChildCategories(id).length > 0
+  const hasTopics = id != null && hasDirectTopics(id)
+  const { total, examIds } = subtreeStats.value
+  const list = []
+  if (!hasTopics) list.push({ command: 'add', label: '新增子目录', icon: 'plus' })
+  if (!hasChildren) list.push({ command: 'points', label: '写知识点', icon: 'edit' })
+  if (hasChildren && total > 0) list.push({ command: 'cards', label: '查看卡片', icon: 'grid' })
+  if (examIds.length > 0) list.push({ command: 'exam', label: '考试', icon: 'note' })
+  list.push({ command: 'rename', label: '重命名', icon: 'text' })
+  list.push({ command: 'delete', label: '删除目录', icon: 'trash', tone: 'danger', divided: true })
+  return list
+})
 
 async function onCommand(cmd) {
-  if (cmd === 'add') emit('add', props.category)
-  // 写知识点 = 给**这个目录**写它下面的知识点（材料里带它现有的子目录，
-  // 模型就知道哪些领域已经有人管了）。
-  else if (cmd === 'points') emit('points', props.category)
-  else if (cmd === 'rename') emit('rename', props.category)
-  // 删除是终态：真删掉了要往上说一声，弹层可能正锚定在这个节点上，不收的话停在一棵
-  // 少了一截的树上。确认框取消了不发。
-  else if (await confirmDeleteCategory(props.category)) emit('removed')
+  const c = props.category
+  if (cmd === 'add') emit('add', c)
+  else if (cmd === 'points') emit('points', c)
+  else if (cmd === 'cards') {
+    const chain = getCategoryPath(c.id)
+    const rootId = chain.length ? chain[0].id : c.id
+    router.push({
+      path: '/app/learn',
+      query: { ...route.query, tree: rootId, category: c.id, view: 'cards' }
+    })
+  } else if (cmd === 'exam') {
+    const { examIds } = subtreeStats.value
+    if (!examIds.length) return
+    openExamTab(examIds, c.name || '考试', `cat-${c.id}`, c.id)
+  } else if (cmd === 'rename') emit('rename', c)
+  else if (await confirmDeleteCategory(c)) emit('removed')
 }
 </script>
