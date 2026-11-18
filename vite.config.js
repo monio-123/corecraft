@@ -73,23 +73,27 @@ export default defineConfig({
   },
   build: {
     // demo 入口（2026-11-08）：真实组件 + 假数据，与主应用同一套组件/CSS（见 src/mockup/）
-    rollupOptions: {
+    rolldownOptions: {
       input: {
         main: fileURLToPath(new URL('./index.html', import.meta.url)),
         mockup: fileURLToPath(new URL('./mockup/index.html', import.meta.url))
       },
-      // **稳定的第三方库单独成块**：改一行业务代码不该让 377KB 的 Vue / Element Plus
-      // 换 hash 重新下载（配好强缓存后，发版只该重下入口 + 业务 chunk）。
-      // ⚠️ 只收首屏必然加载的库：编辑器 / mermaid / 图布局那些大块仍交给 Vite
-      // 按动态 import 自己切，合进来会把 2.6MB 图库拖进首屏。
+      // **稳定的第三方库单独成块**（Vite 8 Rolldown advancedChunks）：
+      // 改一行业务代码不该让 Vue / Element Plus 换 hash 重新下载。
+      // ⚠️ 只收首屏必然加载的库：编辑器 / @milkdown / @dagrejs/dagre 仍按动态 import 自己切。
       // ⚠️ CSS 不参与：element-plus 的样式表必须排在最前（见 bootstrap.js 的顺序注释），
       // 归到 vendor chunk 会打乱覆盖次序。
       output: {
-        manualChunks(id) {
-          if (!id.includes('node_modules') || /\.(css|scss|sass|less)$/.test(id)) return
-          if (/[\\/]node_modules[\\/](?:vue|@vue|vue-router|pinia|element-plus|@element-plus|@floating-ui|async-validator|dayjs|lodash-unified|normalize-wheel-es|memoize-one)[\\/]/.test(id)) {
-            return 'vendor-core'
-          }
+        codeSplitting: {
+          groups: [
+            {
+              name: 'vendor-core',
+              test(id) {
+                if (!id.includes('node_modules') || /\.(css|scss|sass|less)$/.test(id)) return false
+                return /[\\/]node_modules[\\/](?:vue|@vue|vue-router|pinia|element-plus|@element-plus|@floating-ui|async-validator|dayjs|lodash-unified|normalize-wheel-es|memoize-one)[\\/]/.test(id)
+              }
+            }
+          ]
         }
       }
     }

@@ -1,9 +1,8 @@
 <template>
   <el-dialog
-    :model-value="modelValue"
+    v-model="visible"
     :title="dialogTitle"
     width="var(--cc-dialog-w-sm)"
-    @update:model-value="emit('update:modelValue', $event)"
   >
     <!-- 标题 -->
     <template v-if="field === 'title'">
@@ -37,7 +36,7 @@
     </template>
 
     <template #footer>
-      <el-button @click="emit('update:modelValue', false)">取消</el-button>
+      <el-button @click="visible = false">取消</el-button>
       <el-button
         type="primary"
         :disabled="!canConfirm"
@@ -63,13 +62,13 @@ import { adoptFieldOf, parseAdopt, NEW_CATEGORY } from './aiAdopt'
 import CategoryTreeSelect from './CategoryTreeSelect.vue'
 import { createCategory } from './useCorecraftWebStore'
 
+const visible = defineModel({ type: Boolean, default: false })
 const props = defineProps({
-  modelValue: Boolean,
   turn: { type: Object, default: null },
   categories: { type: Array, default: () => [] },
   topic: { type: Object, default: null }
 })
-const emit = defineEmits(['update:modelValue', 'confirm'])
+const emit = defineEmits(['confirm'])
 
 const FIELD_LABEL = {
   title: '标题',
@@ -103,7 +102,7 @@ const draftTags = ref([])
 
 // 每次打开都重新解析：对话还在增长，同一轮的答案也会变，用打开那一刻的为准
 watch(
-  () => props.modelValue,
+  visible,
   (open) => {
     if (!open) return
     const p = parsed.value
@@ -182,7 +181,7 @@ async function confirm() {
   // 只发出去，成功提示由写入方在 await 之后再弹。失败提示走 axios 拦截器（它已经做了去重），
   // 在这里先弹"已采纳"会变成先报喜再报错。
   emit('confirm', patch)
-  emit('update:modelValue', false)
+  visible.value = false
 }
 </script>
 

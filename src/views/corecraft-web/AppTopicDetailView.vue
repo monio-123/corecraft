@@ -577,6 +577,33 @@ function detachBodyScroll() {
  */
 let bodyTopChain = Promise.resolve()
 
+/** 正文归顶后排队执行，避免归顶双 rAF 抹掉随后的搜索定位。 */
+function afterBodyTop(fn) {
+  bodyTopChain = bodyTopChain
+    .then(() => new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    }))
+    .then(fn)
+    .catch(() => {})
+  return bodyTopChain
+}
+
+/** 换知识 / keep-alive 切回：正文归顶（只在切换条目时调，不挂 watch(topic)）。 */
+function resetBodyTop() {
+  afterBodyTop(() => {
+    const pm = detailRef.value?.querySelector('.doc .ProseMirror')
+    if (pm) pm.scrollTop = 0
+    onBodyScroll()
+  })
+}
+
+/** 编辑器就绪：挂载进度监听、应用自动链接装饰并补做首次搜索定位。 */
+function onEditorReady() {
+  attachBodyScroll()
+  applyAutoLinks()
+  locateBodySearch()
+}
+
 /**
  * **一次详情页会话里，同一个（文档 + 词）只自动定位一次**。
  *

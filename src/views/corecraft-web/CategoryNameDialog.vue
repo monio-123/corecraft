@@ -26,8 +26,8 @@ import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { createCategory, renameCategory, ROOT_CATEGORY } from './useCorecraftWebStore'
 
+const visible = defineModel({ type: Boolean, default: false })
 const props = defineProps({
-  modelValue: { type: Boolean, default: false },
   /** 'create' = 新建（建在哪看 parentId）；'rename' = 改名（认的是 initialName） */
   mode: { type: String, default: 'create' },
   parentId: { type: Number, default: ROOT_CATEGORY },
@@ -38,15 +38,9 @@ const props = defineProps({
   /** 改名时被改的是哪个目录。后端按 id 定位——名字是可变字段，认名字认不准 */
   initialId: { type: Number, default: null }
 })
-const emit = defineEmits(['update:modelValue'])
 
 const name = ref('')
 const saving = ref(false)
-
-const visible = computed({
-  get: () => props.modelValue,
-  set: (v) => emit('update:modelValue', v)
-})
 
 const isRename = computed(() => props.mode === 'rename')
 

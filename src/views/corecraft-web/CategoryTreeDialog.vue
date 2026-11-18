@@ -1,10 +1,9 @@
 <template>
   <el-dialog
-    :model-value="modelValue"
+    v-model="dialogOpen"
     :title="dialogTitle"
     width="var(--cc-dialog-w-lg)"
     :close-on-click-modal="false"
-    @update:model-value="close"
   >
     <!-- ⚠️ **步骤指示条已删**（2026-11-15 用户）：生成搬后台后，「从第 1 步走到第 3 步」
          的旅程不存在（第 1 步转后台即关、确认完第 3 步也后台跑）——指示一段不存在的
@@ -272,8 +271,8 @@ import { getMyConfig } from '../../api/config'
 import { createGenTask, continueGenTask } from '../../api/genTask'
 import { genTaskCreated } from './useGenTasks'
 
+const dialogOpen = defineModel({ type: Boolean, default: false })
 const props = defineProps({
-  modelValue: { type: Boolean, default: false },
   /** pack = 生成一整套（主题 → 骨架 → 知识点）；points = 给一个现成目录写知识点 */
   mode: { type: String, default: 'pack' },
   /** points 模式的目标目录 */
@@ -290,7 +289,7 @@ const props = defineProps({
 // ⚠️ **`openTasks` 已删**（2026-11-12）：那个事件没有任何监听方，
 // 是个"发出去就消失"的空事件 ⇒ 任务列表刷不出来的原因之一。
 // 现在统一走 `genTaskCreated()`（见 useGenTasks）。
-const emit = defineEmits(['update:modelValue', 'done'])
+const emit = defineEmits(['done'])
 
 const step = ref(0)
 
@@ -423,7 +422,7 @@ const canBuild = computed(
 )
 
 watch(
-  () => props.modelValue,
+  dialogOpen,
   (open) => {
     if (!open) {
       reset()
@@ -485,7 +484,7 @@ function reset() {
 }
 
 function close() {
-  emit('update:modelValue', false)
+  dialogOpen.value = false
 }
 
 /** 名字超长（目录名的列长是 50；知识点标题落在 title 列，不受这个限） */

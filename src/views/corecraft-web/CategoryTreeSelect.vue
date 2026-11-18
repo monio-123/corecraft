@@ -1,6 +1,6 @@
 <template>
   <el-tree-select
-    :model-value="modelValue"
+    v-model="value"
     :data="options"
     :props="{ label: 'label', children: 'children' }"
     :render-after-expand="false"
@@ -9,7 +9,6 @@
     :placeholder="placeholder"
     :clearable="clearable"
     :check-strictly="!leafOnly"
-    @update:model-value="emit('update:modelValue', $event)"
   />
 </template>
 
@@ -60,8 +59,8 @@ import { computed } from 'vue'
 import { newCategoryPath, NEW_CATEGORY } from './aiAdopt'
 import { toCategoryTree } from '../../utils/categoryTree'
 
+const value = defineModel({ type: [Number, String], default: null })
 const props = defineProps({
-  modelValue: { type: [Number, String], default: null },
   categories: { type: Array, default: () => [] },
   /** AI 建议的新目录 `{ name, parentId }`；为 null 时不显示「新建」项 */
   newCategory: { type: Object, default: null },
@@ -93,7 +92,6 @@ const props = defineProps({
   leafOnly: { type: Boolean, default: true },
   size: { type: String, default: 'default' }
 })
-const emit = defineEmits(['update:modelValue'])
 
 /** 已有目录构成的树（规则见 utils/categoryTree） */
 const baseTree = computed(() => toCategoryTree(props.categories))

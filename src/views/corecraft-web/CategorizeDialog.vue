@@ -1,10 +1,9 @@
 <template>
   <el-dialog
-    :model-value="modelValue"
+    v-model="visible"
     title="归类到目录"
     width="var(--cc-dialog-w-sm)"
     :close-on-click-modal="false"
-    @update:model-value="close"
   >
     <!-- **哪一条**：弹窗盖在列表上，原来那张卡片看不清了 ⇒ 只留一行认得出就够。
          没有标题的（随手记进来的那批）退回正文开头 —— 清洗规则用 store 的
@@ -68,8 +67,8 @@ import { ElMessage } from 'element-plus'
 import CategoryTreeSelect from './CategoryTreeSelect.vue'
 import { updateTopic, updateTopicsCategory, excerptOf, UNCATEGORIZED } from './useCorecraftWebStore'
 
+const visible = defineModel({ type: Boolean, default: false })
 const props = defineProps({
-  modelValue: Boolean,
   /** 要归类的那一条。null = 还没选中（弹窗关着时的常态） */
   topic: { type: Object, default: null },
   /**
@@ -80,7 +79,7 @@ const props = defineProps({
   topics: { type: Array, default: () => [] },
   categories: { type: Array, default: () => [] }
 })
-const emit = defineEmits(['update:modelValue', 'done'])
+const emit = defineEmits(['done'])
 
 /** 这一下要动到的那些条（单条 = 一条）。 */
 const rows = computed(() =>
@@ -105,7 +104,7 @@ const subject = computed(() => {
 })
 
 watch(
-  () => props.modelValue,
+  visible,
   (open) => {
     if (!open) return
     // ⚠️ **批量时留空**，不预选任何目录：
@@ -122,7 +121,7 @@ watch(
 )
 
 function close() {
-  emit('update:modelValue', false)
+  visible.value = false
 }
 
 async function confirm() {

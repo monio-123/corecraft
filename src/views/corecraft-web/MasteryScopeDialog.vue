@@ -1,10 +1,9 @@
 <template>
   <el-dialog
-    :model-value="modelValue"
+    v-model="visible"
     title="掌握度参与设置"
     width="var(--cc-dialog-w-sm)"
     :close-on-click-modal="false"
-    @update:model-value="close"
   >
     <!-- **哪一条**：弹窗盖在列表上，原来那张卡片看不清了 ⇒ 只留一行认得出就够。
          没有标题的（随手记进来的那批）退回正文开头 —— 清洗规则用 store 的 excerptOf，
@@ -55,11 +54,11 @@ import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { setTopicMasteryEnabled, excerptOf } from './useCorecraftWebStore'
 
+const visible = defineModel({ type: Boolean, default: false })
 const props = defineProps({
-  modelValue: { type: Boolean, default: false },
   topic: { type: Object, default: null }
 })
-const emit = defineEmits(['update:modelValue', 'done'])
+const emit = defineEmits(['done'])
 
 const saving = ref(false)
 /** 'on' | 'off' | 'inherit' */
@@ -80,14 +79,14 @@ const subject = computed(() => {
  * 后端解析出来的最终值，在"明确关掉"和"跟随类型（而类型默认关）"两种情况下**是一样的**，
  * 只看最终值的话弹窗打开就分不清自己停在哪一档、也不知道怎么改回去。
  */
-watch(() => [props.modelValue, props.topic?.id], ([open]) => {
+watch(() => [visible.value, props.topic?.id], ([open]) => {
   if (!open || !props.topic) return
   const ov = props.topic.masteryOverride
   choice.value = ov === true ? 'on' : (ov === false ? 'off' : 'inherit')
 }, { immediate: true })
 
 function close() {
-  emit('update:modelValue', false)
+  visible.value = false
 }
 
 async function confirm() {

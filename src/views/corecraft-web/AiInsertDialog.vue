@@ -189,8 +189,8 @@ import KbSvgIcon from '../../components/corecraft-web/KbSvgIcon.vue'
 
 defineOptions({ name: 'AiInsertDialog' })
 
+const open = defineModel({ type: Boolean, default: false })
 const props = defineProps({
-  modelValue: { type: Boolean, default: false },
   /** AI 这一轮的回答（markdown）。要写进正文的就是它 */
   answer: { type: String, default: '' },
   /**
@@ -228,12 +228,7 @@ const props = defineProps({
   /** 正在落库（建新知识点那条链） */
   saving: { type: Boolean, default: false }
 })
-const emit = defineEmits(['update:modelValue', 'confirm', 'adjust'])
-
-const open = computed({
-  get: () => props.modelValue,
-  set: (v) => emit('update:modelValue', v)
-})
+const emit = defineEmits(['confirm', 'adjust'])
 
 /** 「应用为新的知识点」模式 */
 const isNewTopic = computed(() => props.mode === 'topic')
@@ -385,7 +380,7 @@ const diffEl = ref(null)
 watch(() => props.answer, async () => {
   editedMd.value = sourceMd.value
   editorKey.value += 1
-  if (props.modelValue) await scrollToFirstDiff()
+  if (open.value) await scrollToFirstDiff()
 }, { immediate: true })
 
 /** 框里那句话：用户对这一版的具体意见 */
@@ -440,7 +435,7 @@ function cleanTitle(s) {
 
 // 弹窗一开就把标题填上。**immediate**：组件若在弹窗已打开时挂载（热更新），
 // 不 immediate 就永远填不上 ⇒ 主按钮一直置灰。
-watch(() => props.modelValue, (v) => {
+watch(open, (v) => {
   if (!v) return
   topicTitle.value = suggestedTitle.value
   titleTouched.value = false
