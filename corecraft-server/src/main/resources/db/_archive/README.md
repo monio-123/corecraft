@@ -30,6 +30,7 @@
 | `2026-10-29_delete_java_basics_bak.sql` | 删「Java基础bak」整棵子树（87 个目录 + 240 条知识点软删） | 同上；回滚用同目录 `2026-10-29_java_basics_bak_categories.sql` |
 | `2026-11-02_remove_learn_menu_item.sql` | 软删「知识点」菜单项（`sys_permission.code='corecraft-web:learn'`） | 同上；`menu_reset.sql` 已同步不再重建它 |
 | `2026-11-02_add_xiaomi_vendor.sql.merged-into-ai_vendor_catalog` | 加「小米 MiMo」厂商 + 型号 | 内容已并进 `../2026-10-26_ai_vendor_catalog.sql`（那份现在带幂等守卫）⇒ 这份留作历史 |
+| `2026-11-18_retire_legacy_columns.sql` | 物理删除 5 个已下线旧列/索引并软删字典 `kp_topic_type` | 已在 `corecraft` 库执行完毕，新库入口 `knowledge_platform.sql` 已同步对齐 |
 
 ## 历史背景
 

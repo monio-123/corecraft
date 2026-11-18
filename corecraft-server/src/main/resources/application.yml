@@ -3,6 +3,9 @@ spring:
     name: corecraft-server
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:dev}
+  threads:
+    virtual:
+      enabled: true
   cloud:
     nacos:
       server-addr: ${NACOS_HOST:106.53.205.69}:${NACOS_PORT:8848}

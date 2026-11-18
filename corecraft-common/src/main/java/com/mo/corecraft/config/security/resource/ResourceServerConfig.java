@@ -19,7 +19,7 @@ import org.springframework.security.web.SecurityFilterChain;
 @EnableMethodSecurity
 public class ResourceServerConfig {
     @Bean
-    @Order(1) // 必须高于默认的 WebSecurityConfig（通常 Order=100）
+    @Order(3) // 兜底 anyRequest 链必须排在特定 matcher 链之后（Spring Security 7 校验要求）
     public SecurityFilterChain resourceServerFilterChain(HttpSecurity http, UserDetailsService userDetailsService) throws Exception {
         http
                 .authorizeHttpRequests(authorize -> authorize

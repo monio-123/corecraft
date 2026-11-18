@@ -1,6 +1,6 @@
 package com.mo.corecraft.config.cache;
 
-import com.fasterxml.jackson.core.type.TypeReference;
+import tools.jackson.core.type.TypeReference;
 import lombok.Getter;
 import lombok.Setter;
 

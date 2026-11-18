@@ -1,6 +1,6 @@
 package com.mo.corecraft.service.support;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import com.mo.corecraft.mapper.KpTopicMapper;
 import com.mo.corecraft.model.entity.KpGenStep;
 import com.mo.corecraft.model.entity.KpGenTask;

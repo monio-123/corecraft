@@ -1,7 +1,7 @@
 package com.mo.corecraft.service.impl;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import com.mo.corecraft.mapper.KpExamAnswerMapper;
 import com.mo.corecraft.mapper.KpExamAttemptMapper;
 import com.mo.corecraft.mapper.KpExamPaperMapper;

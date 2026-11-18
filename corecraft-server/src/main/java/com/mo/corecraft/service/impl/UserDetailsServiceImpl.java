@@ -1,9 +1,7 @@
 package com.mo.corecraft.service.impl;
 
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.mo.corecraft.config.security.resource.SecurityUserRecord;
 import com.mo.corecraft.model.dto.SysUserDTO;
-import com.mo.corecraft.model.entity.SysUser;
 import com.mo.corecraft.config.security.resource.SecurityUser;
 import com.mo.corecraft.config.cache.CacheKeys;
 import com.mo.corecraft.config.cache.CacheManagerFacade;
@@ -20,13 +18,15 @@ import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
-public class UserDetailsServiceImpl extends ServiceImpl<SysUserMapper, SysUser> implements UserDetailsService {
+public class UserDetailsServiceImpl implements UserDetailsService {
+
+    private final SysUserMapper sysUserMapper;
 
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
         SecurityUserRecord securityUserRecord = CacheManagerFacade.getIfAbsent(
                 CacheKeys.SECURITY_USER_RECORD,
-                () -> baseMapper.selectByUsername(username), username);
+                () -> sysUserMapper.selectByUsername(username), username);
         // 没有这个用户 ⇒ 一条异常（**只构造一次**）。
         // ⚠️ 原来这里是 `Optional.ofNullable(x).orElseThrow(...)` 当判空用（返回值被丢掉），
         // 后面又接了一段一模一样的 orElseThrow —— **那第二段永远走不到**（第一段已保证非空）。

@@ -11,9 +11,9 @@
     <name>corecraft-server</name>
     <description>corecraft-server</description>
     <properties>
-        <java.version>17</java.version>
+        <java.version>25</java.version>
         <!-- AWS SDK v2 的版本号集中在这里，下面 dependencies 里那两条不写 version -->
-        <awssdk.version>2.17.282</awssdk.version>
+        <awssdk.version>2.59.3</awssdk.version>
     </properties>
 
     <!--
@@ -77,9 +77,9 @@
         </dependency>
 
         <dependency>
-            <groupId>mysql</groupId>
-            <artifactId>mysql-connector-java</artifactId>
-            <version>8.0.33</version>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <version>26.10.0</version>
         </dependency>
 
         <!--

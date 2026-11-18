@@ -1,9 +1,9 @@
 package com.mo.corecraft.service.support;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 import com.mo.corecraft.exception.CoreCraftException;
 import com.mo.corecraft.mapper.KpTopicMapper;
 import com.mo.corecraft.model.entity.KpGenStep;
@@ -218,7 +218,7 @@ public class GenTaskBuilder {
                 try {
                     JsonNode obj = JsonUtils.readTree(s.getResult());
                     if (obj != null && obj.isObject()) {
-                        obj.fields().forEachRemaining(e -> out.put(e.getKey(), e.getValue().asLong()));
+                        obj.properties().forEach(e -> out.put(e.getKey(), e.getValue().asLong()));
                     }
                 } catch (Exception ignore) {
                 }

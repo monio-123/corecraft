@@ -1,6 +1,6 @@
 package com.mo.corecraft.service.impl;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import com.mo.corecraft.exception.CoreCraftException;
 import com.mo.corecraft.model.entity.AiEndpoint;
 import com.mo.corecraft.model.req.AiEndpointSaveReq;

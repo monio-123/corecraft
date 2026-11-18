@@ -1,5 +1,6 @@
 package com.mo.corecraft.controller.system;
 
+import com.mo.corecraft.config.filter.TraceIdFilter;
 import com.mo.corecraft.model.req.AiChatReq;
 import com.mo.corecraft.model.resp.AiQuestionResp;
 import com.mo.corecraft.model.resp.ResultResp;
@@ -77,22 +78,20 @@ public class AiChatController {
     }
 
     /**
-     * SseEmitter 要在 handler 返回**之后**由别的线程往里写，所以调模型必须另起线程，
-     * 否则请求线程会被占住几分钟。放在 controller 而不是 service：异步是 Web 层的事，
-     * service 保持阻塞、纯业务。模型调用是低频的用户主动行为，cached pool 够用。
+     * SseEmitter 要在 handler 返回**之后**由别的线程往里写，所以调模型必须另起线程。
+     * JDK 25 虚拟线程每请求一条轻量线程，SSE 长连接挂起数分钟不再占用平台线程。
      */
-    private final ExecutorService executor = Executors.newCachedThreadPool(r -> {
-        Thread t = new Thread(r, "ai-chat");
-        t.setDaemon(true);
-        return t;
-    });
+    private final ExecutorService executor = Executors.newThreadPerTaskExecutor(
+            Thread.ofVirtual().name("ai-chat-", 0).factory()
+    );
 
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter chat(@Validated @RequestBody AiChatReq req) {
         Long userId = SecurityUtil.getUserId();
+        String traceId = TraceIdFilter.currentTraceId();
         SseEmitter emitter = new SseEmitter(chatTimeoutMs);
 
-        executor.execute(() -> {
+        executor.execute(() -> TraceIdFilter.runWithTraceId(traceId, () -> {
             try {
                 aiChatService.stream(userId, req, delta -> {
                     if (StringUtils.isNotEmpty(delta.prompt())) {
@@ -116,7 +115,7 @@ public class AiChatController {
             } finally {
                 emitter.complete();
             }
-        });
+        }));
         return emitter;
     }
 
