@@ -59,18 +59,12 @@ public interface KpTopicService {
     List<KpTopicResp> selectTopicsByIds(List<Long> ids, Long userId);
 
     /**
-     * 这批知识各自的**类型名**（键 = 知识点 id，值 = 类型名，字典 {@code sys_dict_item.label}）。
+     * 新建一条知识点，**返回它的 id**。
      *
-     * <p>出题要把材料**按类型分组**，组名模型得看得懂 ⇒ 用 label（"笔记""学习"），不能用 id。
-     * 字典项 id 全局唯一，直接按 id 查 label 就行，不用先定位字典类型。
-     *
-     * <p>**typeId 为空 / 指向已删字典项的，按默认档算**（默认档 = 字典里排第一的那条，
-     * 和前端 {@code defaultTopicTypeId()} 同一个口径——库里的注释也是"NULL=笔记，默认档"）。
-     * 字典本身查不到时返回空串（那种情况下界面上的类型也是空的）。
+     * <p>id 是给「命名任务」用的：随手记建完要立刻交给后台命名（生成标题），
+     * 那条路得知道是哪一条 ⇒ id 由这一层给，不让前端从刷新后的列表里 diff。
      */
-    Map<Long, String> typeNamesByTopic(Collection<KpTopicResp> topics);
-
-    void createTopic(KpTopicCreateReq req, Long userId);
+    Long createTopic(KpTopicCreateReq req, Long userId);
 
     void updateTopic(KpTopicUpdateReq req, Long userId);
 
@@ -100,7 +94,7 @@ public interface KpTopicService {
      */
     int deleteTopicsByCategoryIds(List<Long> categoryIds, Long userId);
 
-    void addTopicRelation(Long topicId, Long relatedTopicId);
+    void addTopicRelation(Long topicId, Long relatedTopicId, Long userId);
 
-    void removeTopicRelation(Long topicId, Long relatedTopicId);
+    void removeTopicRelation(Long topicId, Long relatedTopicId, Long userId);
 }

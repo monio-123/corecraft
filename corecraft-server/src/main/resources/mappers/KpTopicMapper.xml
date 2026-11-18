@@ -22,7 +22,7 @@
     <select id="selectIndex" resultType="com.mo.corecraft.model.resp.KpTopicIndexResp">
         <!-- update_time：详情页「更新于」的时间戳来源。保存类动作强刷索引后，
              前端从索引条目里补新时间（2026-11-09）。同 create_time，一个 19 字符列。 -->
-        select id, title, category_id, type_id, mastery_enabled as mastery_override, create_time, update_time, (COALESCE(LENGTH(content), 0) &gt; 0) as has_content
+        select id, title, category_id, mastery_enabled as mastery_override, create_time, update_time, (COALESCE(LENGTH(content), 0) &gt; 0) as has_content
         from kp_topic
         where user_id = #{userId}
         <!-- ⚠️ **逻辑删除必须自己写**：MyBatis-Plus 只给它自己生成的 SQL 加 is_delete = 0，
@@ -79,13 +79,10 @@
             and category_id in
             <foreach collection="categoryIds" item="cid" open="(" separator="," close=")">#{cid}</foreach>
         </if>
-        <if test="typeId != null">
-            and type_id = #{typeId}
-        </if>
         <!-- 标签：EXISTS 子查询（关联表 + 标签表 join 一次），与原 wrapper 逐字一致 -->
         <if test="tag != null and tag != ''">
             and exists (SELECT 1 FROM kp_topic_tag tt JOIN kp_tag g ON g.id = tt.tag_id
-                        WHERE tt.topic_id = kp_topic.id AND g.name = #{tag} AND g.user_id = #{userId})
+                        WHERE tt.topic_id = kp_topic.id AND g.name = #{tag} AND g.user_id = #{userId} AND g.is_delete = 0)
         </if>
         <if test="titleQ != null and contentQ != null">
             and (title like concat('%', #{titleQ}, '%') or content like concat('%', #{contentQ}, '%'))
@@ -108,13 +105,24 @@
         select id, title,
         <!-- 摘要：正文开头一段（见上面的说明：为什么是 200 而不是 90） -->
         SUBSTRING(content, 1, 200) as content,
-        parent_topic_id, category_id, type_id, mastery_enabled as mastery_override, create_time, update_time
+        parent_topic_id, category_id, mastery_enabled as mastery_override, create_time, update_time
         from kp_topic
         <include refid="pageWhere"/>
         <!-- 排序**必须带 id 兜底**：一批生成的条目 create_time 落在同一秒，
              只按 create_time 排的话次序是随机的 ⇒ **分页会漏条 / 重条**。
-             与原 wrapper 的 orderByDesc(createTime).orderByDesc(id) 逐字一致。 -->
-        order by create_time desc, id desc
+             sort=asc 时按前端传入 categoryIds 目录树顺序 + id 升序（书内讲解顺序）。 -->
+        <choose>
+            <when test="sort == 'asc'">
+                order by
+                <if test="categoryIds != null and categoryIds.size() > 0">
+                    field(category_id, <foreach collection="categoryIds" item="cid" separator=",">#{cid}</foreach>),
+                </if>
+                id asc
+            </when>
+            <otherwise>
+                order by create_time desc, id desc
+            </otherwise>
+        </choose>
         limit #{offset}, #{size}
     </select>
 

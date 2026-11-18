@@ -56,37 +56,14 @@ public class KpTopic extends BaseEntity {
     private Long categoryId;
 
     /**
-     * 知识点类型（单选），指向 {@code sys_dict_item.id}。
-     * <p>
-     * 与目录、标签并列的第四个正交维度，回答的是「这条知识是什么性质」——
-     * 随手记 / 系统学。解决的是"记的太多，想找成体系的那部分却筛不出来"。
-     * <p>
-     * 存的是**字典项 id（纯数字）**而不是名字或 0/1/2 编码：字典项增删排序都不影响
-     * 任何代码，代码里也不存在"1 = 笔记"这种要同步维护的映射。
-     * <p>
-     * 没有外键约束：字典项是软删的（{@code is_delete}），加外键会在字典管理里
-     * 删项时把删除卡住。查不到对应字典项时由前端兜底成"排第一的那档"。
-     * <p>
-     * 这里**不用** {@code updateStrategy = ALWAYS}：类型没有"清空=某个含义"的语义，
-     * MP 默认的 NOT_NULL 策略正好合适——没传就跳过。
-     */
-    @TableField("type_id")
-    private Long typeId;
-
-    /**
-     * 是否参与掌握度的**单条覆盖**：NULL=继承类型默认 / TRUE=参与 / FALSE=不参与。
-     *
-     * <p>解析顺序只有一条（后端一处判据，见 {@code MasteryScope}）：
-     * {@code 单条显式值 > 类型默认值（sys_dict_item.mastery_enabled）> 安全兜底（不参与）}。
+     * 是否参与掌握度的**单条覆盖**：NULL=跟随默认（有证据即参与）/ TRUE=参与 / FALSE=不参与。
      *
      * <p>⚠️ **字段名故意叫 {@code masteryOverride} 而不是 {@code masteryEnabled}**：
      * 库里存的是**可空的原始值**（还没解析），而响应里的 {@code masteryEnabled}
-     * 是**已解析的最终判据**。两者同名 ⇒ BeanUtils 转换时会把原始值灌进最终值那一位，
-     * 而最终值必须由判据算出来 ⇒ 两处同名必然串位。
+     * 是**已解析的最终判据**。两者同名 ⇒ BeanUtils 转换时会把原始值灌进最终值那一位。
      *
      * <p>⚠️ **这里必须用 {@code updateStrategy = ALWAYS}**：NULL 在这一列有真实含义
-     * （"没配置，继承类型"），而 MP 默认的 NOT_NULL 策略会把 null 从 UPDATE 里跳过
-     * ⇒ "恢复成继承类型"这个操作永远写不进去（列在、值还在，静默失效）。
+     * （"恢复跟随默认"），而 MP 默认的 NOT_NULL 策略会把 null 从 UPDATE 里跳过。
      */
     @TableField(value = "mastery_enabled", updateStrategy = FieldStrategy.ALWAYS)
     private Boolean masteryOverride;

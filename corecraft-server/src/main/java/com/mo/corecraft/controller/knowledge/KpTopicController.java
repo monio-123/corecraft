@@ -82,11 +82,17 @@ public class KpTopicController {
         return ResultResp.data(kpTopicService.selectTopicById(id, userId));
     }
 
+    /**
+     * 新建知识点，**返回它的 id**。
+     *
+     * <p>⚠️ **返回 id 是为了「命名任务」**：随手记建完立刻要交给后台命名任务
+     * （生成标题），那条路需要知道是哪一条 ⇒ id 得由这一接口给，
+     * 而不是让前端从刷新后的列表里 diff 出来（并发时可能 diff 错那一条）。
+     */
     @RequestMapping(value = "", method = RequestMethod.POST)
-    public ResultResp<Void> create(@Validated @RequestBody KpTopicCreateReq req) {
+    public ResultResp<Long> create(@Validated @RequestBody KpTopicCreateReq req) {
         Long userId = SecurityUtil.getUserId();
-        kpTopicService.createTopic(req, userId);
-        return ResultResp.success();
+        return ResultResp.data(kpTopicService.createTopic(req, userId));
     }
 
     @RequestMapping(value = "", method = RequestMethod.PUT)
@@ -126,14 +132,14 @@ public class KpTopicController {
     @RequestMapping(value = "{id}/relation/{relatedId}", method = RequestMethod.POST)
     public ResultResp<Void> addRelation(@PathVariable("id") Long id,
                                         @PathVariable("relatedId") Long relatedId) {
-        kpTopicService.addTopicRelation(id, relatedId);
+        kpTopicService.addTopicRelation(id, relatedId, SecurityUtil.getUserId());
         return ResultResp.success();
     }
 
     @RequestMapping(value = "{id}/relation/{relatedId}", method = RequestMethod.DELETE)
     public ResultResp<Void> removeRelation(@PathVariable("id") Long id,
                                            @PathVariable("relatedId") Long relatedId) {
-        kpTopicService.removeTopicRelation(id, relatedId);
+        kpTopicService.removeTopicRelation(id, relatedId, SecurityUtil.getUserId());
         return ResultResp.success();
     }
 

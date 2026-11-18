@@ -110,7 +110,7 @@ public class SysUserController {
     }
 
     @RequestMapping(value = "me/profile", method = RequestMethod.PUT)
-    public ResultResp<Void> updateMyProfile(@RequestBody SysUserProfileUpdateReq req) {
+    public ResultResp<Void> updateMyProfile(@Validated @RequestBody SysUserProfileUpdateReq req) {
         sysUserService.updateCurrentUserProfile(req);
         return ResultResp.success();
     }

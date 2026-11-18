@@ -18,6 +18,7 @@ import com.mo.corecraft.model.entity.KpTopic;
 import com.mo.corecraft.model.entity.KpTopicLearning;
 import com.mo.corecraft.service.KpMasteryEvidenceService;
 import com.mo.corecraft.service.support.MasteryCalculator;
+import com.mo.corecraft.utils.AppClock;
 import com.mo.corecraft.utils.JsonUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -351,9 +352,9 @@ public class KpMasteryEvidenceServiceImpl implements KpMasteryEvidenceService {
             // 内容重大更新且还没重新测过 ⇒ 待复测，立即到期（设计 §3.2 / §7.3）
             learning.setReviewState("pending_reassessment");
             learning.setPendingReason("正文发生重大更新，待复测");
-            learning.setNextReviewAt(LocalDateTime.now());
+            learning.setNextReviewAt(AppClock.now());
         } else {
-            learning.setNextReviewAt(r.nextReviewAt() != null ? r.nextReviewAt() : LocalDateTime.now());
+            learning.setNextReviewAt(r.nextReviewAt() != null ? r.nextReviewAt() : AppClock.now());
             if (anyEvent && !"active".equals(learning.getReviewState())) {
                 // pending_initial / pending_confirm / pending_reassessment 都在首次有效评估后转正
                 learning.setReviewState("active");
@@ -392,7 +393,8 @@ public class KpMasteryEvidenceServiceImpl implements KpMasteryEvidenceService {
         return min;
     }
 
-    private Map<Long, String> questionTypesFor(List<KpMasteryEvidence> evidence) {        Map<Long, String> byAnswer = new HashMap<>();
+    private Map<Long, String> questionTypesFor(List<KpMasteryEvidence> evidence) {
+        Map<Long, String> byAnswer = new HashMap<>();
         if (evidence.isEmpty()) {
             return byAnswer;
         }
@@ -402,6 +404,9 @@ public class KpMasteryEvidenceServiceImpl implements KpMasteryEvidenceService {
                 .select(KpExamAnswer::getId, KpExamAnswer::getQuestionId)
                 .in(KpExamAnswer::getId, answerIds))) {
             questionByAnswer.put(a.getId(), a.getQuestionId());
+        }
+        if (questionByAnswer.isEmpty()) {
+            return byAnswer;
         }
         Map<Long, String> typeByQuestion = new HashMap<>();
         for (KpExamQuestion q : questionMapper.selectList(Wrappers.<KpExamQuestion>lambdaQuery()

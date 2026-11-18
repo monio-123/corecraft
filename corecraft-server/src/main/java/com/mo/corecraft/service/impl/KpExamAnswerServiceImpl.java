@@ -17,6 +17,7 @@ import com.mo.corecraft.model.resp.KpAttemptReviewResp;
 import com.mo.corecraft.service.KpExamAnswerService;
 import com.mo.corecraft.service.KpExamAttemptService;
 import com.mo.corecraft.service.KpMasteryEvidenceService;
+import com.mo.corecraft.utils.AppClock;
 import com.mo.corecraft.utils.JsonUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -87,20 +88,11 @@ public class KpExamAnswerServiceImpl implements KpExamAnswerService {
                     ? new LinkedHashMap<>() : new LinkedHashMap<>(item.getGradePayload());
             Map<String, Object> merged = new LinkedHashMap<>(payload);
             merged.put("revision", req.getGradeRevision());
-            if (answer.getGradePayload() != null && !answer.getGradePayload().isBlank()) {
-                Object old = JsonUtils.toJava(JsonUtils.readTree(answer.getGradePayload()));
-                List<Object> history = new ArrayList<>();
-                Object existingHistory = payload.get("history");
-                if (existingHistory instanceof List<?> list) {
-                    history.addAll(list);
-                }
-                history.add(old);
-                merged.put("history", history);
-            }
+            appendRevisionHistory(answer.getGradePayload(), merged);
             answer.setGradePayload(JsonUtils.toJsonString(merged));
             answer.setGradeRevision(req.getGradeRevision());
             answer.setResultId(req.getResultId());
-            answer.setGradedAt(LocalDateTime.now());
+            answer.setGradedAt(AppClock.now());
             answerMapper.updateById(answer);
         }
 
@@ -112,14 +104,12 @@ public class KpExamAnswerServiceImpl implements KpExamAnswerService {
             questionById.put(q.getId(), q);
         }
         BigDecimal total = BigDecimal.ZERO;
-        int graded = 0;
         int ungraded = 0;
         for (KpExamAnswer a : byQuestion.values()) {
             if (a.getScoreRatio() == null && a.getVerdict() == null) {
                 ungraded++;
                 continue;
             }
-            graded++;
             KpExamQuestion q = questionById.get(a.getQuestionId());
             BigDecimal max = q == null || q.getMaxScore() == null ? BigDecimal.ZERO : q.getMaxScore();
             BigDecimal ratio = a.getScoreRatio() == null ? BigDecimal.ZERO : a.getScoreRatio();
@@ -130,7 +120,7 @@ public class KpExamAnswerServiceImpl implements KpExamAnswerService {
         patch.setId(attemptId);
         patch.setScore(total);
         patch.setStatus(ungraded > 0 ? "partial" : "completed");
-        patch.setCompletedAt(LocalDateTime.now());
+        patch.setCompletedAt(AppClock.now());
         attemptMapper.updateById(patch);
 
         // 证据 + 投影重放：同一事务（设计 §11.2）
@@ -203,15 +193,7 @@ public class KpExamAnswerServiceImpl implements KpExamAnswerService {
             merged.put("note", req.getNote());
         }
         merged.put("items", req.getItems() == null ? List.of() : req.getItems());
-        if (question.getAttributionPayload() != null && !question.getAttributionPayload().isBlank()) {
-            Object old = JsonUtils.toJava(JsonUtils.readTree(question.getAttributionPayload()));
-            List<Object> history = new ArrayList<>();
-            if (old instanceof Map<?, ?> oldMap && oldMap.get("history") instanceof List<?> list) {
-                history.addAll(list);
-            }
-            history.add(old);
-            merged.put("history", history);
-        }
+        appendRevisionHistory(question.getAttributionPayload(), merged);
 
         KpExamQuestion patch = new KpExamQuestion();
         patch.setId(questionId);
@@ -225,5 +207,19 @@ public class KpExamAnswerServiceImpl implements KpExamAnswerService {
                 .eq(KpExamAnswer::getQuestionId, questionId))) {
             masteryEvidenceService.regenerateFromAttempt(a.getAttemptId());
         }
+    }
+
+    /** 把上一版 payload 归档进新 payload 的 {@code history} 列表（判分/归因两条 revision 留痕共用）。 */
+    private static void appendRevisionHistory(String previousJson, Map<String, Object> merged) {
+        if (previousJson == null || previousJson.isBlank()) {
+            return;
+        }
+        Object old = JsonUtils.toJava(JsonUtils.readTree(previousJson));
+        List<Object> history = new ArrayList<>();
+        if (old instanceof Map<?, ?> oldMap && oldMap.get("history") instanceof List<?> list) {
+            history.addAll(list);
+        }
+        history.add(old);
+        merged.put("history", history);
     }
 }

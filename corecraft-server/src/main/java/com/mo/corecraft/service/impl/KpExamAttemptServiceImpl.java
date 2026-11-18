@@ -15,6 +15,7 @@ import com.mo.corecraft.model.req.KpAnswerSaveReq;
 import com.mo.corecraft.model.req.KpAttemptCreateReq;
 import com.mo.corecraft.model.resp.KpAttemptResp;
 import com.mo.corecraft.service.KpExamAttemptService;
+import com.mo.corecraft.utils.AppClock;
 import com.mo.corecraft.utils.JsonUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -64,7 +65,7 @@ public class KpExamAttemptServiceImpl implements KpExamAttemptService {
         attempt.setUserId(userId);
         attempt.setReplayOfAttemptId(req.getReplayOfAttemptId());
         attempt.setStatus("answering");
-        attempt.setStartedAt(LocalDateTime.now());
+        attempt.setStartedAt(AppClock.now());
         attempt.setMaxScore(maxScore);
         attemptMapper.insert(attempt);
         return attempt.getId();
@@ -101,7 +102,7 @@ public class KpExamAttemptServiceImpl implements KpExamAttemptService {
         KpExamAttempt patch = new KpExamAttempt();
         patch.setId(attemptId);
         patch.setStatus("grading");
-        patch.setSubmittedAt(LocalDateTime.now());
+        patch.setSubmittedAt(AppClock.now());
         attemptMapper.updateById(patch);
     }
 

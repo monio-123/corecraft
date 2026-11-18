@@ -61,6 +61,12 @@ public class KpTopicTagRepository extends AbstractRepository<KpTopicTag, KpTopic
         mapper.physicalDeleteByTopicId(topicId);
     }
 
+    public void deleteByTopicIds(List<Long> topicIds) {
+        if (topicIds != null && !topicIds.isEmpty()) {
+            mapper.physicalDeleteByTopicIds(topicIds);
+        }
+    }
+
     public void deleteByTagId(Long tagId) {
         mapper.physicalDeleteByTagId(tagId);
     }

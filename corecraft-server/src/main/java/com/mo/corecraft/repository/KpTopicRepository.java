@@ -30,7 +30,6 @@ public class KpTopicRepository extends AbstractRepository<KpTopic, KpTopicQuery,
                 .when(onlyUncategorized, (w, q) -> w.isNull(KpTopic::getCategoryId))
                 .when(!onlyUncategorized && hasCategoryIds,
                         (w, q) -> w.in(KpTopic::getCategoryId, q.getCategoryIds()))
-                .ifNotNull(query.getTypeId(), (w, typeId) -> w.eq(KpTopic::getTypeId, typeId))
                 // 时间区间（列表页的「今天 / 本周 / 本月」范围）。
                 // 起止由前端按本地时区算好传过来 ⇒ 两端口径一致，不会差一天。
                 // ⚠️ **前端那边还有一份同口径的筛选**（结构索引上按 createTime 自己筛，
@@ -41,7 +40,7 @@ public class KpTopicRepository extends AbstractRepository<KpTopic, KpTopicQuery,
                 // 比"先查 tagId 再 IN 查 topic"少一次往返。
                 .ifNotBlank(query.getTag(), (w, tag) -> w.exists(
                         "SELECT 1 FROM kp_topic_tag tt JOIN kp_tag g ON g.id = tt.tag_id"
-                                + " WHERE tt.topic_id = kp_topic.id AND g.name = {0} AND g.user_id = {1}",
+                                + " WHERE tt.topic_id = kp_topic.id AND g.name = {0} AND g.user_id = {1} AND g.is_delete = 0",
                         tag, query.getUserId()))
                 // 关键词：**搜哪一块由 scope 决定**（标题 / 正文 / 都搜）。
                 // ⚠️ **"这一档搜哪几块"的推导只有一处**（{@link #scopeKeywords}）——
@@ -177,13 +176,13 @@ public class KpTopicRepository extends AbstractRepository<KpTopic, KpTopicQuery,
                 query.getUserId(),
                 query.getCategoryIds(),
                 query.getUncategorized(),
-                query.getTypeId(),
                 query.getTag(),
                 query.getKeyword(),
                 sk.title(),
                 sk.content(),
                 query.getCreatedFrom(),
                 query.getCreatedTo(),
+                query.getSort(),
                 offset,
                 size);
     }
@@ -197,7 +196,6 @@ public class KpTopicRepository extends AbstractRepository<KpTopic, KpTopicQuery,
                 query.getUserId(),
                 query.getCategoryIds(),
                 query.getUncategorized(),
-                query.getTypeId(),
                 query.getTag(),
                 query.getKeyword(),
                 sk.title(),

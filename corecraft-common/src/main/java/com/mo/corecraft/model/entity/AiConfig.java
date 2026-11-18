@@ -9,16 +9,7 @@ import lombok.Setter;
 import java.time.LocalDateTime;
 
 /**
- * AI 设置：一人一行，**只有一个总开关**。
- *
- * **接口不在这里**：base_url / model / api_key 拆到了 {@link AiEndpoint}（一人多行）。
- * 开关是用户级的（要不要用 AI），接口是配置级的（用哪个），一个字段一个归属，
- * 免得"多行 enabled 各不相同"这种事。
- *
- * **不放 sys_dict**：字典表没有 user_id，放进去就是全局一份，和"每人一份"矛盾。
- *
- * **不继承 BaseEntity**：这里不需要 is_delete（一行配置，删了再建即可），
- * createTime / updateTime 交给数据库的 DEFAULT CURRENT_TIMESTAMP。
+ * AI 设置：一人一行，记录当前选中的 API 端点（{@code enabled} 总开关已于 2026-11-16 D6 退役）。
  */
 @Getter
 @Setter
@@ -30,19 +21,7 @@ public class AiConfig {
 
     private Long userId;
 
-    /** 0 关闭（界面不出现任何 AI 入口）1 开启 */
-    private Boolean enabled;
-
-    /**
-     * **当前选中的那条 API**（一人一条）。NULL = 没选过，界面兜回第一条能用的。
-     *
-     * <p>⚠️ **2026-11-13 从 localStorage 搬过来的**：原来「选哪个」只存在浏览器
-     * （`localStorage['ai-current-endpoint']`）⇒ 换个浏览器/换台机器登录就掉回默认，
-     * 用户看到的是「我明明配了 mimo，怎么又是 deepseek」。
-     * 端点列表本来就是账号级的（{@link AiEndpoint} 带 user_id），只有"选哪个"不是，这不对。
-     *
-     * <p>与 {@code enabled} 同表不同权：`enabled` 管"用不用 AI"，这个管"用哪一条"。
-     */
+    /** 当前选中的那条 API（一人一条）；NULL = 没选过，前端兜回第一条能用的。 */
     private Long currentEndpointId;
 
     private LocalDateTime createTime;

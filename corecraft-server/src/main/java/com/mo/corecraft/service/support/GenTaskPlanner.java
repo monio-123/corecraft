@@ -108,6 +108,9 @@ public final class GenTaskPlanner {
     public static List<String> verifyTree(List<OutlineText.Node> tree) {
         List<String> issues = new ArrayList<>();
         java.util.Map<String, Integer> leafSeen = new java.util.HashMap<>();
+        java.util.Map<Integer, Integer> parentLeafMask = new java.util.HashMap<>();
+        java.util.List<String> overviewNodes = new java.util.ArrayList<>();
+        java.util.Deque<Integer> stack = new java.util.ArrayDeque<>();
         int prevDepth = 0;
         int jump = 0;
         int modules = 0;
@@ -115,6 +118,16 @@ public final class GenTaskPlanner {
         for (int i = 0; i < tree.size(); i++) {
             OutlineText.Node n = tree.get(i);
             boolean leaf = i + 1 >= tree.size() || tree.get(i + 1).depth() <= n.depth();
+            while (!stack.isEmpty() && tree.get(stack.peek()).depth() >= n.depth()) {
+                stack.pop();
+            }
+            if (!stack.isEmpty()) {
+                int pid = stack.peek();
+                parentLeafMask.merge(pid, leaf ? 1 : 2, (a, b) -> a | b);
+            }
+            if (!leaf) {
+                stack.push(i);
+            }
             if (n.depth() == 2) {
                 modules += 1;
             }
@@ -127,6 +140,9 @@ public final class GenTaskPlanner {
             }
             if (OutlineText.hasChapterIndex(n.name()) && n.depth() != 2) {
                 sunkChapter += 1;
+            }
+            if (n.depth() >= 2 && n.name().matches(".*(?:总览|概述|全景|学习路线)$")) {
+                overviewNodes.add(n.name());
             }
         }
         int dup = 0;
@@ -143,6 +159,13 @@ public final class GenTaskPlanner {
         }
         if (sunkChapter > 0) {
             issues.add("章号不在章层 " + sunkChapter + " 处（如「N.」挂在别的章下面）");
+        }
+        long mixedParents = parentLeafMask.values().stream().filter(m -> m == 3).count();
+        if (mixedParents > 0) {
+            issues.add("同父节点下混放目录与叶子 " + mixedParents + " 处（同一父节点下子项必须同级，禁止半层目录半层叶子）");
+        }
+        if (!overviewNodes.isEmpty()) {
+            issues.add("存在疑似空泛总览/概述节点（应删掉或拆成具体知识点）：" + String.join("、", overviewNodes));
         }
         if (leafSeen.size() < 20) {
             issues.add("知识点只有 " + leafSeen.size() + " 个，偏少");

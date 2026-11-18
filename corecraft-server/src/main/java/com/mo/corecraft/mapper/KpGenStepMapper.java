@@ -6,6 +6,8 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Update;
 
+import java.time.LocalDateTime;
+
 /**
  * 任务步骤（一次 AI 调用）。
  */
@@ -31,11 +33,12 @@ public interface KpGenStepMapper extends BaseMapper<KpGenStep> {
      * @param userId 归属（防止执行器拿错任务写到别人的知识点上）
      */
     @Update("UPDATE kp_topic SET content = #{content}, content_hash = #{contentHash}, "
-            + "content_epoch = content_epoch + #{epochBump}, update_time = NOW() "
+            + "content_epoch = content_epoch + #{epochBump}, update_time = #{updateTime} "
             + "WHERE id = #{id} AND user_id = #{userId} AND is_delete = 0")
     int updateTopicContent(@Param("id") Long id,
                            @Param("userId") Long userId,
                            @Param("content") String content,
                            @Param("contentHash") String contentHash,
-                           @Param("epochBump") int epochBump);
+                           @Param("epochBump") int epochBump,
+                           @Param("updateTime") LocalDateTime updateTime);
 }

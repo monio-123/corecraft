@@ -27,16 +27,11 @@ public class KpTopicQuery {
      */
     private List<Long> categoryIds;
 
-    /**
-     * 只看「待归类」（category_id 为空）。
-     *
-     * <p>与 categoryIds **互斥**：前端两个只发一个。后端两个都收到时以本项为准
-     * （未归类是更窄的条件，先收窄再谈目录）。
-     */
+    /** 只看「待归类」（category_id 为空）。 */
     private Boolean uncategorized;
 
-    /** 知识点类型（字典项 id） */
-    private Long typeId;
+    /** 排序模式：asc = 按传入 categoryIds 目录树顺序 + id 升序；缺省 = 创建时间倒序。 */
+    private String sort;
 
     /** 标签名 */
     private String tag;

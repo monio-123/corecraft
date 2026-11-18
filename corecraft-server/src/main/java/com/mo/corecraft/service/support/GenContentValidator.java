@@ -53,7 +53,7 @@ public final class GenContentValidator {
      * 是正当用法，禁掉会误伤（代价是白重写一次）。
      */
     private static final Set<String> UNRENDERABLE_LANG = Set.of(
-            "svg", "plantuml", "puml", "dot", "graphviz", "drawio");
+            "mermaid", "svg", "plantuml", "puml", "dot", "graphviz", "drawio");
     /** 一个知识点最多几张图（与提示词「结构化图和 mermaid 共用这一个额度」同口径） */
     private static final int MAX_FIGURES = 1;
     /** 模型没内容硬写时最典型的形态 */
@@ -99,10 +99,15 @@ public final class GenContentValidator {
         while (kb.find()) {
             try {
                 JsonNode node = JsonUtils.readTree(kb.group(1));
-                // **形状按字段认**（与前端 `shapeOf` 同一口径）：三个字段都没有 ⇒ 前端画不出来，
-                // 会落「图没画出来：数据不完整」。这里提前判掉，省得用户看到一张空白图。
-                if (!node.has("groups") && !node.has("steps") && !node.has("rows")) {
-                    issues.add("kbfig 块里没有可画的形状（groups / steps / rows 三选一）");
+                // **形状按字段认**（与前端 `shapeOf` 同一口径）：10 种 kbfig 图型
+                boolean validShape = node.has("groups") || node.has("steps") || node.has("rows")
+                        || node.has("root") || node.has("parts")
+                        || (node.has("nodes") && node.has("edges"))
+                        || (node.has("participants") && node.has("messages"))
+                        || node.has("events")
+                        || node.has("slots") || node.has("container");
+                if (!validShape) {
+                    issues.add("kbfig 块里没有可画的形状（groups / steps / rows / root / parts / nodes+edges / participants+messages / events / container 选一）");
                     break;
                 }
             } catch (Exception e) {
@@ -115,17 +120,11 @@ public final class GenContentValidator {
         while (fence.find()) {
             String lang = fence.group(1).toLowerCase(Locale.ROOT);
             if (UNRENDERABLE_LANG.contains(lang)) {
-                issues.add("用了画不出来的图语言「" + lang + "」（只认 mermaid / kbfig）");
+                issues.add("用了画不出来的图语言「" + lang + "」（只认 kbfig）");
                 break;
             }
         }
-        int figures = 0;
-        for (int i = c.indexOf("```kbfig"); i >= 0; i = c.indexOf("```kbfig", i + 8)) {
-            figures += 1;
-        }
-        for (int i = c.indexOf("```mermaid"); i >= 0; i = c.indexOf("```mermaid", i + 10)) {
-            figures += 1;
-        }
+        int figures = countKbfigBlocks(c);
         if (figures > MAX_FIGURES) {
             issues.add("配了 " + figures + " 张图（一个知识点最多 " + MAX_FIGURES + " 张）");
         }
@@ -179,17 +178,7 @@ public final class GenContentValidator {
         while (m.find()) {
             sections += 1;
         }
-        int figures = 0;
-        int idx = 0;
-        while ((idx = c.indexOf("```kbfig", idx)) >= 0) {
-            figures += 1;
-            idx += 8;
-        }
-        idx = 0;
-        while ((idx = c.indexOf("```mermaid", idx)) >= 0) {
-            figures += 1;
-            idx += 10;
-        }
+        int figures = countKbfigBlocks(c);
         int tables = 0;
         for (String line : c.split("\n")) {
             if (line.trim().startsWith("|")) {
@@ -210,5 +199,13 @@ public final class GenContentValidator {
             sb.append(" · 重试过");
         }
         return sb.toString();
+    }
+
+    private static int countKbfigBlocks(String text) {
+        int count = 0;
+        for (int i = text.indexOf("```kbfig"); i >= 0; i = text.indexOf("```kbfig", i + 8)) {
+            count += 1;
+        }
+        return count;
     }
 }

@@ -38,24 +38,8 @@ public class KpTopicIndexResp implements Taggable {
     /** 所属目录ID（null = 未归类） */
     private Long categoryId;
 
-    /** 知识点类型，指向 sys_dict_item.id */
-    private Long typeId;
-
-    /**
-     * 是否参与掌握度的**单条覆盖**（库里的原始可空值，还没解析）。
-     *
-     * <p>⚠️ 名字故意与 {@link #masteryEnabled} 区分开：一个是原始值、一个是解析后的
-     * 最终判据，同名会被 BeanUtils 转换串位（见 {@code KpTopic.masteryOverride}）。
-     */
+    /** 是否参与掌握度的**单条覆盖**（库里的原始可空值：null=跟随默认 / true=参与 / false=不参与） */
     private Boolean masteryOverride;
-
-    /**
-     * 是否参与掌握度（**已解析**的最终判据；解析顺序：单条显式值 &gt; 类型默认值 &gt; 安全兜底）。
-     *
-     * <p>索引投影里也有它，是因为目录树/概览要按"参与项"过滤 ——
-     * 同一个判据必须在这一层也能读到，不能让前端自己再判一遍。
-     */
-    private Boolean masteryEnabled;
 
     /** 标签：JSON 字符串 */
     private String tags;

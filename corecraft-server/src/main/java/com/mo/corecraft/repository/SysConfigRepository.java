@@ -78,6 +78,16 @@ public class SysConfigRepository {
                 .likeRight(SysConfig::getConfigKey, prefix));
     }
 
+    /** 精确删某个用户指定键列表的覆盖行（不误伤同前缀的其它键，如 ui.view.category.<id>） */
+    public int deleteByUserIdAndKeys(Long userId, Collection<String> keys) {
+        if (keys == null || keys.isEmpty()) {
+            return 0;
+        }
+        return mapper.delete(new LambdaQueryWrapper<SysConfig>()
+                .eq(SysConfig::getUserId, userId)
+                .in(SysConfig::getConfigKey, keys));
+    }
+
     /**
      * 删某个键和它下面所有前缀的行（**不分 user_id**）。
      *

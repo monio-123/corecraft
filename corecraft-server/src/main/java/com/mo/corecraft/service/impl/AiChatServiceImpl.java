@@ -343,9 +343,9 @@ public class AiChatServiceImpl implements AiChatService {
     }
 
     /**
-     * 几条知识的正文摘要（按类型分组），现查现拼（2026-11-15 出题「出不了题」的修复）。
+     * 几条知识的正文摘要（逐条编号带标题），现查现拼（2026-11-15 出题「出不了题」的修复）。
      *
-     * <p>与 {@link #digestOf} 同一份分组格式——**不另实现一遍**。
+     * <p>与 {@link #digestOf} 同一份格式——**不另实现一遍**。
      */
     @Override
     public String digestFor(List<Long> topicIds, Long userId) {
@@ -365,36 +365,20 @@ public class AiChatServiceImpl implements AiChatService {
      * <p>**每条一段，标题带上**：模型要知道"哪句话讲的是哪个知识点"，
      * 不然几段内容糊在一起，它会把 A 知识的结论安到 B 知识头上。
      *
-     * <p>**按类型分组，组头写类型名**（2026-10-23）：同一批材料不是一个性质——
-     * 笔记是具体知识点，学习的材料是框架/体系。混在一起不给标记，模型会把它们当同一种东西使，
-     * 于是出出一堆"这个体系包含什么"的综述题。
-     *
-     * <p>**代码只认"按类型分组"，不认"笔记=细节层"这种语义**：哪一类材料该怎么用，
-     * 写在意图规范里（`ai.prompt.exam.paper`）；类型名取字典 label，字典改名只改数据。
-     * ⇒ **加一种类型 = 加一条字典项 + 改提示词，这段代码不动。**
+     * <p>⚠️ **不再按类型分组**（2026-11-16 知识模型定稿 D11）：知识点类型轴退役，
+     * 【学习】/【笔记】两组的主次信号随之取消 —— 材料是一批同质的知识，
+     * 哪些是结论、哪些是框架由模型读全文自己掂量，代码不替它分。
+     * ⇒ 类型字典改一个字也不影响这里了（原来组头取字典 label）。
      */
     private String digestOf(List<KpTopicResp> topics) {
-        Map<Long, String> typeNames = kpTopicService.typeNamesByTopic(topics);
-        // 分组：同一类型的排一组，组内保持传入顺序；组序 = 类型在材料里第一次出现的顺序
-        Map<String, List<KpTopicResp>> groups = new LinkedHashMap<>();
-        for (KpTopicResp t : topics) {
-            groups.computeIfAbsent(typeNames.getOrDefault(t.getId(), ""), k -> new ArrayList<>()).add(t);
-        }
-        List<String> blocks = new ArrayList<>();
+        List<String> items = new ArrayList<>();
         int no = 0;
-        for (Map.Entry<String, List<KpTopicResp>> group : groups.entrySet()) {
-            List<String> items = new ArrayList<>();
-            for (KpTopicResp t : group.getValue()) {
-                // 编号**跨组连续**：模型说的"第 3 条"指的是整份材料里的第 3 条
-                items.add("知识点 " + (++no) + "：" + StringUtils.defaultString(t.getTitle())
-                        + "\n" + StringUtils.defaultString(t.getContent()));
-            }
-            // 类型名取不到（字典空了）就不写组头，材料还是那几条
-            blocks.add(group.getKey().isEmpty()
-                    ? String.join("\n\n", items)
-                    : "【" + group.getKey() + "】\n" + String.join("\n\n", items));
+        for (KpTopicResp t : topics) {
+            // 编号连续：模型说的"第 3 条"指的是整份材料里的第 3 条
+            items.add("知识点 " + (++no) + "：" + StringUtils.defaultString(t.getTitle())
+                    + "\n" + StringUtils.defaultString(t.getContent()));
         }
-        return String.join("\n\n", blocks);
+        return String.join("\n\n", items);
     }
 
     /** messages 转成人能读的样子。JSON 转义过的 \n 在界面上是一行，反倒看不清发了什么 */

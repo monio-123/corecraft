@@ -45,9 +45,14 @@ public class SysConfigController {
         return ResultResp.success();
     }
 
-    /** 清掉我的覆盖值 = 恢复系统默认 */
+    /** 清掉我的覆盖值 = 恢复系统默认（支持精确键列表 keys 或前缀 prefix） */
     @RequestMapping(value = "mine", method = RequestMethod.DELETE)
-    public ResultResp<Void> deleteMine(@RequestParam("prefix") String prefix) {
+    public ResultResp<Void> deleteMine(@RequestParam(value = "prefix", required = false) String prefix,
+                                       @RequestParam(value = "keys", required = false) List<String> keys) {
+        if (keys != null && !keys.isEmpty()) {
+            sysConfigService.deleteMineByKeys(SecurityUtil.getUserId(), keys);
+            return ResultResp.success();
+        }
         if (StringUtils.isBlank(prefix)) {
             throw new CoreCraftException(ResultCodeEnum.BAD_REQUEST, "要清空的键前缀不能为空!");
         }

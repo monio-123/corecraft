@@ -22,8 +22,6 @@ public class KpTopicResp implements Taggable {
 
     /** 所属目录ID（null = 未归类）；目录名由前端 store 从目录列表解析 */
     private Long categoryId;
-    /** 知识点类型，指向 sys_dict_item.id（纯数字）。见 KpTopic.typeId */
-    private Long typeId;
 
     /**
      * 是否参与掌握度的**单条覆盖**（库里的原始可空值，还没解析）。
@@ -35,9 +33,7 @@ public class KpTopicResp implements Taggable {
 
     /**
      * 是否参与掌握度（**已解析**的最终判据，不是库里那个可空的原值）。
-     *
-     * <p>解析顺序：单条显式值 &gt; 类型默认值 &gt; 安全兜底（false）。判据只在
-     * {@code MasteryScope} 一处，前端不再自己判一遍。
+     * 判据只在 {@code MasteryScope} 一处，前端不再自己判一遍。
      */
     private Boolean masteryEnabled;
 

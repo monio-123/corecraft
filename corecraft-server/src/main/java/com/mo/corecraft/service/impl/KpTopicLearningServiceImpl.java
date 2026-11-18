@@ -18,19 +18,18 @@ import com.mo.corecraft.model.resp.KpLearningResp;
 import com.mo.corecraft.model.resp.KpTopicIndexResp;
 import com.mo.corecraft.model.resp.KpTopicLevelResp;
 import com.mo.corecraft.service.KpTopicLearningService;
+import com.mo.corecraft.service.support.CategoryTreeHelper;
 import com.mo.corecraft.service.support.MasteryCalculator;
 import com.mo.corecraft.service.support.MasteryLevelResolver;
 import com.mo.corecraft.service.support.MasteryScope;
-import com.mo.corecraft.service.support.MasteryScopeResolver;
+import com.mo.corecraft.utils.AppClock;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.ArrayDeque;
 import java.util.Comparator;
-import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -50,7 +49,6 @@ public class KpTopicLearningServiceImpl implements KpTopicLearningService {
     private final KpTopicMapper topicMapper;
     private final KpMasteryEvidenceMapper evidenceMapper;
     private final KpCategoryMapper categoryMapper;
-    private final MasteryScopeResolver masteryScopeResolver;
 
     @Override
     @Transactional
@@ -66,7 +64,7 @@ public class KpTopicLearningServiceImpl implements KpTopicLearningService {
         boolean hasEvidence = evidenceMapper.exists(Wrappers.<KpMasteryEvidence>lambdaQuery()
                 .eq(KpMasteryEvidence::getUserId, userId)
                 .eq(KpMasteryEvidence::getTopicId, topicId));
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = AppClock.now();
 
         if (Boolean.TRUE.equals(req.getLearned())) {
             // 空正文不能标记已学（设计 §3.1）
@@ -134,7 +132,7 @@ public class KpTopicLearningServiceImpl implements KpTopicLearningService {
         resp.setAlgorithmVersion(learning.getAlgorithmVersion());
         // 记忆新鲜度 R：对外展示的第二维度（设计 §6.2）
         resp.setFreshness(MasteryCalculator.retentionR(
-                learning.getMemoryStabilityDays(), learning.getLastMasteryAt(), LocalDateTime.now()));
+                learning.getMemoryStabilityDays(), learning.getLastMasteryAt(), AppClock.now()));
         // 展示档位：阈值只在 MasteryCalculator 一处（设计 §6.5，2026-11-14 四档纯分数），
         // 判据 = 当前掌握度 M（ability × 衰减后 R）——**条画的就是它，档位与条永不倒挂**
         resp.setMasteryLevel(MasteryCalculator.masteryLevel(
@@ -178,7 +176,7 @@ public class KpTopicLearningServiceImpl implements KpTopicLearningService {
 
     @Override
     public List<KpCategoryLearningResp> selectTree(Long rootCategoryId, Long userId) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = AppClock.now();
         // 三个数据源都是轻量的：结构索引（不碰 content 列，见 KpTopicMapper.xml）、
         // 本人的学习行、目录表。一次捞全在内存里折叠——目录是几十级别，逐层查库才是真浪费。
         List<KpTopicIndexResp> topics = topicMapper.selectIndex(userId, null, null);
@@ -187,8 +185,6 @@ public class KpTopicLearningServiceImpl implements KpTopicLearningService {
                 .stream().collect(Collectors.toMap(KpTopicLearning::getTopicId, e -> e, (a, b) -> a));
         List<KpCategory> categories = categoryMapper
                 .selectList(Wrappers.<KpCategory>lambdaQuery().eq(KpCategory::getUserId, userId));
-        // 类型默认值：判据的输入（单条覆盖 > 类型默认 > 兜底）
-        Map<Long, Boolean> typeDefaults = masteryScopeResolver.typeDefaults();
 
         // 直挂知识点先归到直接目录；Σ(M×w) / Σw 单独累加（拿不到合格项时 mastery 要是 null 不是 0）
         Map<Long, KpCategoryLearningResp> byId = new HashMap<>();
@@ -209,14 +205,17 @@ public class KpTopicLearningServiceImpl implements KpTopicLearningService {
             if (t.getCategoryId() == null || !Boolean.TRUE.equals(t.getHasContent())) {
                 continue;
             }
-            // ⚠️ **不参与掌握度的内容不进学习聚合**（2026-11-12）：笔记/备忘不是"要学的东西"。
-            //    判据只有一处（MasteryScope），前端不自己判一遍。
-            if (!MasteryScope.participates(t.getMasteryOverride(), typeDefaults, t.getTypeId())) {
-                continue;
-            }
             KpCategoryLearningResp row = byId.get(t.getCategoryId());
             if (row == null) {
                 continue; // 挂在已删目录上的脏数据：不进任何聚合
+            }
+            // ⚠️ **单条显式关闭的条目不进学习聚合**（"这条不算学习材料"）。
+            //    判据只有一处（MasteryScope），前端不自己判一遍。
+            //    ⚠️ **分母（eligible）不能跟着"参与"走**（2026-11-16 D10）：
+            //    「已检验 N / M」的 M 是"书里有多少条可学的"，不是"有多少条被检验过"——
+            //    若把 M 收窄成"已检验的"，那个比值恒等于 100%，界面上的信息就没了。
+            if (!MasteryScope.eligible(t.getMasteryOverride())) {
+                continue;
             }
             row.setEligibleCount(row.getEligibleCount() + 1);
             KpTopicLearning l = learningByTopic.get(t.getId());
@@ -243,10 +242,7 @@ public class KpTopicLearningServiceImpl implements KpTopicLearningService {
         }
 
         // 子树折叠：每目录的指标 = 直挂 + 全部子目录（递归统计整个子树、同一知识点只算一次，§8.1）
-        Map<Long, List<Long>> childrenOf = categories.stream()
-                .filter(c -> !KpCategory.ROOT_ID.equals(c.getParentId()))
-                .collect(Collectors.groupingBy(KpCategory::getParentId,
-                        Collectors.mapping(KpCategory::getId, Collectors.toList())));
+        Map<Long, List<Long>> childrenOf = CategoryTreeHelper.childrenByParent(categories);
         Set<Long> folded = new HashSet<>();
         for (Long id : byId.keySet()) {
             foldUp(id, childrenOf, byId, mSum, wSum, levelCounts, folded);
@@ -260,7 +256,7 @@ public class KpTopicLearningServiceImpl implements KpTopicLearningService {
         }
 
         // 指定根就只回那棵子树；不指定回整棵树（设计 §11.1「批量返回整棵树的聚合」）
-        Set<Long> scope = rootCategoryId == null ? null : subtreeIds(childrenOf, rootCategoryId);
+        Set<Long> scope = rootCategoryId == null ? null : CategoryTreeHelper.subtreeIdSet(childrenOf, rootCategoryId);
         return byId.values().stream()
                 .filter(r -> scope == null || scope.contains(r.getCategoryId()))
                 .sorted(Comparator.comparing(KpCategoryLearningResp::getCategoryId))
@@ -269,9 +265,20 @@ public class KpTopicLearningServiceImpl implements KpTopicLearningService {
 
     @Override
     public List<KpTopicLevelResp> selectMasteryLevels(Long userId) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = AppClock.now();
+        // 只回有效知识点：软删的 / 单条显式关掉掌握度（masteryOverride=false）的不染色，与 selectTree 口径一致
+        Map<Long, KpTopic> eligibleTopics = topicMapper.selectList(Wrappers.<KpTopic>lambdaQuery()
+                        .select(KpTopic::getId, KpTopic::getMasteryOverride)
+                        .eq(KpTopic::getUserId, userId))
+                .stream()
+                .filter(t -> MasteryScope.eligible(t.getMasteryOverride()))
+                .collect(Collectors.toMap(KpTopic::getId, t -> t, (a, b) -> a));
+        if (eligibleTopics.isEmpty()) {
+            return List.of();
+        }
         return learningMapper.selectList(Wrappers.<KpTopicLearning>lambdaQuery()
                         .eq(KpTopicLearning::getUserId, userId)).stream()
+                .filter(l -> eligibleTopics.containsKey(l.getTopicId()))
                 .map(l -> {
                     String level = MasteryLevelResolver.levelOf(l, now);
                     if (level == null) {
@@ -320,20 +327,5 @@ public class KpTopicLearningServiceImpl implements KpTopicLearningService {
                 childCounts.forEach((k, v) -> acc.merge(k, v, Integer::sum));
             }
         }
-    }
-
-    /** 这个目录往下整棵子树的 id（含自己）。visited 收住脏数据里的父子成环 */
-    private Set<Long> subtreeIds(Map<Long, List<Long>> childrenOf, Long rootId) {
-        Set<Long> out = new HashSet<>();
-        Deque<Long> stack = new ArrayDeque<>();
-        stack.push(rootId);
-        while (!stack.isEmpty()) {
-            Long id = stack.pop();
-            if (!out.add(id)) {
-                continue;
-            }
-            childrenOf.getOrDefault(id, List.of()).forEach(stack::push);
-        }
-        return out;
     }
 }

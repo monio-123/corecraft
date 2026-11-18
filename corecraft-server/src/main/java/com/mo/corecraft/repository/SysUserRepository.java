@@ -1,6 +1,7 @@
 package com.mo.corecraft.repository;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mo.corecraft.model.entity.SysUser;
 import com.mo.corecraft.mapper.SysUserMapper;
@@ -31,6 +32,12 @@ public class SysUserRepository extends AbstractRepository<SysUser, SysUserQuery,
 
     public List<SysUserResp> selectList(SysUserQuery query) {
         return mapper.selectList(query);
+    }
+
+    public boolean existsByUsername(String username, Long excludeUserId) {
+        return mapper.selectCount(Wrappers.<SysUser>lambdaQuery()
+                .eq(SysUser::getUsername, username)
+                .ne(excludeUserId != null, SysUser::getId, excludeUserId)) > 0;
     }
 
     public Page<SysUserResp> selectPage(Page<?> page, SysUserQuery query) {

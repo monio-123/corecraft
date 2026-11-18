@@ -91,9 +91,11 @@ public class AiEndpointServiceImpl implements AiEndpointService {
     public AiEndpoint requireReady(Long userId, Long endpointId) {
         // ⚠️ **错误文案只说事实，不写界面路径**（brove-shared §8）：后端硬编"侧边栏头像 → AI 设置"
         // 那种路径，前端菜单一改就指错地方；入口在哪用户自己点得到。
-        if (!aiConfigService.isEnabled(userId)) {
-            throw new CoreCraftException("AI 开关没打开");
-        }
+        // ⚠️ **不再查「AI 总开关」**（2026-11-16 D6 开关退役）：那个开关同时管着
+        // 交互类（问答）、一次点击多次调用（生成/出卷）、零点击自主任务（命名）——
+        // 三件不相干的事被一个开关绑在一起，关掉它的瞬间三件一起变行为，
+        // 而"能不能用 AI"的真相只有一个：**端点配全了没有**。
+        // 急停 = 停用/删除端点（那条能力本来就有）。
         if (endpointId == null) {
             throw new CoreCraftException("还没选好 API");
         }
@@ -104,6 +106,19 @@ public class AiEndpointServiceImpl implements AiEndpointService {
             throw new CoreCraftException("「" + endpoint.getName() + "」还没配全");
         }
         return endpoint;
+    }
+
+    @Override
+    public boolean currentReady(Long userId) {
+        // **免抛异常的同一份判据**：自主任务（命名）用它决定"跑不跑"——
+        // 没配好就不跑（笔记留空标题），而不是抛一句错给用户看。
+        Long endpointId = aiConfigService.select(userId).getCurrentEndpointId();
+        if (endpointId == null) {
+            return false;
+        }
+        return aiEndpointRepository.findByIdAndUserId(endpointId, userId)
+                .map(AiEndpoint::isReady)
+                .orElse(false);
     }
 
     @Override

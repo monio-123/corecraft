@@ -4,6 +4,7 @@ import com.mo.corecraft.model.req.SysConfigSaveReq;
 import com.mo.corecraft.model.resp.MyConfigResp;
 import com.mo.corecraft.model.resp.SysConfigResp;
 
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -28,6 +29,9 @@ public interface SysConfigService {
 
     /** 删我的覆盖值 = 恢复系统默认 */
     void deleteMine(Long userId, String prefix);
+
+    /** 精确删我的指定键覆盖值 = 恢复系统默认 */
+    void deleteMineByKeys(Long userId, Collection<String> keys);
 
     /** 管理端：系统默认那几行 */
     List<SysConfigResp> listSystem(String prefix);

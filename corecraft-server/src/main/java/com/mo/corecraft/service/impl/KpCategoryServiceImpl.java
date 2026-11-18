@@ -14,14 +14,12 @@ import com.mo.corecraft.repository.KpCategoryRepository;
 import com.mo.corecraft.repository.KpTopicRepository;
 import com.mo.corecraft.service.KpCategoryService;
 import com.mo.corecraft.service.KpTopicService;
+import com.mo.corecraft.service.support.CategoryTreeHelper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Deque;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -50,6 +48,12 @@ public class KpCategoryServiceImpl implements KpCategoryService {
         return kpCategoryRepository.listByUserId(userId).stream()
                 .map(c -> toResp(c.getId(), c.getName(), c.getParentId()))
                 .toList();
+    }
+
+    @Override
+    public Long ensureNotesCategory(Long userId) {
+        // 懒建逻辑在仓储层（两个调用方共用一份，见 KpCategoryRepository#ensureNotesCategory）
+        return kpCategoryRepository.ensureNotesCategory(userId);
     }
 
     /**
@@ -135,6 +139,9 @@ public class KpCategoryServiceImpl implements KpCategoryService {
         if (!KpCategory.ROOT_ID.equals(parentId)) {
             // 父目录必须存在且是本人的，否则能把目录挂到别人的树上去
             require(parentId, userId, "父目录不存在");
+            if (kpTopicRepository.countByCategoryIdsAndUserId(List.of(parentId), userId) > 0) {
+                throw new CoreCraftException(ResultCodeEnum.FAIL, "该目录下已有知识点，不能再建子目录");
+            }
         }
         KpCategory entity = new KpCategory();
         entity.setUserId(userId);
@@ -251,6 +258,9 @@ public class KpCategoryServiceImpl implements KpCategoryService {
             if (subtreeIds(userId, category.getId()).contains(target)) {
                 throw new CoreCraftException("不能移到自己的下级目录下");
             }
+            if (kpTopicRepository.countByCategoryIdsAndUserId(List.of(target), userId) > 0) {
+                throw new CoreCraftException("目标目录下已有知识点，不能移入子目录");
+            }
         }
         // 撞的是唯一键 (user_id, parent_id, name)。**不替用户改名**——自动加个 "Git2"
         // 是替他做决定，而且他没要求过。真冲突就报出来，本来就是他能看见、能改的事。
@@ -293,22 +303,6 @@ public class KpCategoryServiceImpl implements KpCategoryService {
      */
     private List<Long> subtreeIds(Long userId, Long rootId) {
         List<KpCategory> all = kpCategoryRepository.listByUserId(userId);
-        Map<Long, List<Long>> childrenOf = all.stream()
-                .filter(c -> !KpCategory.ROOT_ID.equals(c.getParentId()))
-                .collect(Collectors.groupingBy(KpCategory::getParentId,
-                        Collectors.mapping(KpCategory::getId, Collectors.toList())));
-        List<Long> out = new ArrayList<>();
-        Deque<Long> stack = new ArrayDeque<>();
-        Set<Long> visited = new HashSet<>();
-        stack.push(rootId);
-        while (!stack.isEmpty()) {
-            Long id = stack.pop();
-            if (!visited.add(id)) {
-                continue;
-            }
-            out.add(id);
-            childrenOf.getOrDefault(id, List.of()).forEach(stack::push);
-        }
-        return out;
+        return CategoryTreeHelper.subtreeIdList(CategoryTreeHelper.childrenByParent(all), rootId);
     }
 }

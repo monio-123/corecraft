@@ -6,12 +6,22 @@ import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.util.List;
+
 @Mapper
 public interface KpTopicRelationMapper extends BaseMapper<KpTopicRelation> {
 
     // 物理删除：关联表是纯关系，不留墓碑（避免撞唯一键）
     @Delete("DELETE FROM kp_topic_relation WHERE topic_id = #{topicId}")
     int physicalDeleteByTopicId(@Param("topicId") Long topicId);
+
+    @Delete({
+            "<script>",
+            "DELETE FROM kp_topic_relation WHERE topic_id IN",
+            "<foreach collection='topicIds' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
+            "</script>"
+    })
+    int physicalDeleteByTopicIds(@Param("topicIds") List<Long> topicIds);
 
     @Delete("DELETE FROM kp_topic_relation WHERE topic_id = #{topicId} AND related_topic_id = #{relatedTopicId}")
     int physicalDeleteByTopicIdAndRelatedTopicId(@Param("topicId") Long topicId, @Param("relatedTopicId") Long relatedTopicId);

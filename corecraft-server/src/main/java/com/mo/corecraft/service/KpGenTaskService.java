@@ -91,4 +91,7 @@ public interface KpGenTaskService {
      * 产物还没落库，删掉它就是"这棵树我不要了"。
      */
     void remove(Long id, Long userId);
+
+    /** 批量清理当前用户所有已完成的任务，返回清理条数 */
+    int removeFinished(Long userId);
 }

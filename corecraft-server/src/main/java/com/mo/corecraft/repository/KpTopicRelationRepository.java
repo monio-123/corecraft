@@ -44,6 +44,12 @@ public class KpTopicRelationRepository extends AbstractRepository<KpTopicRelatio
         mapper.physicalDeleteByTopicId(topicId);
     }
 
+    public void deleteByTopicIds(List<Long> topicIds) {
+        if (topicIds != null && !topicIds.isEmpty()) {
+            mapper.physicalDeleteByTopicIds(topicIds);
+        }
+    }
+
     public void deleteByTopicIdAndRelatedTopicId(Long topicId, Long relatedTopicId) {
         // 走物理删：纯关联表不留墓碑（避免撞 uk_topic_relation 唯一键）
         mapper.physicalDeleteByTopicIdAndRelatedTopicId(topicId, relatedTopicId);

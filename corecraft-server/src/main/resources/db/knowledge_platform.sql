@@ -71,9 +71,9 @@ CREATE TABLE IF NOT EXISTS `kp_topic` (
   `content` TEXT COMMENT '知识点内容（Markdown）',
   `content_hash` CHAR(64) DEFAULT NULL COMMENT '标题+正文归一化指纹（任何内容变化都更新；与题目指纹同源算法。NULL=存量行未计算，写路径补算）',
   `content_epoch` INT NOT NULL DEFAULT 1 COMMENT '重大正文版本号：大幅重写/重新生成才递增。证据是否当前有效只看 evidence.content_epoch == 本列',
-  `type_id` BIGINT DEFAULT NULL COMMENT '知识点类型（NULL=笔记，默认档）',
   `parent_topic_id` BIGINT DEFAULT NULL COMMENT '父知识点ID（自关联层级）',
   `category_id` BIGINT DEFAULT NULL COMMENT '所属知识目录ID（NULL=未归类；单选，互斥）',
+  `mastery_enabled` TINYINT(1) DEFAULT NULL COMMENT '参与掌握度单条覆盖：NULL=跟随默认 / 1=参与 / 0=不参与',
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `is_delete` TINYINT NOT NULL DEFAULT 0,
@@ -82,8 +82,7 @@ CREATE TABLE IF NOT EXISTS `kp_topic` (
   KEY `idx_user_delete` (`user_id`, `is_delete`),
   KEY `idx_parent_topic` (`parent_topic_id`),
   KEY `idx_category_id` (`category_id`),
-  KEY `idx_create_time` (`create_time`),
-  KEY `idx_type_id` (`type_id`)
+  KEY `idx_create_time` (`create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='知识点';
 
 -- ============================================================
@@ -180,14 +179,14 @@ CREATE TABLE IF NOT EXISTS `kp_topic_relation` (
 -- 「当前选中哪个接口」不落库，存前端 localStorage——那是当下的临时选择，不是用户资料。
 -- ============================================================
 CREATE TABLE IF NOT EXISTS `ai_config` (
-  `id`          BIGINT       NOT NULL AUTO_INCREMENT,
-  `user_id`     BIGINT       NOT NULL COMMENT '所属用户ID',
-  `enabled`     TINYINT      NOT NULL DEFAULT 0 COMMENT '是否启用AI功能：0关闭 1开启',
-  `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `update_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `id`                  BIGINT   NOT NULL AUTO_INCREMENT,
+  `user_id`             BIGINT   NOT NULL COMMENT '所属用户ID',
+  `current_endpoint_id` BIGINT            DEFAULT NULL COMMENT '当前选中的端点 id',
+  `create_time`         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time`         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_user_id` (`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI设置：每人一行，只管开关。接口在 ai_endpoint';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI设置：每人一行，记录当前选中端点';
 
 CREATE TABLE IF NOT EXISTS `ai_endpoint` (
   `id`          BIGINT       NOT NULL AUTO_INCREMENT,
@@ -251,7 +250,6 @@ CREATE TABLE IF NOT EXISTS `kp_exam_paper` (
   `status`             VARCHAR(16)   NOT NULL DEFAULT 'generating' COMMENT 'generating=出卷中 / ready=可作答 / failed=出卷失败（生成完才进答题）',
   `scope_snapshot`     TEXT          COMMENT 'JSON：当时范围——知识点 id、标题、内容 hash/epoch、目录路径（快照，不回查现状）',
   `settings_snapshot`  TEXT          COMMENT 'JSON：题型、道数、分值、难度、附加要求、模型等出卷参数',
-  `gen_task_id`        BIGINT        DEFAULT NULL COMMENT '出卷走任务中心时的任务 id（可空）',
   `create_time`        DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `update_time`        DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `is_delete`          TINYINT       NOT NULL DEFAULT 0 COMMENT '软删（考试记录可从历史里删掉；证据不动）',
@@ -291,7 +289,6 @@ CREATE TABLE IF NOT EXISTS `kp_exam_attempt` (
   `completed_at`          DATETIME      DEFAULT NULL COMMENT '判分完成时间',
   `score`                 DECIMAL(6,2)  DEFAULT NULL COMMENT '实得分；partial 时只算已判定题，未判定不计入也不落 0（NULL=还没分）',
   `max_score`             DECIMAL(6,2)  NOT NULL DEFAULT 0 COMMENT '整卷满分',
-  `grade_task_id`         BIGINT        DEFAULT NULL COMMENT '判分走任务中心时的任务 id（可空）',
   `create_time`           DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `update_time`           DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),

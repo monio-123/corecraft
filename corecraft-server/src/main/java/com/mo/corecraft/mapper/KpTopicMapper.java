@@ -47,13 +47,13 @@ public interface KpTopicMapper extends BaseMapper<KpTopic> {
     List<KpTopicResp> selectPageProjection(@Param("userId") Long userId,
                                            @Param("categoryIds") List<Long> categoryIds,
                                            @Param("uncategorized") Boolean uncategorized,
-                                           @Param("typeId") Long typeId,
                                            @Param("tag") String tag,
                                            @Param("keyword") String keyword,
                                            @Param("titleQ") String titleQ,
                                            @Param("contentQ") String contentQ,
                                            @Param("createdFrom") LocalDateTime createdFrom,
                                            @Param("createdTo") LocalDateTime createdTo,
+                                           @Param("sort") String sort,
                                            @Param("offset") long offset,
                                            @Param("size") long size);
 
@@ -66,7 +66,6 @@ public interface KpTopicMapper extends BaseMapper<KpTopic> {
     long countPageProjection(@Param("userId") Long userId,
                              @Param("categoryIds") List<Long> categoryIds,
                              @Param("uncategorized") Boolean uncategorized,
-                             @Param("typeId") Long typeId,
                              @Param("tag") String tag,
                              @Param("keyword") String keyword,
                              @Param("titleQ") String titleQ,

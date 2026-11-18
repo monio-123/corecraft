@@ -113,7 +113,27 @@ public class SysUserServiceImpl implements SysUserService{
     @Override
     public void updateCurrentUserProfile(SysUserProfileUpdateReq req) {
         SecurityUser user = requireCurrentUser();
+        SysUser current = sysUserRepository.entityById(user.getUserId());
+        String oldUsername = current != null ? current.getUsername() : user.getUsername();
+        String nextUsername = null;
+        if (req.getUsername() != null) {
+            nextUsername = req.getUsername().trim();
+            if (nextUsername.isEmpty()) {
+                throw new CoreCraftException("用户名不能为空");
+            }
+            if (nextUsername.length() > 20) {
+                throw new CoreCraftException("用户名长度不能超过 20 个字符");
+            }
+            if (!StringUtils.equals(nextUsername, oldUsername)
+                    && sysUserRepository.existsByUsername(nextUsername, user.getUserId())) {
+                throw new CoreCraftException("用户名已存在");
+            }
+        }
+        final String finalNextUsername = nextUsername;
         sysUserRepository.update(user.getUserId(), req, (r, e) -> {
+            if (finalNextUsername != null) {
+                e.setUsername(finalNextUsername);
+            }
             if (r.getNickname() != null) {
                 e.setNickname(r.getNickname());
             }
@@ -127,6 +147,12 @@ public class SysUserServiceImpl implements SysUserService{
                 e.setAvatar(r.getAvatar());
             }
         });
+        if (oldUsername != null) {
+            CacheManagerFacade.delete(CacheKeys.SECURITY_USER_RECORD, oldUsername);
+        }
+        if (finalNextUsername != null && !StringUtils.equals(finalNextUsername, oldUsername)) {
+            CacheManagerFacade.delete(CacheKeys.SECURITY_USER_RECORD, finalNextUsername);
+        }
     }
 
     @Override

@@ -15,7 +15,7 @@ import java.util.Map;
  * <p>## 为什么节点定义放在后端
  *
  * <p>节点链是**任务类型的属性**（生成主题 = 生成目录 → 确认 → 生成正文；
- * AI 归类 = 归类 → 确认）。前端若也维护一份，两处必然漂 ——
+ * 命名 = 单节点）。前端若也维护一份，两处必然漂 ——
  * 症状是"卡片上写着三个节点，点进去只有一个有内容"，而且很难查。
  *
  * <p>⇒ **只有这一份定义**，后端算好节点状态随任务一起下发，
@@ -53,7 +53,8 @@ public final class GenTaskNodes {
     public static final String TYPE_THEME = "theme";
     public static final String TYPE_PLAN = "plan";
     public static final String TYPE_CONTENT = "content";
-    public static final String TYPE_CLASSIFY = "classify";
+    /** 命名（2026-11-16 新增）：给随手记起标题——单节点、成功即写回、无人工确认 */
+    public static final String TYPE_NAME = "name";
     public static final String TYPE_EXAM = "exam";
     public static final String TYPE_QUIZ = "quiz";
 
@@ -63,12 +64,9 @@ public final class GenTaskNodes {
     /** 建目录：把人确认过的树落进知识库（2026-11-13 从前端搬进任务链） */
     public static final String NODE_BUILD = "build";
     public static final String NODE_BODY = "body";
-    public static final String NODE_CLASSIFY = "classify";
-    public static final String NODE_ADOPT = "adopt";
+    public static final String NODE_NAME = "name";
     public static final String NODE_EXAM = "exam";
     public static final String NODE_QUIZ = "quiz";
-    /** 出题后的人工节点（随堂测验 / 章节考试共用）：点「作答」才解析建卷 */
-    public static final String NODE_ANSWER = "answer";
 
     /** 步骤组（phase）key */
     public static final String PH_SKELETON = "skeleton";
@@ -76,7 +74,7 @@ public final class GenTaskNodes {
     public static final String PH_VERIFY = "verify";
     public static final String PH_BUILD = "build";
     public static final String PH_WRITE = "write";
-    public static final String PH_CLASSIFY = "classify";
+    public static final String PH_NAME = "name";
     public static final String PH_EXAM = "exam";
     public static final String PH_QUIZ = "quiz";
 
@@ -121,8 +119,8 @@ public final class GenTaskNodes {
     private static final List<PhaseDef> PHASES_BODY = List.of(
             new PhaseDef(PH_WRITE, "写正文"));
 
-    private static final List<PhaseDef> PHASES_CLASSIFY = List.of(
-            new PhaseDef(PH_CLASSIFY, "归类"));
+    private static final List<PhaseDef> PHASES_NAME = List.of(
+            new PhaseDef(PH_NAME, "命名"));
 
     private static final List<PhaseDef> PHASES_EXAM = List.of(new PhaseDef(PH_EXAM, "出题"));
     private static final List<PhaseDef> PHASES_QUIZ = List.of(new PhaseDef(PH_QUIZ, "出题"));
@@ -140,19 +138,23 @@ public final class GenTaskNodes {
     private static final List<NodeDef> DEFS_BODY = List.of(
             new NodeDef(NODE_BODY, "生成正文", "逐条写知识点正文", PHASES_BODY, false));
 
-    private static final List<NodeDef> DEFS_CLASSIFY = List.of(
-            new NodeDef(NODE_CLASSIFY, "归类", "AI 给每条建议归属目录", PHASES_CLASSIFY, false),
-            new NodeDef(NODE_ADOPT, "确认", "人工核对建议，挑着采纳", List.of(), true));
+    /**
+     * 命名任务：**单节点、无人工确认**（2026-11-16 新增）。
+     *
+     * <p>⚠️ 它和别的任务型有一处本质差异：**成功即写回标题**，不需要人点「采纳」——
+     * 随手记起个标题不是需要人把关的决定。而这恰恰是它**唯一**的自动写回场景，
+     * 所以任务卡就是这次自动改动的**唯一留痕**（「AI 改了什么」要留痕）。
+     */
+    private static final List<NodeDef> DEFS_NAME = List.of(
+            new NodeDef(NODE_NAME, "命名", "给这条随手记起一个标题", PHASES_NAME, false));
 
-    /** 出题（章节考试）：出题（模型）→ 作答（人工，点「作答」才解析建卷——归类同构） */
+    /** 出题（章节考试）：纯模型出题，跑完即已完成（建卷消费由业务页自动触发） */
     private static final List<NodeDef> DEFS_EXAM = List.of(
-            new NodeDef(NODE_EXAM, "出题", "按范围和难度出题", PHASES_EXAM, false),
-            new NodeDef(NODE_ANSWER, "作答", "人工开卷作答，答完才入档", List.of(), true));
+            new NodeDef(NODE_EXAM, "出题", "按范围和难度出题", PHASES_EXAM, false));
 
-    /** 出题（随堂测验）：出题（模型）→ 作答（人工，点「作答」才解析建卷——归类同构） */
+    /** 出题（随堂测验）：纯模型出题，跑完即已完成（建卷消费由详情页自动触发） */
     private static final List<NodeDef> DEFS_QUIZ = List.of(
-            new NodeDef(NODE_QUIZ, "出题", "就这条知识出几道题", PHASES_QUIZ, false),
-            new NodeDef(NODE_ANSWER, "作答", "人工开卷作答，答完才入档", List.of(), true));
+            new NodeDef(NODE_QUIZ, "出题", "就这条知识出几道题", PHASES_QUIZ, false));
 
     // 「判分」任务链（grade）已于 2026-11-15 删除：判分走 /ai/chat/stream（答题器直接调），
     // 从未有过创建方，执行器的 phase 过滤也不认它——登记而不执行的协议是死协议。
@@ -169,7 +171,7 @@ public final class GenTaskNodes {
             case TYPE_THEME -> DEFS_THEME;
             case TYPE_PLAN -> DEFS_PLAN;
             case TYPE_CONTENT -> DEFS_BODY;
-            case TYPE_CLASSIFY -> DEFS_CLASSIFY;
+            case TYPE_NAME -> DEFS_NAME;
             case TYPE_EXAM -> DEFS_EXAM;
             case TYPE_QUIZ -> DEFS_QUIZ;
             default -> List.of();
@@ -191,7 +193,7 @@ public final class GenTaskNodes {
             case PH_SKELETON, PH_EXPAND, PH_VERIFY -> NODE_OUTLINE;
             case PH_BUILD -> NODE_BUILD;
             case PH_WRITE -> NODE_BODY;
-            case PH_CLASSIFY -> NODE_CLASSIFY;
+            case PH_NAME -> NODE_NAME;
             case PH_EXAM -> NODE_EXAM;
             case PH_QUIZ -> NODE_QUIZ;
             default -> stage;
@@ -391,13 +393,7 @@ public final class GenTaskNodes {
             String s = confirmSummary(task);
             return s == null ? "" : s;
         }
-        if (total == 0) {
-            return "";
-        }
-        if (ok == total && total > 0) {
-            return total + " 项已完成";
-        }
-        return ok + " / " + total;
+        return "";
     }
 
     /**
@@ -469,14 +465,15 @@ public final class GenTaskNodes {
             List<StepRow> rows) {
         Map<String, Map<String, Map<String, Integer>>> out = new LinkedHashMap<>();
         for (StepRow r : rows) {
-            String phase = r.phase() == null || r.phase().isBlank()
-                    ? legacyPhaseOf(r.type())
-                    : r.phase();
             out.computeIfAbsent(String.valueOf(r.taskId()), k -> new LinkedHashMap<>())
-                    .computeIfAbsent(phase, k -> new LinkedHashMap<>())
+                    .computeIfAbsent(resolvedPhase(r), k -> new LinkedHashMap<>())
                     .merge(r.status() == null ? "pending" : r.status(), 1, Integer::sum);
         }
         return out;
+    }
+
+    private static String resolvedPhase(StepRow r) {
+        return r.phase() == null || r.phase().isBlank() ? legacyPhaseOf(r.type()) : r.phase();
     }
 
     /**
@@ -495,7 +492,7 @@ public final class GenTaskNodes {
             return PH_WRITE;
         }
         return switch (type) {
-            case TYPE_CLASSIFY -> PH_CLASSIFY;
+            case TYPE_NAME -> PH_NAME;
             case TYPE_EXAM -> PH_EXAM;
             case TYPE_QUIZ -> PH_QUIZ;
             default -> PH_WRITE;
@@ -515,11 +512,8 @@ public final class GenTaskNodes {
     public static Map<String, Map<String, Long>> durations(List<StepRow> rows) {
         Map<String, Map<String, Long>> out = new LinkedHashMap<>();
         for (StepRow r : rows) {
-            String phase = r.phase() == null || r.phase().isBlank()
-                    ? legacyPhaseOf(r.type())
-                    : r.phase();
             out.computeIfAbsent(String.valueOf(r.taskId()), k -> new LinkedHashMap<>())
-                    .merge(phase, r.durationMs() == 0 ? 0L : r.durationMs(), Long::sum);
+                    .merge(resolvedPhase(r), r.durationMs() == 0 ? 0L : r.durationMs(), Long::sum);
         }
         return out;
     }

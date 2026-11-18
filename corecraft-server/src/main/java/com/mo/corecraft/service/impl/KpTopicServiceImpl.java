@@ -13,14 +13,11 @@ import com.mo.corecraft.model.entity.KpTopicRelation;
 import com.mo.corecraft.model.entity.KpTopicTag;
 import com.mo.corecraft.model.query.KpCategoryQuery;
 import com.mo.corecraft.model.query.KpTopicQuery;
-import com.mo.corecraft.model.query.SysDictItemQuery;
-import com.mo.corecraft.model.query.SysDictTypeQuery;
 import com.mo.corecraft.model.req.KpTopicCreateReq;
 import com.mo.corecraft.model.req.KpTopicMasteryReq;
 import com.mo.corecraft.model.req.KpTopicUpdateReq;
 import com.mo.corecraft.model.resp.KpTopicIndexResp;
 import com.mo.corecraft.model.resp.KpTopicResp;
-import com.mo.corecraft.model.resp.SysDictItemResp;
 import com.mo.corecraft.model.resp.Taggable;
 import com.mo.corecraft.repository.KpCategoryRepository;
 import com.mo.corecraft.repository.KpTagRepository;
@@ -28,12 +25,9 @@ import com.mo.corecraft.repository.KpTopicRelationRepository;
 import com.mo.corecraft.repository.KpTopicRepository;
 import com.mo.corecraft.repository.KpTopicTagRepository;
 import com.mo.corecraft.service.KpTopicService;
-import com.mo.corecraft.service.SysDictItemService;
-import com.mo.corecraft.service.SysDictTypeService;
-import com.mo.corecraft.service.support.KpDictCodes;
 import com.mo.corecraft.service.support.MasteryLevelResolver;
 import com.mo.corecraft.service.support.MasteryScope;
-import com.mo.corecraft.service.support.MasteryScopeResolver;
+import com.mo.corecraft.utils.AppClock;
 import com.mo.corecraft.utils.BeanUtils;
 import com.mo.corecraft.utils.ContentHash;
 import com.mo.corecraft.utils.JsonUtils;
@@ -49,21 +43,12 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class KpTopicServiceImpl implements KpTopicService {
 
-    /**
-     * 知识点类型所在的字典编码：{@link com.mo.corecraft.service.support.KpDictCodes#TOPIC_TYPE}
-     * （后端唯一一份；前端 store 加载的是**同一个字典**——字典是"知识点类型"这个概念
-     * 唯一的权威定义，字典编码就是它的名字，是共享契约不是各写一遍的规则）。
-     */
-
     private final KpTopicRepository kpTopicRepository;
     private final KpTopicTagRepository kpTopicTagRepository;
     private final KpTagRepository kpTagRepository;
     private final KpTopicRelationRepository kpTopicRelationRepository;
     private final KpCategoryRepository kpCategoryRepository;
     private final KpTopicLearningMapper kpTopicLearningMapper;
-    private final SysDictTypeService sysDictTypeService;
-    private final SysDictItemService sysDictItemService;
-    private final MasteryScopeResolver masteryScopeResolver;
 
     @Override
     public IPage<KpTopicResp> selectTopicPage(Page<KpTopic> page, KpTopicQuery query) {
@@ -89,13 +74,10 @@ public class KpTopicServiceImpl implements KpTopicService {
     public List<KpTopicIndexResp> selectTopicIndex(Long userId, String keyword, String scope) {
         List<KpTopicIndexResp> list = kpTopicRepository.listIndex(userId, keyword, scope);
         applyTags(list);
-        // 索引也要把「是否参与掌握度」解析好（目录树/概览要按参与项过滤，
-        // 同一个判据必须在这一层也能读到，前端不自己判一遍）
-        Map<Long, Boolean> typeDefaults = masteryScopeResolver.typeDefaults();
-        for (KpTopicIndexResp row : list) {
-            row.setMasteryEnabled(MasteryScope.participates(
-                    row.getMasteryOverride(), typeDefaults, row.getTypeId()));
-        }
+        // ⚠️ **索引不解析「是否参与掌握度」**（2026-11-16 D10）：那需要学习投影，
+        // 而索引是**结构路径**——它的全部价值就是不碰正文、不碰学习表（§2.10 性能口径）。
+        // 索引带的是**原始覆盖值** `masteryOverride`；档位与参与状态一律走
+        // 列表/详情（enrichMastery）与 levels 那两条路径。
         return list;
     }
 
@@ -129,47 +111,18 @@ public class KpTopicServiceImpl implements KpTopicService {
     }
 
     @Override
-    public Map<Long, String> typeNamesByTopic(Collection<KpTopicResp> topics) {
-        Map<Long, String> labels = dictTypeLabels();
-        // 默认档 = 字典里排第一的那条（和前端 defaultTopicTypeId() 同一个口径）。
-        // 字典本身查不到时没有默认档，类型名就是空串。
-        String fallback = labels.isEmpty() ? "" : labels.values().iterator().next();
-        Map<Long, String> names = new HashMap<>();
-        for (KpTopicResp topic : topics) {
-            String label = topic.getTypeId() == null ? null : labels.get(topic.getTypeId());
-            // typeId 为空 / 指向已删或已停用的字典项 ⇒ 当默认档（和前端 resolveTopicTypeId 一样）
-            names.put(topic.getId(), label == null ? fallback : label);
-        }
-        return names;
-    }
-
-    /**
-     * 知识点类型字典：字典项 id → label。**按字典顺序**（排第一的那条是默认档）。
-     *
-     * <p>只取启用中的字典项 —— 停用的类型在界面上也不出现（前端那份清单同样过滤 enabled）。
-     */
-    private Map<Long, String> dictTypeLabels() {
-        SysDictTypeQuery typeQuery = new SysDictTypeQuery();
-        typeQuery.setCode(KpDictCodes.TOPIC_TYPE);
-        var dictType = sysDictTypeService.selectSysDictTypeList(typeQuery).stream().findFirst().orElse(null);
-        if (dictType == null) {
-            return Map.of();
-        }
-        SysDictItemQuery itemQuery = new SysDictItemQuery();
-        itemQuery.setDictTypeId(dictType.getId());
-        itemQuery.setEnabled(true);
-        Map<Long, String> labels = new LinkedHashMap<>();
-        for (SysDictItemResp item : sysDictItemService.selectSysDictItemList(itemQuery)) {
-            labels.put(item.getId(), item.getLabel());
-        }
-        return labels;
-    }
-
-    @Override
     @Transactional
-    public void createTopic(KpTopicCreateReq req, Long userId) {
+    public Long createTopic(KpTopicCreateReq req, Long userId) {
         KpTopic entity = BeanUtils.createFrom(req, KpTopic.class);
         entity.setUserId(userId);
+        // ⚠️ **没指定目录 ⇒ 落「笔记」目录**（2026-11-16 D3）：随手记要有个"家"，
+        // 而不是落进"待归类"那个债桶（那里的内容其实是删树遗留的孤儿）。
+        // 「笔记」目录没有就懒建一个（顶层叶子 ⇒ 它的内容天然是平铺的一层）。
+        // ⚠️ **只作用于「新建」**：主动把某条移回未归类（update 传 categoryId=null）仍然有效。
+        if (entity.getCategoryId() == null) {
+            // 「笔记」目录的懒建走仓储层（与目录服务同一份实现；这里不能注入目录服务——会成环）
+            entity.setCategoryId(kpCategoryRepository.ensureNotesCategory(userId));
+        }
         requireOwnCategory(entity.getCategoryId(), userId);
         entity.setTitle(StringUtils.defaultIfBlank(req.getTitle(), ""));
         // 内容版本锚点（实施计划 §1.3）：hash 每次内容变化都算；epoch 走 DB 默认 1（新建不可能有旧证据）
@@ -177,6 +130,7 @@ public class KpTopicServiceImpl implements KpTopicService {
         entity.setMasteryOverride(req.getMasteryEnabled());
         kpTopicRepository.insert(entity);
         saveTopicTags(entity.getId(), req.getTags(), userId);
+        return entity.getId();
     }
 
     @Override
@@ -186,6 +140,7 @@ public class KpTopicServiceImpl implements KpTopicService {
         // 归类这一点没有外键兜着，所以归属校验放在这条入口上——不放在那儿，
         // 一个手滑的 id 就进库了，界面上只表现为"这条知识点在哪个目录都找不到"。
         requireOwnCategory(req.getCategoryId(), userId);
+        kpTopicRepository.get(ownedTopicQuery(req.getId(), userId), e -> e);
         kpTopicRepository.update(req.getId(), req, (r, e) -> {
             if (r.getTitle() != null) {
                 e.setTitle(r.getTitle());
@@ -199,18 +154,7 @@ public class KpTopicServiceImpl implements KpTopicService {
             // 无条件写 categoryId：null = 未归类，是有意义的值，不能当"不修改"跳过。
             // KpTopic.categoryId 上标了 updateStrategy = ALWAYS，null 也会进 UPDATE 语句。
             e.setCategoryId(r.getCategoryId());
-            // 类型反过来：没传就当"不修改"跳过。typeId 没有"清空=某个含义"的语义，
-            // 所以**不能**学 categoryId 那样无条件写。
-            if (r.getTypeId() != null) {
-                e.setTypeId(r.getTypeId());
-            }
-            // 掌握度单条覆盖：**只在显式给了才写**。
-            // ⚠️ 这里和 KpTopic.masteryOverride 的 ALWAYS 策略是一对：实体那一侧保证
-            // "null 能写进库"（null = 继承类型是有意义的值），但**这个入口**的 null
-            // 是"这次请求没带这个字段"（保存正文时前端不会带）⇒ 无条件写会把用户
-            // 显式设过的覆盖悄悄抹回继承。
-            // ⇒ 显式改覆盖走专门的一步（PUT 时带 masteryEnabled），
-            //    这里只在有值时写，"恢复继承"由那一步显式传 null 完成。
+            // 掌握度单条覆盖：**只在显式给了才写**（null = 本次保存正文没带该字段；恢复跟随默认走 PUT /mastery）。
             if (r.getMasteryEnabled() != null) {
                 e.setMasteryOverride(r.getMasteryEnabled());
             }
@@ -229,9 +173,6 @@ public class KpTopicServiceImpl implements KpTopicService {
     public void setTopicMasteryEnabled(KpTopicMasteryReq req, Long userId) {
         // 归属校验：不是自己的改不了（和 updateTopic 同一条规矩）
         KpTopic topic = kpTopicRepository.get(ownedTopicQuery(req.getId(), userId), e -> e);
-        if (topic == null) {
-            throw new CoreCraftException(ResultCodeEnum.NOT_FOUND, "知识点不存在");
-        }
         // ⚠️ **无条件写**（包括 null）：这个端点的 null 是"恢复继承类型默认"，
         // 是一个**明确的三态**。KpTopic.masteryOverride 标了 ALWAYS ⇒ null 会进 UPDATE。
         topic.setMasteryOverride(req.getEnabled());
@@ -264,15 +205,17 @@ public class KpTopicServiceImpl implements KpTopicService {
         // 标签引用和关联关系**物理删**（关联表是纯关系，关系断了不留墓碑，
         // 否则重新插 (topic_id, tag_id) 会撞唯一键 uk_topic_tag）——
         // 和单条删除（deleteTopic）走的是同一条路。
-        ids.forEach(kpTopicTagRepository::deleteByTopicId);
-        ids.forEach(kpTopicRelationRepository::deleteByTopicId);
+        kpTopicTagRepository.deleteByTopicIds(ids);
+        kpTopicRelationRepository.deleteByTopicIds(ids);
         // 知识点本体是**软删**（@TableLogic）：数据还在库里，将来想做回收站/自动清理有底。
-        ids.forEach(kpTopicRepository::delete);
+        kpTopicRepository.deleteBatch(ids);
         return ids.size();
     }
 
     @Override
-    public void addTopicRelation(Long topicId, Long relatedTopicId) {
+    public void addTopicRelation(Long topicId, Long relatedTopicId, Long userId) {
+        kpTopicRepository.get(ownedTopicQuery(topicId, userId), e -> e);
+        kpTopicRepository.get(ownedTopicQuery(relatedTopicId, userId), e -> e);
         KpTopicRelation entity = new KpTopicRelation();
         entity.setTopicId(topicId);
         entity.setRelatedTopicId(relatedTopicId);
@@ -280,7 +223,8 @@ public class KpTopicServiceImpl implements KpTopicService {
     }
 
     @Override
-    public void removeTopicRelation(Long topicId, Long relatedTopicId) {
+    public void removeTopicRelation(Long topicId, Long relatedTopicId, Long userId) {
+        kpTopicRepository.get(ownedTopicQuery(topicId, userId), e -> e);
         kpTopicRelationRepository.deleteByTopicIdAndRelatedTopicId(topicId, relatedTopicId);
     }
 
@@ -386,7 +330,7 @@ public class KpTopicServiceImpl implements KpTopicService {
     /**
      * 批量补「是否参与掌握度」与「展示档位」。
      *
-     * <p>⚠️ **判据只有一处**（{@link MasteryScope}）：单条显式值 &gt; 类型默认值 &gt; 安全兜底。
+     * <p>⚠️ **判据只有一处**（{@link MasteryScope}）：单条显式值 &gt; 有无评估证据。
      * 前端拿到的是**已解析的最终值**，不自己再判一遍。
      *
      * <p>⚠️ **档位为 null = 没有有效评估**：前端据此**完全不渲染**掌握度标记
@@ -398,8 +342,7 @@ public class KpTopicServiceImpl implements KpTopicService {
         if (resps == null || resps.isEmpty()) {
             return;
         }
-        Map<Long, Boolean> typeDefaults = masteryScopeResolver.typeDefaults();
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = AppClock.now();
 
         // 学习投影一次性捞这批 id（避免 N+1）。
         // ⚠️ user_id 必须带上：其它所有 kp_topic_learning 访问都带 eq(userId)，
@@ -412,14 +355,12 @@ public class KpTopicServiceImpl implements KpTopicService {
                 .stream().collect(Collectors.toMap(KpTopicLearning::getTopicId, e -> e, (a, b) -> a));
 
         for (KpTopicResp resp : resps) {
-            boolean participates = MasteryScope.participates(
-                    resp.getMasteryOverride(), typeDefaults, resp.getTypeId());
+            KpTopicLearning learning = learningByTopic.get(resp.getId());
+            // 「有证据」= 真能算出一个档位（学过了 / 待复测）；算不出来 = 还没被检验过。
+            String level = MasteryLevelResolver.levelOf(learning, now);
+            boolean participates = MasteryScope.participates(resp.getMasteryOverride(), level != null);
             resp.setMasteryEnabled(participates);
-            if (!participates) {
-                resp.setMasteryLevel(null);
-                continue;
-            }
-            resp.setMasteryLevel(MasteryLevelResolver.levelOf(learningByTopic.get(resp.getId()), now));
+            resp.setMasteryLevel(participates ? level : null);
         }
     }
 
@@ -440,6 +381,9 @@ public class KpTopicServiceImpl implements KpTopicService {
         if (kpCategoryRepository.find(query, e -> e).isEmpty()) {
             throw new CoreCraftException("目录不存在或不属于当前用户");
         }
+        if (kpCategoryRepository.hasChildren(categoryId, userId)) {
+            throw new CoreCraftException("该目录下已有子目录，请选择最底层叶子目录");
+        }
     }
 
     /**
@@ -459,7 +403,6 @@ public class KpTopicServiceImpl implements KpTopicService {
             }
         }
         for (String name : deduped) {
-            if (name.isEmpty()) continue;
             KpTag tag = kpTagRepository.findByKey(userId, name)
                     .orElseGet(() -> {
                         KpTag t = new KpTag();

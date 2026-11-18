@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -80,6 +81,11 @@ public class SysConfigServiceImpl implements SysConfigService {
     @Override
     public void deleteMine(Long userId, String prefix) {
         sysConfigRepository.deleteByUserIdAndKeyPrefix(userId, prefix);
+    }
+
+    @Override
+    public void deleteMineByKeys(Long userId, Collection<String> keys) {
+        sysConfigRepository.deleteByUserIdAndKeys(userId, keys);
     }
 
     @Override

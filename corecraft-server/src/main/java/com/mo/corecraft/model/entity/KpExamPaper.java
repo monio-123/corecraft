@@ -37,7 +37,4 @@ public class KpExamPaper extends BaseEntity {
 
     /** JSON：题型、道数、分值、难度、附加要求、模型等出卷参数 */
     private String settingsSnapshot;
-
-    /** 出卷走任务中心时的任务 id（可空） */
-    private Long genTaskId;
 }

@@ -2,12 +2,10 @@ package com.mo.corecraft.controller.knowledge;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.mo.corecraft.model.req.KpClassifyAdoptReq;
 import com.mo.corecraft.model.req.KpGenTaskContinueReq;
 import com.mo.corecraft.model.req.KpGenTaskCreateReq;
 import com.mo.corecraft.model.resp.KpGenTaskResp;
 import com.mo.corecraft.model.resp.ResultResp;
-import com.mo.corecraft.service.KpClassifyService;
 import com.mo.corecraft.service.KpGenTaskService;
 import com.mo.corecraft.utils.SecurityUtil;
 import jakarta.validation.Valid;
@@ -32,7 +30,6 @@ public class KpGenTaskController {
     private static final int MAX_PAGE_SIZE = 100;
 
     private final KpGenTaskService genTaskService;
-    private final KpClassifyService classifyService;
 
     /** 建任务并立刻排队执行。**返回 taskId 就够了**，进度靠轮询 detail / list */
     @PostMapping
@@ -124,19 +121,9 @@ public class KpGenTaskController {
         return ResultResp.data(null);
     }
 
-    /**
-     * **采纳 AI 归类的结果**（写库）。
-     *
-     * <p>⚠️ **这是唯一一处把 AI 归类的建议写进 kp_topic 的地方** ——
-     * 跑任务的时候只存建议（{@code kp_gen_step.result}），一个字都不写库。
-     * 理由：目录归属是**需要人工确认的主观判断**。
-     *
-     * <p>前端传的是**采纳那一刻解析出来的目录 id**（不是 AI 原始的路径字符串）：
-     * 任务跑完到人点采纳之间目录可能变了 ⇒ 传 id 才谈得上"按当下清单重新校验"。
-     */
-    @RequestMapping(value = "classify/adopt", method = RequestMethod.POST)
-    public ResultResp<Integer> adoptClassify(@Valid @RequestBody KpClassifyAdoptReq req) {
-        Long userId = SecurityUtil.getUserId();
-        return ResultResp.data(classifyService.adopt(req, userId));
+    /** 批量清理当前用户所有已完成任务 */
+    @PostMapping("clear-finished")
+    public ResultResp<Integer> clearFinished() {
+        return ResultResp.data(genTaskService.removeFinished(SecurityUtil.getUserId()));
     }
 }

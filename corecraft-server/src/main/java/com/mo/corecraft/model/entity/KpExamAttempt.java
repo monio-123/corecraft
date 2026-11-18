@@ -46,9 +46,6 @@ public class KpExamAttempt {
 
     private BigDecimal maxScore;
 
-    /** 判分走任务中心时的任务 id（可空） */
-    private Long gradeTaskId;
-
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;
 

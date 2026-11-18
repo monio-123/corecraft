@@ -25,12 +25,6 @@ public class SysDictItemResp {
 
     private String remark;
 
-    /**
-     * 该类型默认是否参与掌握度：NULL=未配置 / TRUE=参与 / FALSE=不参与。
-     * 只有 {@code kp_topic_type} 那一套字典项真的消费它（见 SysDictItem.masteryEnabled）。
-     */
-    private Boolean masteryEnabled;
-
     private boolean enabled;
 
     @JsonFormat(pattern = DateTimeFormats.DATETIME, timezone = DateTimeFormats.TIMEZONE)
